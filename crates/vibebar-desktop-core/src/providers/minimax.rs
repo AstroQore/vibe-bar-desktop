@@ -364,10 +364,11 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
                 },
             );
             let group = total.map(|total| {
-                let remaining = used_count.map_or_else(
-                    || total * (100.0 - used_percent).clamp(0.0, 100.0) / 100.0,
-                    |used| (total - used).max(0.0),
-                );
+                let remaining = if percent.is_some() {
+                    total * (100.0 - used_percent).clamp(0.0, 100.0) / 100.0
+                } else {
+                    (total - used).max(0.0)
+                };
                 format!("{remaining:.0}/{total:.0} left")
             });
             Some(QuotaBucket::new(
@@ -628,6 +629,11 @@ mod tests {
         assert_eq!(buckets[0].used_percent, 25.0);
         assert_eq!(buckets[0].reset_at, Some(1_702_592_000.0));
         assert_eq!(buckets[0].group_title.as_deref(), Some("75/100 left"));
+
+        let mixed = br#"{"data":{"services":[{"window_type":"weekly","limit":100,"usage":20,"percent":0.5}]}}"#;
+        let (buckets, _) = parse(mixed, 1_700_000_000.0).unwrap();
+        assert_eq!(buckets[0].used_percent, 50.0);
+        assert_eq!(buckets[0].group_title.as_deref(), Some("50/100 left"));
     }
     #[test]
     fn zero_limit_service_placeholders_do_not_hide_model_rows() {
