@@ -18,6 +18,7 @@ pub mod cost;
 pub mod credentials;
 pub mod error;
 pub mod model;
+pub mod mcp;
 pub mod paths;
 pub mod providers;
 pub mod refresh;

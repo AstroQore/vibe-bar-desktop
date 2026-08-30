@@ -94,10 +94,16 @@ struct ResolvedSession {
 
 impl SessionsService {
     pub fn new(root: DataRoot) -> Self {
-        let home = crate::paths::home_directory();
+        Self::with_home(root, crate::paths::home_directory())
+    }
+
+    /// Construct a read-only session reader for an explicit home directory.
+    /// Embedders use this for a synthetic/demo root; it performs no discovery
+    /// until a list or search call.
+    pub fn with_home(root: DataRoot, home: impl Into<std::path::PathBuf>) -> Self {
         Self {
             root,
-            home,
+            home: home.into(),
             references: Mutex::new(HashMap::new()),
         }
     }

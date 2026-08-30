@@ -17,6 +17,11 @@ use tauri::{Emitter, Manager};
 /// Emitted whenever a refresh completes, carrying the full `QuotaView`.
 pub const QUOTA_EVENT: &str = "vibebar://quota-updated";
 
+/// Run the Desktop-owned, read-only MCP server without starting Tauri.
+pub fn run_mcp_stdio() -> i32 {
+    vibebar_desktop_core::mcp::run_stdio()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
