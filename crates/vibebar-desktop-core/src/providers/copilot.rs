@@ -1,8 +1,8 @@
 //! GitHub Copilot quota with an explicitly supplied environment token.
 //!
-//! This slice reads only `COPILOT_TOKEN` and an optional
-//! `COPILOT_ENTERPRISE_HOST`. It intentionally does not inspect GitHub CLI
-//! state, `GITHUB_TOKEN`, native Keychain slots, or Device Flow state.
+//! This slice reads only `COPILOT_TOKEN` and sends it only to GitHub's official
+//! API host. It intentionally does not inspect GitHub CLI state, `GITHUB_TOKEN`,
+//! native Keychain slots, Device Flow state, or custom enterprise hosts.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -19,12 +19,7 @@ const ACCOUNT_ID: &str = "misc-copilot";
 pub async fn fetch(_home: &Path, client: &Client) -> Result<AccountQuota, QuotaError> {
     let environment: HashMap<String, String> = std::env::vars().collect();
     let token = token(&environment).ok_or(QuotaError::NoCredential)?;
-    let endpoint = usage_url(
-        environment
-            .get("COPILOT_ENTERPRISE_HOST")
-            .map(String::as_str),
-    )
-    .ok_or_else(|| QuotaError::Network("Copilot enterprise host invalid".into()))?;
+    let endpoint = usage_url();
 
     let response = client
         .get(endpoint)
@@ -72,33 +67,9 @@ fn token(environment: &HashMap<String, String>) -> Option<&str> {
         .filter(|token| !token.is_empty())
 }
 
-fn usage_url(enterprise_host: Option<&str>) -> Option<Url> {
-    let host = normalized_host(enterprise_host)?;
-    let api_host = if host == "github.com" {
-        "api.github.com".to_string()
-    } else if host.starts_with("api.") {
-        host
-    } else {
-        format!("api.{host}")
-    };
-    Url::parse(&format!("https://{api_host}/copilot_internal/user")).ok()
-}
-
-fn normalized_host(raw: Option<&str>) -> Option<String> {
-    let Some(raw) = raw.map(str::trim).filter(|host| !host.is_empty()) else {
-        return Some("github.com".to_string());
-    };
-    let parseable = if raw.contains("://") {
-        raw.to_string()
-    } else {
-        format!("https://{raw}")
-    };
-    let url = Url::parse(&parseable).ok()?;
-    let host = url.host_str()?.trim_matches('.').to_lowercase();
-    (!host.is_empty()).then(|| match url.port() {
-        Some(port) => format!("{host}:{port}"),
-        None => host,
-    })
+fn usage_url() -> Url {
+    Url::parse("https://api.github.com/copilot_internal/user")
+        .expect("the built-in Copilot URL is valid")
 }
 
 #[derive(Debug, PartialEq)]
@@ -350,18 +321,10 @@ mod tests {
     }
 
     #[test]
-    fn resolves_default_and_enterprise_hosts() {
+    fn uses_only_the_official_github_api_host() {
         assert_eq!(
-            usage_url(None).unwrap().as_str(),
+            usage_url().as_str(),
             "https://api.github.com/copilot_internal/user"
-        );
-        assert_eq!(
-            usage_url(Some("octocorp.ghe.com:8443")).unwrap().as_str(),
-            "https://api.octocorp.ghe.com:8443/copilot_internal/user"
-        );
-        assert_eq!(
-            usage_url(Some("api.github.example.com")).unwrap().as_str(),
-            "https://api.github.example.com/copilot_internal/user"
         );
     }
 }
