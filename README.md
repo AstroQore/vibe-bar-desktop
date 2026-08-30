@@ -26,6 +26,9 @@ window, on macOS, Windows, and Linux.
 - **Presentation settings.** Applies the shared used/remaining mode, provider
   visibility/order, plan labels, and menu-bar field labels. A read-only
   Settings page shows the effective values; Desktop does not save them yet.
+- **Skills inventory.** Lists skills from the fixed local SSOT and harness
+  roots, with verified projections and health warnings. It never installs,
+  deletes, syncs, or executes skill content.
 
 ## One product, two clients
 

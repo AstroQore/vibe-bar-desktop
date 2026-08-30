@@ -37,6 +37,7 @@ pub fn run() {
             commands::session_search,
             commands::session_transcript,
             commands::app_info,
+            commands::skills_inventory,
         ])
         .setup(|app| {
             let state = AppState::new();

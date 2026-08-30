@@ -88,6 +88,20 @@ export interface AppInfo {
   nativeApp: NativeAppPresence;
 }
 
+export interface SkillInventoryRow {
+  name: string;
+  directory: string;
+  description?: string;
+  targets: string[];
+  health: string;
+  source: string;
+}
+export interface SkillsInventoryView {
+  skills: SkillInventoryRow[];
+  warnings: string[];
+  scannedAt: number;
+}
+
 /** Read-only presentation preferences from the shared native settings file. */
 export interface PresentationSettings {
   displayMode: string;
@@ -107,6 +121,7 @@ export const api = {
   quotaView: () => invoke<QuotaView>("quota_view"),
   refreshQuota: () => invoke<QuotaView>("refresh_quota"),
   appInfo: () => invoke<AppInfo>("app_info"),
+  skillsInventory: () => invoke<SkillsInventoryView>("skills_inventory"),
   presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>

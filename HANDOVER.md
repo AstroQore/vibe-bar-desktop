@@ -19,6 +19,7 @@ turned out to be wrong.
 | Quota — the other 23 providers | Read from the shared cache, labeled `shared data` |
 | Tray | One line, fields and labels from the shared settings, remaining/used honoured |
 | Presentation settings | Read-only page; Overview honours display mode, provider visibility/order, and plan labels |
+| Skills | Read-only inventory from fixed local SSOT/harness roots; no install, delete, or sync |
 | Sessions | Shared index when present (all harnesses, FTS); otherwise Codex + Claude log scan |
 | Transcripts | Codex and Claude Code JSONL, paged, tolerant of unknown lines |
 | Resume | Command built by the kit's shared builder, copied to the clipboard |

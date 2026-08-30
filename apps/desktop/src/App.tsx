@@ -6,8 +6,9 @@ import { About } from "./components/About";
 import { Overview } from "./components/Overview";
 import { Sessions } from "./components/Sessions";
 import { Settings } from "./components/Settings";
+import { Skills } from "./components/Skills";
 
-type Tab = "overview" | "sessions" | "settings" | "about";
+type Tab = "overview" | "sessions" | "skills" | "settings" | "about";
 
 export function App() {
   const [tab, setTab] = useState<Tab>("overview");
@@ -46,7 +47,7 @@ export function App() {
 
       <header className="header">
         <nav className="tabs" role="tablist">
-          {(["overview", "sessions", "settings", "about"] as const).map((id) => (
+          {(["overview", "sessions", "skills", "settings", "about"] as const).map((id) => (
             <button
               key={id}
               className="tab"
@@ -58,6 +59,8 @@ export function App() {
                 ? "Quota"
                 : id === "sessions"
                   ? "Sessions"
+                  : id === "skills"
+                    ? "Skills"
                   : id === "settings"
                     ? "Settings"
                     : "About"}
@@ -86,6 +89,8 @@ export function App() {
           )
         ) : tab === "sessions" ? (
           <Sessions />
+        ) : tab === "skills" ? (
+          <Skills />
         ) : tab === "settings" ? (
           <Settings settings={presentation} />
         ) : (

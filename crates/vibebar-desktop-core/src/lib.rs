@@ -21,6 +21,7 @@ pub mod paths;
 pub mod providers;
 pub mod refresh;
 pub mod sessions;
+pub mod skills;
 pub mod shared;
 pub mod storage_contract;
 

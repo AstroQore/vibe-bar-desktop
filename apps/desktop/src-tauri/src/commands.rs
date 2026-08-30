@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::State;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::SessionListing;
+use vibebar_desktop_core::skills::SkillsInventoryView;
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
 
 use crate::native_app::{self, NativeAppPresence};
@@ -83,4 +84,9 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         is_demo: root.is_demo(),
         native_app: native_app::detect(root),
     }
+}
+
+#[tauri::command]
+pub fn skills_inventory(state: State<'_, AppState>) -> SkillsInventoryView {
+    vibebar_desktop_core::skills::scan(state.data_root())
 }
