@@ -14,6 +14,7 @@
 //! yet on either side. See `docs/SHARED-STORAGE.md`.
 
 pub mod client_store;
+pub mod cost;
 pub mod credentials;
 pub mod error;
 pub mod model;

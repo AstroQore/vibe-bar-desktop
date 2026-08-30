@@ -123,6 +123,37 @@ export interface ServiceStatusView {
   updatedAt?: number;
 }
 
+export interface CostTotals {
+  pricedCostMicros: number;
+  tokens: number;
+  requests: number;
+}
+
+export interface DailyCost extends CostTotals {
+  day: string;
+}
+
+export interface ModelCost extends CostTotals {
+  tool: string;
+  model: string;
+  unpricedEvents: number;
+}
+
+export interface CostView {
+  today: CostTotals;
+  last7Days: CostTotals;
+  last30Days: CostTotals;
+  allTime: CostTotals;
+  daily: DailyCost[];
+  models: ModelCost[];
+  unpricedEvents: number;
+  scannedFiles: number;
+  malformedLines: number;
+  truncated: boolean;
+  scannedAt: number;
+  pricingVersion: string;
+}
+
 export const QUOTA_EVENT = "vibebar://quota-updated";
 
 export const api = {
@@ -132,6 +163,8 @@ export const api = {
   presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
   statusSnapshot: () => invoke<ServiceStatusView>("status_snapshot"),
   refreshStatus: () => invoke<ServiceStatusView>("refresh_status"),
+  costView: () => invoke<CostView>("cost_view"),
+  refreshCost: () => invoke<CostView>("refresh_cost"),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),

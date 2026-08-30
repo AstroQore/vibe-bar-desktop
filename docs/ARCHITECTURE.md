@@ -44,6 +44,7 @@ one sitting.
 | Merging live and cached into what the UI shows | `refresh.rs` |
 | Read-only presentation preferences | `shared/settings.rs` → `presentation_settings` IPC |
 | Public Claude/Cursor service status | `status.rs` → in-memory cache → status IPC |
+| Local Codex/Claude usage and priced portion | `cost.rs` → in-memory cache → cost IPC |
 | Indexed vs scanned sessions | `sessions.rs` |
 
 ## Data flow for a refresh

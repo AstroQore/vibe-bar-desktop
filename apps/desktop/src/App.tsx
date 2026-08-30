@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { AppInfo, PresentationSettings, QuotaView, ServiceStatusView } from "./api";
+import type { AppInfo, CostView, PresentationSettings, QuotaView, ServiceStatusView } from "./api";
 import { api, formatRelative } from "./api";
 import { About } from "./components/About";
+import { CostOverview } from "./components/CostOverview";
 import { Overview } from "./components/Overview";
 import { Sessions } from "./components/Sessions";
 import { ServiceStatus } from "./components/ServiceStatus";
@@ -17,6 +18,7 @@ export function App() {
   const [presentation, setPresentation] = useState<PresentationSettings | null>(null);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatusView | null>(null);
   const [statusRefreshFailed, setStatusRefreshFailed] = useState(false);
+  const [cost, setCost] = useState<CostView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -25,6 +27,10 @@ export function App() {
     api.quotaView().then(setView).catch(() => undefined);
     api.appInfo().then(setInfo).catch(() => undefined);
     api.presentationSettings().then(setPresentation).catch(() => undefined);
+    api
+      .costView()
+      .then(setCost)
+      .catch(() => undefined);
     api
       .statusSnapshot()
       .then(setServiceStatus)
@@ -46,19 +52,19 @@ export function App() {
 
   const refresh = useCallback(() => {
     setRefreshing(true);
-    api
-      .refreshQuota()
-      .then(setView)
-      .catch(() => undefined)
-      .finally(() => setRefreshing(false));
-    api.presentationSettings().then(setPresentation).catch(() => undefined);
-    api
-      .refreshStatus()
-      .then((status) => {
+    Promise.allSettled([
+      api.refreshQuota().then(setView),
+      api.presentationSettings().then(setPresentation),
+      api.refreshCost().then(setCost),
+      api.refreshStatus().then((status) => {
         setServiceStatus(status);
         setStatusRefreshFailed(false);
+      }),
+    ])
+      .then((results) => {
+        if (results[3]?.status === "rejected") setStatusRefreshFailed(true);
       })
-      .catch(() => setStatusRefreshFailed(true));
+      .finally(() => setRefreshing(false));
   }, []);
 
   return (
@@ -107,6 +113,7 @@ export function App() {
                 status={serviceStatus}
                 refreshFailed={statusRefreshFailed}
               />
+              <CostOverview cost={cost} />
               <Overview view={view} settings={presentation} />
             </>
           ) : (

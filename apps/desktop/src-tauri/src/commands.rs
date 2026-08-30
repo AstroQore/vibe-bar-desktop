@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use tauri::State;
+use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::SessionListing;
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
@@ -37,6 +38,20 @@ pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings
 #[tauri::command]
 pub fn status_snapshot(state: State<'_, AppState>) -> ServiceStatusView {
     state.status().cached()
+}
+
+#[tauri::command]
+pub fn cost_view(state: State<'_, AppState>) -> CostView {
+    state.cost().cached()
+}
+
+#[tauri::command]
+pub async fn refresh_cost(state: State<'_, AppState>) -> Result<CostView, String> {
+    let engine = state.cost().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.refresh())
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

@@ -34,6 +34,8 @@ pub fn run() {
             commands::presentation_settings,
             commands::status_snapshot,
             commands::refresh_status,
+            commands::cost_view,
+            commands::refresh_cost,
             commands::refresh_quota,
             commands::session_list,
             commands::session_search,
