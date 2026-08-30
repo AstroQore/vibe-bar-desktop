@@ -114,6 +114,7 @@ function Transcript({
 }) {
   const [page, setPage] = useState<TranscriptPage | null>(null);
   const [offset, setOffset] = useState(0);
+  const [offsetHistory, setOffsetHistory] = useState<number[]>([]);
   const [cursors, setCursors] = useState<Record<string, TranscriptCursor>>({});
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -159,6 +160,7 @@ function Transcript({
       : total !== undefined && offset + shown < total
     : false;
   const nextOffset = shown > 0 ? offset + shown : page?.nextCursor?.messageOffset ?? offset;
+  const previousOffset = offsetHistory[offsetHistory.length - 1];
 
   return (
     <>
@@ -212,14 +214,21 @@ function Transcript({
           )}
           <div className="toolbar" style={{ marginTop: 12 }}>
             <button
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              disabled={previousOffset === undefined}
+              onClick={() => {
+                if (previousOffset === undefined) return;
+                setOffsetHistory((current) => current.slice(0, -1));
+                setOffset(previousOffset);
+              }}
             >
               Previous
             </button>
             <button
               disabled={!hasMore || nextOffset <= offset}
-              onClick={() => setOffset(nextOffset)}
+              onClick={() => {
+                setOffsetHistory((current) => [...current, offset]);
+                setOffset(nextOffset);
+              }}
             >
               Next
             </button>
