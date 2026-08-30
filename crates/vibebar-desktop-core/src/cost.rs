@@ -351,19 +351,32 @@ fn collect_gemini_chat_files(home: &Path) -> (Vec<SourceFile>, bool) {
             {
                 continue;
             }
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => {
+                    truncated = true;
+                    continue;
+                }
+            };
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                truncated = true;
+                continue;
+            }
             files.push(SourceFile {
                 tool: ToolType::Gemini,
                 path,
+                mtime: metadata.modified().unwrap_or(UNIX_EPOCH),
             });
         }
         if truncated {
             break;
         }
     }
-    files.sort_by(|a, b| {
-        source_mtime(&b.path)
-            .cmp(&source_mtime(&a.path))
-            .then_with(|| a.path.cmp(&b.path))
+    files.sort_by(|left, right| {
+        right
+            .mtime
+            .cmp(&left.mtime)
+            .then_with(|| left.path.cmp(&right.path))
     });
     (files, truncated)
 }
