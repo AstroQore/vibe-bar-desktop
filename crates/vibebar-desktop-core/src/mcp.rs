@@ -470,7 +470,11 @@ fn parse_since(value: Option<&Value>) -> Result<Option<i64>, Problem> {
         return Err(Problem::invalid_params());
     }
     chrono::DateTime::parse_from_rfc3339(raw)
-        .map(|date| Some(date.timestamp()))
+        .map(|date| {
+            Some(date.timestamp().saturating_add(i64::from(
+                date.timestamp_subsec_nanos() > 0,
+            )))
+        })
         .map_err(|_| Problem::invalid_params())
 }
 fn parse_limit(value: Option<&Value>, default: usize, maximum: usize) -> Result<usize, Problem> {
@@ -734,6 +738,21 @@ mod tests {
         ] {
             assert_eq!(tool_error_code(&server, name, arguments), -32602);
         }
+    }
+
+    #[test]
+    fn fractional_since_boundaries_round_up_to_stored_seconds() {
+        let exact = json!("2026-08-30T12:00:00Z");
+        let fractional = json!("2026-08-30T12:00:00.500Z");
+        let exact = parse_since(Some(&exact))
+            .ok()
+            .flatten()
+            .expect("valid exact boundary");
+        let fractional = parse_since(Some(&fractional))
+            .ok()
+            .flatten()
+            .expect("valid fractional boundary");
+        assert_eq!(fractional, exact + 1);
     }
 
     #[test]
