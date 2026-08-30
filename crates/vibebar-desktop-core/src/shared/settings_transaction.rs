@@ -9,6 +9,7 @@
 use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::Mutex;
 
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 #[cfg(unix)]
@@ -31,6 +32,7 @@ pub struct SettingsWriterAuthorization {
     /// Stable directory capability acquired once, before callers can rename
     /// the synthetic root path. Every later file operation is relative to it.
     root: Dir,
+    transaction: Mutex<()>,
     #[allow(dead_code)]
     lease: SharedStoreLeaseBatch,
 }
@@ -96,6 +98,7 @@ impl SettingsWriterAuthorization {
         }
         Ok(Self {
             root: directory,
+            transaction: Mutex::new(()),
             lease,
         })
     }
@@ -158,6 +161,8 @@ pub enum SettingsTransactionError {
     PostRenameUnconfirmed,
     #[error("settings source changed after the patch was based on it")]
     SourceChangedBeforeCommit,
+    #[error("settings transaction authorization lock was poisoned")]
+    AuthorizationPoisoned,
 }
 
 /// Re-read, merge, and atomically replace the synthetic `settings.json` only
@@ -175,6 +180,10 @@ pub fn apply_settings_patch_with_seam(
     patch: &SettingsThreeWayPatch,
     seam: &dyn SettingsTransactionSeam,
 ) -> Result<SettingsTransactionOutcome, SettingsTransactionError> {
+    let _transaction = authorization
+        .transaction
+        .lock()
+        .map_err(|_| SettingsTransactionError::AuthorizationPoisoned)?;
     let directory =
         authorization
             .root
@@ -602,6 +611,8 @@ fn sync_parent(
 mod tests {
     #[cfg(unix)]
     use std::collections::BTreeSet;
+    #[cfg(unix)]
+    use std::sync::{mpsc, Arc, TryLockError};
 
     #[cfg(unix)]
     use serde_json::{json, Map, Value};
@@ -666,6 +677,25 @@ mod tests {
                         error,
                     }
                 })?;
+            }
+            Ok(())
+        }
+    }
+
+    #[cfg(unix)]
+    struct BlockBeforeRename {
+        reached: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    }
+    #[cfg(unix)]
+    impl SettingsTransactionSeam for BlockBeforeRename {
+        fn checkpoint(
+            &self,
+            stage: SettingsTransactionStage,
+        ) -> Result<(), SettingsTransactionError> {
+            if stage == SettingsTransactionStage::BeforeRename {
+                self.reached.send(()).unwrap();
+                self.release.recv().unwrap();
             }
             Ok(())
         }
@@ -805,6 +835,59 @@ mod tests {
             .file_name()
             .to_string_lossy()
             .contains("desktop-settings")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn one_authorization_serializes_disjoint_concurrent_patches() {
+        let root = root();
+        let path = root.path().join(SETTINGS_RELATIVE_PATH);
+        let base = json!({"displayMode":"remaining","refreshIntervalSeconds":600});
+        std::fs::write(&path, base.to_string()).unwrap();
+        let authorization = Arc::new(authorize(root.path()));
+
+        let first_patch = patch(
+            base.clone(),
+            json!({"displayMode":"used","refreshIntervalSeconds":600}),
+        );
+        let second_patch = patch(
+            base,
+            json!({"displayMode":"remaining","refreshIntervalSeconds":300}),
+        );
+        let (first_reached_tx, first_reached_rx) = mpsc::channel();
+        let (release_first_tx, release_first_rx) = mpsc::channel();
+        let first_authorization = Arc::clone(&authorization);
+        let first = std::thread::spawn(move || {
+            apply_settings_patch_with_seam(
+                &first_authorization,
+                &first_patch,
+                &BlockBeforeRename {
+                    reached: first_reached_tx,
+                    release: release_first_rx,
+                },
+            )
+        });
+        first_reached_rx.recv().unwrap();
+        assert!(matches!(
+            authorization.transaction.try_lock(),
+            Err(TryLockError::WouldBlock)
+        ));
+
+        let (second_started_tx, second_started_rx) = mpsc::channel();
+        let second_authorization = Arc::clone(&authorization);
+        let second = std::thread::spawn(move || {
+            second_started_tx.send(()).unwrap();
+            apply_settings_patch(&second_authorization, &second_patch)
+        });
+        second_started_rx.recv().unwrap();
+        release_first_tx.send(()).unwrap();
+
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(value["revision"], 2);
+        assert_eq!(value["displayMode"], "used");
+        assert_eq!(value["refreshIntervalSeconds"], 300);
     }
 
     #[cfg(unix)]
