@@ -12,7 +12,6 @@ on:
       - "docs/contracts/**"
       - ".github/workflows/storage-contract.yml"
   pull_request:
-    branches: [main]
     paths:
       - "Cargo.lock"
       - "Cargo.toml"
