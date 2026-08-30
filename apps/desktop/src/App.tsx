@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { AppInfo, PresentationSettings, QuotaView } from "./api";
+import type { AppInfo, PresentationSettings, QuotaView, ServiceStatusView } from "./api";
 import { api, formatRelative } from "./api";
 import { About } from "./components/About";
 import { Overview } from "./components/Overview";
 import { Sessions } from "./components/Sessions";
+import { ServiceStatus } from "./components/ServiceStatus";
 import { Settings } from "./components/Settings";
 
 type Tab = "overview" | "sessions" | "settings" | "about";
@@ -14,6 +15,8 @@ export function App() {
   const [view, setView] = useState<QuotaView | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [presentation, setPresentation] = useState<PresentationSettings | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatusView | null>(null);
+  const [statusRefreshFailed, setStatusRefreshFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -22,6 +25,19 @@ export function App() {
     api.quotaView().then(setView).catch(() => undefined);
     api.appInfo().then(setInfo).catch(() => undefined);
     api.presentationSettings().then(setPresentation).catch(() => undefined);
+    api
+      .statusSnapshot()
+      .then(setServiceStatus)
+      .catch(() => undefined)
+      .finally(() => {
+        api
+          .refreshStatus()
+          .then((status) => {
+            setServiceStatus(status);
+            setStatusRefreshFailed(false);
+          })
+          .catch(() => setStatusRefreshFailed(true));
+      });
     const unlisten = api.onQuotaUpdated(setView);
     return () => {
       unlisten.then((off) => off()).catch(() => undefined);
@@ -30,13 +46,19 @@ export function App() {
 
   const refresh = useCallback(() => {
     setRefreshing(true);
-    Promise.all([api.refreshQuota(), api.presentationSettings()])
-      .then(([quota, settings]) => {
-        setView(quota);
-        setPresentation(settings);
-      })
+    api
+      .refreshQuota()
+      .then(setView)
       .catch(() => undefined)
       .finally(() => setRefreshing(false));
+    api.presentationSettings().then(setPresentation).catch(() => undefined);
+    api
+      .refreshStatus()
+      .then((status) => {
+        setServiceStatus(status);
+        setStatusRefreshFailed(false);
+      })
+      .catch(() => setStatusRefreshFailed(true));
   }, []);
 
   return (
@@ -80,7 +102,13 @@ export function App() {
       <main className="content">
         {tab === "overview" ? (
           view ? (
-            <Overview view={view} settings={presentation} />
+            <>
+              <ServiceStatus
+                status={serviceStatus}
+                refreshFailed={statusRefreshFailed}
+              />
+              <Overview view={view} settings={presentation} />
+            </>
           ) : (
             <p className="empty">Loading quota…</p>
           )

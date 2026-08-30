@@ -5,6 +5,7 @@ use tauri::State;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::SessionListing;
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
+use vibebar_desktop_core::status::ServiceStatusView;
 
 use crate::native_app::{self, NativeAppPresence};
 use crate::state::AppState;
@@ -31,6 +32,20 @@ pub fn quota_view(state: State<'_, AppState>) -> QuotaView {
 #[tauri::command]
 pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings {
     SharedSettings::load(state.data_root()).presentation()
+}
+
+#[tauri::command]
+pub fn status_snapshot(state: State<'_, AppState>) -> ServiceStatusView {
+    state.status().cached()
+}
+
+#[tauri::command]
+pub async fn refresh_status(state: State<'_, AppState>) -> Result<ServiceStatusView, String> {
+    state
+        .status()
+        .refresh()
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// Fetch live quota for every provider with an adapter, then return the

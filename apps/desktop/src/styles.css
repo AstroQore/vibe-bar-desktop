@@ -263,6 +263,58 @@ input[type="text"] {
   margin: 0;
 }
 
+.service-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 7px 9px;
+  margin-bottom: 12px;
+  background: var(--bg-raised);
+  font-size: 11px;
+}
+.service-status.unavailable {
+  color: var(--text-faint);
+}
+.service-status-head,
+.service-status-providers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.service-status-title {
+  font-weight: 600;
+}
+.status-pill {
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--text-dim);
+  text-transform: capitalize;
+}
+.status-pill.none {
+  color: var(--ok);
+}
+.status-pill.minor,
+.status-pill.maintenance {
+  color: var(--warning);
+}
+.status-pill.major,
+.status-pill.critical {
+  color: var(--critical);
+}
+.status-pill.unavailable {
+  color: var(--text-faint);
+}
+.service-incident {
+  margin: 0 0 0 auto;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .empty {
   color: var(--text-faint);
   text-align: center;

@@ -101,6 +101,28 @@ export interface PresentationSettings {
   providerPlanLabels: Record<string, string>;
 }
 
+export interface StatusIncident {
+  id: string;
+  name: string;
+  status: string;
+  impact: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface ProviderStatus {
+  tool: string;
+  indicator: string;
+  description: string;
+  updatedAt?: number;
+  incidents: StatusIncident[];
+}
+
+export interface ServiceStatusView {
+  providers: ProviderStatus[];
+  updatedAt?: number;
+}
+
 export const QUOTA_EVENT = "vibebar://quota-updated";
 
 export const api = {
@@ -108,6 +130,8 @@ export const api = {
   refreshQuota: () => invoke<QuotaView>("refresh_quota"),
   appInfo: () => invoke<AppInfo>("app_info"),
   presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
+  statusSnapshot: () => invoke<ServiceStatusView>("status_snapshot"),
+  refreshStatus: () => invoke<ServiceStatusView>("refresh_status"),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),
