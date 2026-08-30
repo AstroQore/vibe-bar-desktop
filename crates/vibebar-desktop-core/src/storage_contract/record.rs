@@ -1,7 +1,5 @@
 /// Canonical on-disk diagnostic record. Its JSON must remain byte-identical to
 /// Swift's `JSONEncoder.outputFormatting = [.sortedKeys]` output.
-use std::collections::BTreeMap;
-
 use serde::Deserialize;
 
 use super::{
@@ -49,22 +47,17 @@ impl SharedStoreLeaseRecord {
     }
     pub fn canonical_json(&self) -> Result<Vec<u8>, LeaseError> {
         self.validate()?;
-        let mut fields = BTreeMap::new();
-        fields.insert(
-            "clientID",
-            serde_json::Value::String(self.client_id.clone()),
-        );
-        fields.insert("pid", serde_json::Value::Number(self.pid.into()));
-        fields.insert(
-            "role",
-            serde_json::Value::String(self.role.as_raw().to_owned()),
-        );
-        fields.insert(
-            "startedAt",
-            serde_json::Value::Number(self.started_at.into()),
-        );
-        fields.insert("version", serde_json::Value::Number(self.version.into()));
-        serde_json::to_vec(&fields).map_err(|error| LeaseError::Json(error.to_string()))
+        // Swift JSONEncoder sorts these keys and escapes `/` by default.
+        // serde_json deliberately leaves slashes bare, so encode string
+        // fields separately and mirror Swift's escaping before assembling the
+        // fixed record shape.
+        let client_id = swift_json_string(&self.client_id)?;
+        let role = swift_json_string(self.role.as_raw())?;
+        Ok(format!(
+            "{{\"clientID\":{client_id},\"pid\":{},\"role\":{role},\"startedAt\":{},\"version\":{}}}",
+            self.pid, self.started_at, self.version
+        )
+        .into_bytes())
     }
     pub fn from_canonical_json(bytes: &[u8]) -> Result<Self, LeaseError> {
         let record: Self =
@@ -84,6 +77,12 @@ impl SharedStoreLeaseRecord {
         .map_err(LeaseError::Contract)?;
         Self::from_canonical_json(LEASE_RECORD_FIXTURE)
     }
+}
+
+fn swift_json_string(value: &str) -> Result<String, LeaseError> {
+    serde_json::to_string(value)
+        .map(|encoded| encoded.replace('/', "\\/"))
+        .map_err(|error| LeaseError::Json(error.to_string()))
 }
 
 pub(super) fn valid_client_id(value: &str) -> bool {

@@ -71,6 +71,27 @@ fn lease_record_is_native_byte_equal_in_both_directions() {
 }
 
 #[test]
+fn lease_record_escapes_slashes_like_swift_json_encoder() {
+    let record = SharedStoreLeaseRecord::new(
+        SharedStoreLeaseRole::QuotaCollector,
+        42,
+        1_700_000_000_000,
+        "fixture/client",
+    );
+    let bytes = record.canonical_json().unwrap();
+    assert_eq!(
+        bytes,
+        br#"{"clientID":"fixture\/client","pid":42,"role":"quota_collector","startedAt":1700000000000,"version":1}"#
+    );
+    assert_eq!(
+        SharedStoreLeaseRecord::from_canonical_json(&bytes)
+            .unwrap()
+            .client_id,
+        "fixture/client"
+    );
+}
+
+#[test]
 fn production_writer_rejects_every_current_store() {
     for store in SharedStoreManifest::native_fixture().unwrap().stores {
         let error = SharedStoreLeaseBatch::acquire_writer(
