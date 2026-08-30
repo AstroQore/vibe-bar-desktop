@@ -47,4 +47,6 @@ pub enum CoreError {
     SessionReferenceInvalid,
     #[error("session transcript is unavailable")]
     TranscriptUnavailable,
+    #[error("invalid Desktop client snapshot: {0}")]
+    InvalidClientSnapshot(String),
 }

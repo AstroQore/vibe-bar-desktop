@@ -68,11 +68,18 @@ fn main() {
     );
 
     let scan_home = if root.is_demo() {
-        root.shared().parent().unwrap_or(root.shared()).to_path_buf()
+        root.shared()
+            .parent()
+            .unwrap_or(root.shared())
+            .to_path_buf()
     } else {
         home_directory()
     };
-    let cost = CostEngine::new(scan_home).refresh().unwrap_or_default();
+    // Keep this diagnostic read-only even on a real root. Re-wrapping the
+    // exact path as demo suppresses only Desktop snapshot persistence.
+    let cost = CostEngine::new(DataRoot::at(root.shared()), scan_home)
+        .refresh()
+        .unwrap_or_default();
     println!(
         "\nlocal usage: {} files, {} requests, {} tokens, {} unpriced, truncated={}",
         cost.scanned_files,

@@ -29,8 +29,9 @@ window, on macOS, Windows, and Linux.
 - **Service status.** Reads cached native status immediately, then refreshes
   Claude and Cursor from their public Statuspage feeds without credentials.
 - **Local usage and cost.** Scans bounded Codex and Claude session JSONL files
-  into an in-memory priced-usage view. Unknown models stay visibly unpriced;
-  Desktop does not write a cost cache or ledger yet.
+  into a priced-usage view. A completed aggregate snapshot persists only under
+  `client/desktop/`; unknown models stay visibly unpriced and no shared ledger
+  or history is written.
 
 ## One product, two clients
 

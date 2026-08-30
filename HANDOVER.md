@@ -20,7 +20,7 @@ turned out to be wrong.
 | Tray | One line, fields and labels from the shared settings, remaining/used honoured |
 | Presentation settings | Read-only page; Overview honours display mode, provider visibility/order, and plan labels |
 | Service status | Shared-cache seed plus public live status for Claude and Cursor; no shared writes |
-| Usage / cost | Read-only local Codex + Claude scan with in-memory pricing; no shared ledger writes |
+| Usage / cost | Read-only local Codex + Claude scan with a Desktop-private aggregate snapshot; no shared ledger writes |
 | Sessions | Shared index when present (all harnesses, FTS); otherwise Codex + Claude log scan |
 | Transcripts | Codex and Claude Code JSONL, paged, tolerant of unknown lines |
 | Resume | Command built by the kit's shared builder, copied to the clipboard |

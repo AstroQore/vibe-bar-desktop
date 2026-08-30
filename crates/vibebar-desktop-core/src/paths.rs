@@ -53,6 +53,14 @@ impl DataRoot {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn at_non_demo(root: impl Into<PathBuf>) -> Self {
+        Self {
+            root: root.into(),
+            demo: false,
+        }
+    }
+
     fn platform_default() -> PathBuf {
         #[cfg(target_os = "windows")]
         {
@@ -106,6 +114,9 @@ impl DataRoot {
     }
     pub fn client_quotas_dir(&self) -> PathBuf {
         self.client_dir().join("quotas")
+    }
+    pub fn client_cost_snapshot_file(&self) -> PathBuf {
+        self.client_dir().join("cost-snapshot.json")
     }
 
     /// Guard used by every write path in this crate.
