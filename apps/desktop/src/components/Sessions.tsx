@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { SessionListing, SessionRow, TranscriptPage } from "../api";
+import type {
+  SessionListing,
+  SessionRow,
+  TranscriptCursor,
+  TranscriptPage,
+} from "../api";
 import { api, formatRelative } from "../api";
 
 const PAGE_SIZE = 40;
@@ -109,19 +114,37 @@ function Transcript({
 }) {
   const [page, setPage] = useState<TranscriptPage | null>(null);
   const [offset, setOffset] = useState(0);
+  const [cursors, setCursors] = useState<Record<string, TranscriptCursor>>({});
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
   const messageRefs = useRef(new Map<number, HTMLDivElement>());
+  const cursor = Object.values(cursors).reduce<TranscriptCursor | undefined>(
+    (best, candidate) =>
+      candidate.messageOffset <= offset &&
+      (!best || candidate.messageOffset > best.messageOffset)
+        ? candidate
+        : best,
+    undefined,
+  );
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
     api
-      .sessionTranscript(session.sessionRef, offset, PAGE_SIZE)
+      .sessionTranscript(session.sessionRef, offset, PAGE_SIZE, cursor)
       .then((result) => {
-        if (!cancelled) setPage(result);
+        if (!cancelled) {
+          setPage(result);
+          const nextCursor = result.nextCursor;
+          if (nextCursor) {
+            setCursors((current) => ({
+              ...current,
+              [String(nextCursor.messageOffset)]: nextCursor,
+            }));
+          }
+        }
       })
       .catch((cause) => {
         if (!cancelled) setError(String(cause));
@@ -168,9 +191,10 @@ function Transcript({
   const shown = page?.messages.length ?? 0;
   const hasMore = page
     ? page.truncated
-      ? shown === PAGE_SIZE
+      ? page.nextCursor !== undefined
       : total !== undefined && offset + shown < total
     : false;
+  const nextOffset = shown > 0 ? offset + shown : page?.nextCursor?.messageOffset ?? offset;
 
   return (
     <>
@@ -278,8 +302,8 @@ function Transcript({
               Previous
             </button>
             <button
-              disabled={!hasMore}
-              onClick={() => setOffset(offset + PAGE_SIZE)}
+              disabled={!hasMore || nextOffset <= offset}
+              onClick={() => setOffset(nextOffset)}
             >
               Next
             </button>

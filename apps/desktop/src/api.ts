@@ -67,12 +67,19 @@ export interface TranscriptMessage {
   timestamp?: string;
 }
 
+export interface TranscriptCursor {
+  byteOffset: number;
+  messageOffset: number;
+  skipToNewline?: boolean;
+}
+
 export interface TranscriptPage {
   messages: TranscriptMessage[];
   /** Omitted when a safety limit truncates a very large transcript scan. */
   totalMessages?: number;
   offset: number;
   truncated: boolean;
+  nextCursor?: TranscriptCursor;
 }
 
 export interface NativeAppPresence {
@@ -189,11 +196,13 @@ export const api = {
     sessionRef: string,
     offset = 0,
     limit = 50,
+    cursor?: TranscriptCursor,
   ) =>
     invoke<TranscriptPage>("session_transcript", {
       sessionRef,
       offset,
       limit,
+      cursor,
     }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),

@@ -11,7 +11,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agent-session-core"
 version = "0.1.0"
-source = "git+https://github.com/AstroQore/agent-session-kit?rev=378122f11aed0d62f9113da251e6a11c6db759f7#378122f11aed0d62f9113da251e6a11c6db759f7"
+source = "git+https://github.com/AstroQore/agent-session-kit?rev=eb36335dc9d9e259af118def59b07479ede57eab#eb36335dc9d9e259af118def59b07479ede57eab"
 dependencies = [
  "rusqlite",
  "serde",
