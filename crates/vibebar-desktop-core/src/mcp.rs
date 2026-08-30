@@ -3,6 +3,7 @@
 use std::io::{BufRead, Write};
 use std::path::Path;
 
+use agent_session_core::SessionProvider;
 use serde_json::{json, Map, Value};
 
 use crate::client_store::ClientStore;
@@ -126,20 +127,42 @@ impl ReadonlyMcp {
                 serde_json::to_value(view).map_err(|_| Problem::internal())?
             }
             "sessions.list" => {
-                let arguments = object_params(arguments, &["limit"])?;
+                let arguments = object_params(
+                    arguments,
+                    &["providers", "harnesses", "since", "offset", "limit"],
+                )?;
+                let providers = parse_session_providers(arguments.get("providers"))?;
+                let harnesses = parse_harnesses(arguments.get("harnesses"))?;
+                let since = parse_since(arguments.get("since"))?;
+                let offset = parse_offset(arguments.get("offset"), 0)?;
                 let limit = parse_limit(arguments.get("limit"), 50, 100)?;
-                serde_json::to_value(self.sessions.list(limit)).map_err(|_| Problem::internal())?
+                serde_json::to_value(self.sessions.list_filtered(
+                    providers.as_deref(),
+                    harnesses.as_deref(),
+                    since,
+                    offset,
+                    limit,
+                ))
+                .map_err(|_| Problem::internal())?
             }
             "sessions.search" => {
-                let arguments = object_params(arguments, &["query", "limit"])?;
+                let arguments =
+                    object_params(arguments, &["query", "providers", "harnesses", "limit"])?;
                 let query = arguments
                     .get("query")
                     .and_then(Value::as_str)
                     .filter(|query| !query.trim().is_empty())
                     .ok_or_else(Problem::invalid_params)?;
+                let providers = parse_session_providers(arguments.get("providers"))?;
+                let harnesses = parse_harnesses(arguments.get("harnesses"))?;
                 let limit = parse_limit(arguments.get("limit"), 20, 50)?;
-                serde_json::to_value(self.sessions.search(query, limit))
-                    .map_err(|_| Problem::internal())?
+                serde_json::to_value(self.sessions.search_filtered(
+                    query,
+                    providers.as_deref(),
+                    harnesses.as_deref(),
+                    limit,
+                ))
+                .map_err(|_| Problem::internal())?
             }
             "status.get" => {
                 let arguments = object_params(arguments, &["tools"])?;
@@ -214,13 +237,27 @@ fn tool_catalog() -> Vec<Value> {
         tool(
             "sessions.list",
             "List local agent sessions",
-            schema(&[("limit", integer_schema(1, 100))], &[]),
+            schema(
+                &[
+                    ("providers", session_providers_schema()),
+                    ("harnesses", harnesses_schema()),
+                    ("since", string_schema()),
+                    ("offset", nonnegative_integer_schema()),
+                    ("limit", integer_schema(1, 100)),
+                ],
+                &[],
+            ),
         ),
         tool(
             "sessions.search",
             "Search local agent sessions",
             schema(
-                &[("query", string_schema()), ("limit", integer_schema(1, 50))],
+                &[
+                    ("query", string_schema()),
+                    ("providers", session_providers_schema()),
+                    ("harnesses", harnesses_schema()),
+                    ("limit", integer_schema(1, 50)),
+                ],
                 &["query"],
             ),
         ),
@@ -322,6 +359,12 @@ fn schema(properties: &[(&str, Value)], required: &[&str]) -> Value {
 fn tools_schema() -> Value {
     json!({"type": "array", "items": {"type": "string", "enum": ToolType::ALL.map(|tool| tool.raw_value())}})
 }
+fn session_providers_schema() -> Value {
+    json!({"type": "array", "items": {"type": "string", "enum": SessionProvider::ALL.map(|provider| provider.raw_value())}})
+}
+fn harnesses_schema() -> Value {
+    json!({"type": "array", "items": {"type": "string", "enum": SESSION_HARNESSES.map(|(raw, _)| raw)}})
+}
 fn string_schema() -> Value {
     json!({"type": "string"})
 }
@@ -329,7 +372,11 @@ fn integer_schema(minimum: usize, maximum: usize) -> Value {
     json!({"type": "integer", "minimum": minimum, "maximum": maximum})
 }
 fn pricing_provider_schema() -> Value {
-    json!({"type": "string", "enum": ["codex", "claude"]})
+    json!({"type": "string", "enum": ["codex", "claude", "gemini"]})
+}
+
+fn nonnegative_integer_schema() -> Value {
+    json!({"type": "integer", "minimum": 0})
 }
 
 fn object_params<'a>(
@@ -383,19 +430,85 @@ fn parse_pricing_provider(value: Option<&Value>) -> Result<Option<ToolType>, Pro
     match value.as_str() {
         Some("codex") => Ok(Some(ToolType::Codex)),
         Some("claude") => Ok(Some(ToolType::Claude)),
+        Some("gemini") => Ok(Some(ToolType::Gemini)),
         _ => Err(Problem::invalid_params()),
     }
+}
+
+fn parse_session_providers(value: Option<&Value>) -> Result<Option<Vec<SessionProvider>>, Problem> {
+    let Some(value) = value else { return Ok(None) };
+    let array = value.as_array().ok_or_else(Problem::invalid_params)?;
+    array
+        .iter()
+        .map(|raw| {
+            raw.as_str()
+                .and_then(SessionProvider::from_raw)
+                .ok_or_else(Problem::invalid_params)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+fn parse_harnesses(value: Option<&Value>) -> Result<Option<Vec<String>>, Problem> {
+    let Some(value) = value else { return Ok(None) };
+    let array = value.as_array().ok_or_else(Problem::invalid_params)?;
+    array
+        .iter()
+        .map(|raw| {
+            let raw = raw.as_str().ok_or_else(Problem::invalid_params)?;
+            SESSION_HARNESSES
+                .iter()
+                .find_map(|(candidate, display)| {
+                    (*candidate == raw).then(|| (*display).to_string())
+                })
+                .ok_or_else(Problem::invalid_params)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+fn parse_since(value: Option<&Value>) -> Result<Option<i64>, Problem> {
+    let Some(value) = value else { return Ok(None) };
+    let raw = value.as_str().ok_or_else(Problem::invalid_params)?.trim();
+    if raw.is_empty() {
+        return Err(Problem::invalid_params());
+    }
+    chrono::DateTime::parse_from_rfc3339(raw)
+        .map(|date| Some(date.timestamp()))
+        .map_err(|_| Problem::invalid_params())
 }
 fn parse_limit(value: Option<&Value>, default: usize, maximum: usize) -> Result<usize, Problem> {
     let Some(value) = value else {
         return Ok(default);
     };
-    let limit = value.as_u64().ok_or_else(Problem::invalid_params)? as usize;
+    let limit = value
+        .as_u64()
+        .and_then(|limit| usize::try_from(limit).ok())
+        .ok_or_else(Problem::invalid_params)?;
     if limit == 0 || limit > maximum {
         return Err(Problem::invalid_params());
     }
     Ok(limit)
 }
+fn parse_offset(value: Option<&Value>, default: usize) -> Result<usize, Problem> {
+    let Some(value) = value else {
+        return Ok(default);
+    };
+    value
+        .as_u64()
+        .and_then(|offset| usize::try_from(offset).ok())
+        .ok_or_else(Problem::invalid_params)
+}
+
+const SESSION_HARNESSES: [(&str, &str); 9] = [
+    ("codex", "Codex"),
+    ("chatgptWork", "ChatGPT Work"),
+    ("claudeCode", "Claude Code"),
+    ("claudeCowork", "Claude Cowork"),
+    ("geminiCLI", "Gemini CLI"),
+    ("antigravity", "AntiGravity"),
+    ("grokBuild", "Grok Build"),
+    ("cursor", "Cursor"),
+    ("grokBot", "Grok Bot"),
+];
 
 struct Problem {
     code: i64,
@@ -451,6 +564,34 @@ mod tests {
         ReadonlyMcp::with_home(root, temp.path())
     }
 
+    fn tool_payload(server: &ReadonlyMcp, name: &str, arguments: Value) -> Value {
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments}
+        });
+        let reply = server.handle_line(&request.to_string()).unwrap();
+        let response: Value = serde_json::from_str(&reply).unwrap();
+        let text = response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("a successful text tool result");
+        serde_json::from_str(text).unwrap()
+    }
+
+    fn tool_error_code(server: &ReadonlyMcp, name: &str, arguments: Value) -> i64 {
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments}
+        });
+        let reply = server.handle_line(&request.to_string()).unwrap();
+        serde_json::from_str::<Value>(&reply).unwrap()["error"]["code"]
+            .as_i64()
+            .unwrap()
+    }
+
     #[test]
     fn catalog_is_read_only_and_schemas_fail_closed() {
         let temp = tempfile::tempdir().unwrap();
@@ -481,6 +622,108 @@ mod tests {
             serde_json::from_str::<Value>(&rejected).unwrap()["error"]["code"],
             -32602
         );
+    }
+
+    #[test]
+    fn session_catalog_matches_the_native_supported_filters() {
+        let temp = tempfile::tempdir().unwrap();
+        let server = server(&temp);
+        let reply = server
+            .handle_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
+            .unwrap();
+        let value: Value = serde_json::from_str(&reply).unwrap();
+        let tools = value["result"]["tools"].as_array().unwrap();
+        let list = tools
+            .iter()
+            .find(|tool| tool["name"] == "sessions.list")
+            .unwrap();
+        let search = tools
+            .iter()
+            .find(|tool| tool["name"] == "sessions.search")
+            .unwrap();
+        let list_properties = list["inputSchema"]["properties"].as_object().unwrap();
+        for name in ["providers", "harnesses", "since", "offset", "limit"] {
+            assert!(list_properties.contains_key(name));
+        }
+        assert_eq!(list_properties["offset"]["minimum"], 0);
+        assert!(list_properties["offset"].get("maximum").is_none());
+        let harnesses = list_properties["harnesses"]["items"]["enum"]
+            .as_array()
+            .unwrap();
+        assert!(harnesses.contains(&json!("chatgptWork")));
+        assert!(!harnesses.contains(&json!("ChatGPT Work")));
+        let search_properties = search["inputSchema"]["properties"].as_object().unwrap();
+        assert!(search_properties.contains_key("providers"));
+        assert!(search_properties.contains_key("harnesses"));
+        assert!(!search_properties.contains_key("since"));
+        assert!(!search_properties.contains_key("offset"));
+    }
+
+    #[test]
+    fn session_tools_apply_filters_paging_and_dates_without_exposing_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let server = server(&temp);
+
+        let codex = tool_payload(
+            &server,
+            "sessions.list",
+            json!({"providers": ["codex"], "harnesses": ["codex"], "since": "1970-01-01T00:00:00Z"}),
+        );
+        assert_eq!(codex["rows"].as_array().unwrap().len(), 1);
+        assert!(codex["rows"][0].get("sourcePath").is_none());
+        assert!(
+            tool_payload(&server, "sessions.list", json!({"providers": ["claude"]}))["rows"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            tool_payload(&server, "sessions.list", json!({"offset": 1_000_001}))["rows"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(tool_payload(
+            &server,
+            "sessions.list",
+            json!({"since": "2999-01-01T00:00:00Z"}),
+        )["rows"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+
+        let search = tool_payload(
+            &server,
+            "sessions.search",
+            json!({"query": "0199aaaa", "providers": ["codex"], "harnesses": ["codex"]}),
+        );
+        assert_eq!(search["rows"].as_array().unwrap().len(), 1);
+        assert!(tool_payload(
+            &server,
+            "sessions.search",
+            json!({"query": "0199aaaa", "harnesses": ["chatgptWork"]}),
+        )["rows"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn unsupported_or_malformed_session_filters_are_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let server = server(&temp);
+        for (name, arguments) in [
+            ("sessions.list", json!({"since": "2026-01-01"})),
+            ("sessions.list", json!({"providers": ["future"]})),
+            ("sessions.list", json!({"harnesses": ["Claude Code"]})),
+            ("sessions.list", json!({"offset": -1})),
+            (
+                "sessions.search",
+                json!({"query": "needle", "since": "2026-01-01"}),
+            ),
+        ] {
+            assert_eq!(tool_error_code(&server, name, arguments), -32602);
+        }
     }
 
     #[test]

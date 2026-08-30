@@ -112,6 +112,8 @@ JSON-RPC stdin/stdout. This mode never refreshes providers, scans usage, writes
 configuration, or connects to the native app. `status.get` returns only
 Desktop's fresh private last-good snapshot; `pricing.effective` returns the
 static Codex, Claude, and Gemini table used by the local cost scanner.
+Session calls accept the native provider and harness filters; listing also
+supports RFC3339 `since`, `offset`, and bounded `limit` pagination.
 
 Verification:
 
