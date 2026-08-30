@@ -216,11 +216,8 @@ fn create_temp_file(
 
 #[cfg(unix)]
 fn restrict_directory(directory: &Dir) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    directory
-        .try_clone()?
-        .into_std_file()
-        .set_permissions(std::fs::Permissions::from_mode(0o700))
+    use cap_std::fs::PermissionsExt;
+    directory.set_permissions(Path::new("."), cap_std::fs::Permissions::from_mode(0o700))
 }
 
 #[cfg(unix)]
@@ -239,16 +236,16 @@ fn restrict_file(_file: &cap_std::fs::File) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
 fn sync_directory(directory: &Dir) -> std::io::Result<()> {
     directory.try_clone()?.into_std_file().sync_all()
 }
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "macos"))]
 fn sync_directory(_directory: &Dir) -> std::io::Result<()> {
-    // Windows has no portable std equivalent of fsyncing a directory handle;
-    // the atomic rename is still capability-scoped and crash consistency is
-    // provided by the filesystem's replace semantics.
+    // cap-std may represent directories with O_PATH on Linux, which cannot be
+    // fsynced, and Windows has no portable std directory-sync equivalent. The
+    // atomic rename remains capability-scoped; this cache is reconstructible.
     Ok(())
 }
 
