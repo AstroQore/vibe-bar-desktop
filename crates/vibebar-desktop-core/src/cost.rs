@@ -20,6 +20,7 @@ use crate::model::ToolType;
 
 const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 1024 * 1024;
+const MAX_RAW_EVENTS: usize = 400_000;
 const MAX_FILES: usize = 20_000;
 const MAX_FILES_PER_PROVIDER: usize = MAX_FILES / 2;
 const MAX_DISCOVERED_PER_PROVIDER: usize = MAX_FILES_PER_PROVIDER * 10;
@@ -130,10 +131,24 @@ impl CostEngine {
         let mut malformed_lines = 0;
         let mut scanned_files = 0;
         for source in &files {
-            match scan_file(&home, &self.home, source, &mut events, &mut malformed_lines) {
+            match scan_file(
+                &home,
+                &self.home,
+                source,
+                &mut events,
+                &mut malformed_lines,
+                MAX_RAW_EVENTS,
+            ) {
                 ScanFileResult::Scanned => scanned_files += 1,
                 ScanFileResult::Skipped | ScanFileResult::TooLarge => truncated = true,
+                ScanFileResult::EventLimit => {
+                    truncated = true;
+                    break;
+                }
             }
+        }
+        if malformed_lines > 0 {
+            truncated = true;
         }
         let events = deduplicate_claude_events(events);
 
@@ -265,6 +280,7 @@ fn collect_jsonl(
         }
     };
     if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+        budget.truncated = true;
         return;
     }
     let entries = match fs::read_dir(root) {
@@ -328,6 +344,7 @@ enum ScanFileResult {
     Scanned,
     Skipped,
     TooLarge,
+    EventLimit,
 }
 
 fn scan_file(
@@ -336,6 +353,7 @@ fn scan_file(
     source: &SourceFile,
     events: &mut Vec<UsageEvent>,
     malformed_lines: &mut u64,
+    event_limit: usize,
 ) -> ScanFileResult {
     let Ok(metadata) = fs::symlink_metadata(&source.path) else {
         return ScanFileResult::Skipped;
@@ -358,12 +376,6 @@ fn scan_file(
     if open_metadata.len() > MAX_FILE_BYTES {
         return ScanFileResult::TooLarge;
     }
-    let fallback_time = open_metadata
-        .modified()
-        .ok()
-        .map(|modified| modified.into_std())
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| duration.as_secs_f64());
     let mut bytes = Vec::with_capacity(open_metadata.len() as usize);
     if file
         .take(MAX_FILE_BYTES + 1)
@@ -377,8 +389,11 @@ fn scan_file(
     }
 
     let mut codex_previous = (0_u64, 0_u64, 0_u64);
-    let mut codex_model = "gpt-5".to_string();
+    let mut codex_model = "codex-unknown".to_string();
     for line in bytes.split(|byte| *byte == b'\n') {
+        if events.len() >= event_limit {
+            return ScanFileResult::EventLimit;
+        }
         if line.is_empty() || line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
@@ -393,14 +408,16 @@ fn scan_file(
         match source.tool {
             ToolType::Codex => parse_codex(
                 &value,
-                fallback_time,
                 &mut codex_model,
                 &mut codex_previous,
                 &source.path,
                 events,
             ),
-            ToolType::Claude => parse_claude(&value, fallback_time, &source.path, events),
+            ToolType::Claude => parse_claude(&value, &source.path, events),
             _ => {}
+        }
+        if events.len() >= event_limit {
+            return ScanFileResult::EventLimit;
         }
     }
     ScanFileResult::Scanned
@@ -435,7 +452,6 @@ fn open_source_file(
 
 fn parse_codex(
     value: &Value,
-    fallback_time: Option<f64>,
     current_model: &mut String,
     previous: &mut (u64, u64, u64),
     source_path: &Path,
@@ -502,7 +518,7 @@ fn parse_codex(
     if input == 0 && cached == 0 && output == 0 {
         return;
     }
-    let Some(date) = timestamp(value).or(fallback_time) else {
+    let Some(date) = timestamp(value) else {
         return;
     };
     events.push(UsageEvent {
@@ -538,12 +554,7 @@ fn explicit_service_tier(value: &Value, payload: &Value, info: &Value) -> Option
         .map(str::to_string)
 }
 
-fn parse_claude(
-    value: &Value,
-    fallback_time: Option<f64>,
-    source_path: &Path,
-    events: &mut Vec<UsageEvent>,
-) {
+fn parse_claude(value: &Value, source_path: &Path, events: &mut Vec<UsageEvent>) {
     if value.get("type").and_then(Value::as_str) != Some("assistant") {
         return;
     }
@@ -565,7 +576,7 @@ fn parse_claude(
     {
         return;
     }
-    let Some(date) = timestamp(value).or(fallback_time) else {
+    let Some(date) = timestamp(value) else {
         return;
     };
     events.push(UsageEvent {
@@ -1118,6 +1129,58 @@ mod tests {
     }
 
     #[test]
+    fn codex_without_an_explicit_model_stays_unpriced() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        write_jsonl(
+            &home.path().join(".codex/sessions/session.jsonl"),
+            &[serde_json::json!({
+                "type":"event_msg","timestamp":rfc3339(scanned_at-1.0),
+                "payload":{"type":"token_count","info":{"total_token_usage":{
+                    "input_tokens":7,"output_tokens":3
+                }}}
+            })],
+        );
+
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert_eq!(view.all_time.requests, 1);
+        assert_eq!(view.all_time.tokens, 10);
+        assert_eq!(view.unpriced_events, 1);
+        assert_eq!(view.models[0].model, "codex-unknown");
+        assert_eq!(view.models[0].priced_cost_micros, 0);
+    }
+
+    #[test]
+    fn codex_and_claude_skip_missing_or_invalid_record_timestamps() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        write_jsonl(
+            &home.path().join(".codex/sessions/session.jsonl"),
+            &[
+                serde_json::json!({"type":"turn_context","payload":{"model":"gpt-5"}}),
+                serde_json::json!({"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":"invalid","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-1.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30}}}}),
+            ],
+        );
+        write_jsonl(
+            &home.path().join(".claude/projects/project/session.jsonl"),
+            &[
+                serde_json::json!({"type":"assistant","message":{"model":"claude-haiku-4-5","usage":{"input_tokens":100}}}),
+                serde_json::json!({"type":"assistant","timestamp":"invalid","message":{"model":"claude-haiku-4-5","usage":{"output_tokens":100}}}),
+                serde_json::json!({"type":"assistant","timestamp":rfc3339(scanned_at-1.0),"message":{"model":"claude-haiku-4-5","usage":{"input_tokens":2}}}),
+            ],
+        );
+
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert_eq!(view.scanned_files, 2);
+        assert_eq!(view.all_time.requests, 2);
+        assert_eq!(view.all_time.tokens, 12);
+        assert_eq!(view.malformed_lines, 0);
+        assert!(!view.truncated);
+    }
+
+    #[test]
     fn scans_claude_cache_fast_tier_and_deduplicates_keyed_rows() {
         let home = tempfile::tempdir().unwrap();
         let scanned_at = now_unix();
@@ -1168,7 +1231,6 @@ mod tests {
         let mut events = Vec::new();
         parse_claude(
             &value,
-            None,
             Path::new("/Users/example/.claude/projects/session.jsonl"),
             &mut events,
         );
@@ -1242,6 +1304,7 @@ mod tests {
         assert_eq!(view.all_time.tokens, 5);
         assert_eq!(view.unpriced_events, 1);
         assert_eq!(view.malformed_lines, 2);
+        assert!(view.truncated);
     }
 
     #[test]
@@ -1478,6 +1541,22 @@ mod tests {
         assert!(truncated);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_discovery_root_is_truncated() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join(".codex")).unwrap();
+        symlink(outside.path(), home.path().join(".codex/sessions")).unwrap();
+
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
+        assert!(files.is_empty());
+        assert!(truncated);
+    }
+
     #[test]
     fn oversized_sparse_file_is_truncated_and_not_counted_as_scanned() {
         let home = tempfile::tempdir().unwrap();
@@ -1523,9 +1602,44 @@ mod tests {
             },
             &mut events,
             &mut malformed_lines,
+            MAX_RAW_EVENTS,
         );
 
         assert_eq!(result, ScanFileResult::Skipped);
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn raw_event_limit_stops_inside_a_single_file() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        let path = home.path().join(".claude/projects/project/session.jsonl");
+        write_jsonl(
+            &path,
+            &[
+                serde_json::json!({"type":"assistant","timestamp":rfc3339(scanned_at-3.0),"message":{"model":"claude-haiku-4-5","usage":{"input_tokens":1}}}),
+                serde_json::json!({"type":"assistant","timestamp":rfc3339(scanned_at-2.0),"message":{"model":"claude-haiku-4-5","usage":{"input_tokens":2}}}),
+                serde_json::json!({"type":"assistant","timestamp":rfc3339(scanned_at-1.0),"message":{"model":"claude-haiku-4-5","usage":{"input_tokens":4}}}),
+            ],
+        );
+        let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
+        let mut events = Vec::new();
+        let mut malformed_lines = 0;
+
+        let result = scan_file(
+            &directory,
+            home.path(),
+            &SourceFile {
+                tool: ToolType::Claude,
+                path,
+            },
+            &mut events,
+            &mut malformed_lines,
+            2,
+        );
+
+        assert_eq!(result, ScanFileResult::EventLimit);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events.iter().map(|event| event.input).sum::<u64>(), 3);
     }
 }
