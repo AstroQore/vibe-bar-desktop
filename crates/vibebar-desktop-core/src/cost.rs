@@ -1142,7 +1142,9 @@ mod tests {
             })],
         );
 
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.all_time.requests, 1);
         assert_eq!(view.all_time.tokens, 10);
         assert_eq!(view.unpriced_events, 1);
@@ -1172,7 +1174,9 @@ mod tests {
             ],
         );
 
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.scanned_files, 2);
         assert_eq!(view.all_time.requests, 2);
         assert_eq!(view.all_time.tokens, 12);
