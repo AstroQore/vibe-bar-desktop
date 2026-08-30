@@ -57,10 +57,10 @@ subscription cycle inference.
 polling, the MCP server (12 tools), remote probe sync.
 
 Desktop has a deliberately smaller read-only MCP stdio entry point:
-`quota.get`, `sessions.list`, and `sessions.search`. Do not add process-local
-cost or status snapshots until Desktop has a durable, read-only snapshot
-contract; a fresh stdio process must not mistake an empty in-memory cache for
-a real zero observation.
+`quota.get`, `sessions.list`, `sessions.search`, and `pricing.effective`. Do
+not add process-local cost or status snapshots until Desktop has a durable,
+read-only snapshot contract; a fresh stdio process must not mistake an empty
+in-memory cache for a real zero observation.
 
 **Platform.** Sparkle updates, launch at login, the Control Center menu-bar
 watchdog, AppleScript terminal handoff, Liquid Glass.

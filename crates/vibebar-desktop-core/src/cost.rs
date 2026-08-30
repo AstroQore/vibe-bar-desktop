@@ -56,6 +56,24 @@ pub struct ModelCost {
     pub unpriced_events: u64,
 }
 
+/// One public row from the exact static table used by Desktop's cost scan.
+/// Rates use the same unit as the native `pricing.effective` surface: USD per
+/// one million tokens.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveModelPricingRow {
+    pub provider: ToolType,
+    pub company: &'static str,
+    pub sub_provider: &'static str,
+    pub model: &'static str,
+    pub display_label: Option<&'static str>,
+    pub input_per_million: f64,
+    pub output_per_million: f64,
+    pub cache_read_per_million: Option<f64>,
+    pub cache_write_per_million: Option<f64>,
+    pub threshold_tokens: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CostView {
@@ -697,6 +715,130 @@ impl ModelPricing {
             fast_multiplier: None,
         }
     }
+
+    const fn above_threshold(
+        mut self,
+        threshold: u64,
+        input: f64,
+        output: f64,
+        cache_read: f64,
+        cache_creation: f64,
+    ) -> Self {
+        self.threshold = Some(threshold);
+        self.input_above = Some(input);
+        self.output_above = Some(output);
+        self.cache_read_above = Some(cache_read);
+        self.cache_creation_above = Some(cache_creation);
+        self
+    }
+
+    const fn fast(mut self, multiplier: f64) -> Self {
+        self.fast_multiplier = Some(multiplier);
+        self
+    }
+}
+
+type PricingEntry = (&'static str, ModelPricing);
+
+const CODEX_STANDARD: ModelPricing = ModelPricing::simple(1.25, 10.0, Some(0.125));
+const CODEX_MINI: ModelPricing = ModelPricing::simple(0.25, 2.0, Some(0.025));
+const CODEX_52: ModelPricing = ModelPricing::simple(1.75, 14.0, Some(0.175));
+const CODEX_PRO: ModelPricing = ModelPricing::simple(30.0, 180.0, None);
+const CLAUDE_HAIKU: ModelPricing = ModelPricing::claude(1.0, 5.0, 1.25, 0.1);
+const CLAUDE_OPUS: ModelPricing = ModelPricing::claude(5.0, 25.0, 6.25, 0.5);
+const CLAUDE_SONNET: ModelPricing = ModelPricing::claude(3.0, 15.0, 3.75, 0.3);
+const CLAUDE_LEGACY_OPUS: ModelPricing = ModelPricing::claude(15.0, 75.0, 18.75, 1.5);
+
+const CODEX_PRICES: &[PricingEntry] = &[
+    ("gpt-5", CODEX_STANDARD),
+    ("gpt-5-codex", CODEX_STANDARD),
+    ("gpt-5-mini", CODEX_MINI),
+    ("gpt-5-nano", ModelPricing::simple(0.05, 0.4, Some(0.005))),
+    ("gpt-5-pro", ModelPricing::simple(15.0, 120.0, None)),
+    ("gpt-5.1", CODEX_STANDARD),
+    ("gpt-5.1-codex", CODEX_STANDARD),
+    ("gpt-5.1-codex-max", CODEX_STANDARD),
+    ("gpt-5.1-codex-mini", CODEX_MINI),
+    ("gpt-5.2", CODEX_52),
+    ("gpt-5.2-codex", CODEX_52),
+    ("gpt-5.2-pro", ModelPricing::simple(21.0, 168.0, None)),
+    ("gpt-5.3-codex", CODEX_52.fast(2.0)),
+    (
+        "gpt-5.3-codex-spark",
+        ModelPricing::simple(0.0, 0.0, Some(0.0)),
+    ),
+    (
+        "gpt-5.4",
+        ModelPricing::simple(2.5, 15.0, Some(0.25)).fast(2.0),
+    ),
+    ("gpt-5.4-mini", ModelPricing::simple(0.75, 4.5, Some(0.075))),
+    ("gpt-5.4-nano", ModelPricing::simple(0.2, 1.25, Some(0.02))),
+    ("gpt-5.4-pro", CODEX_PRO),
+    (
+        "gpt-5.5",
+        ModelPricing::simple(5.0, 30.0, Some(0.5)).fast(2.5),
+    ),
+    ("gpt-5.5-pro", CODEX_PRO),
+];
+
+const CLAUDE_PRICES: &[PricingEntry] = &[
+    ("claude-haiku-4-5", CLAUDE_HAIKU),
+    ("claude-haiku-4-5-20251001", CLAUDE_HAIKU),
+    ("claude-opus-4-1", CLAUDE_LEGACY_OPUS),
+    ("claude-opus-4-20250514", CLAUDE_LEGACY_OPUS),
+    ("claude-opus-4-5", CLAUDE_OPUS),
+    ("claude-opus-4-5-20251101", CLAUDE_OPUS),
+    ("claude-opus-4-6", CLAUDE_OPUS.fast(6.0)),
+    ("claude-opus-4-6-20260205", CLAUDE_OPUS.fast(6.0)),
+    ("claude-opus-4-7", CLAUDE_OPUS.fast(6.0)),
+    ("claude-opus-4-8", CLAUDE_OPUS.fast(2.0)),
+    (
+        "claude-sonnet-4-20250514",
+        CLAUDE_SONNET.above_threshold(200_000, 6.0, 22.5, 0.6, 7.5),
+    ),
+    (
+        "claude-sonnet-4-5",
+        CLAUDE_SONNET.above_threshold(200_000, 6.0, 22.5, 0.6, 7.5),
+    ),
+    (
+        "claude-sonnet-4-5-20250929",
+        CLAUDE_SONNET.above_threshold(200_000, 6.0, 22.5, 0.6, 7.5),
+    ),
+    ("claude-sonnet-4-6", CLAUDE_SONNET),
+];
+
+/// Desktop has no pricing cache, remote merge, or user overrides yet. This
+/// therefore exposes only the public static rows that `priced_cost_micros`
+/// can actually select.
+pub fn effective_model_prices() -> Vec<EffectiveModelPricingRow> {
+    CODEX_PRICES
+        .iter()
+        .map(|entry| public_pricing_row(ToolType::Codex, entry))
+        .chain(
+            CLAUDE_PRICES
+                .iter()
+                .map(|entry| public_pricing_row(ToolType::Claude, entry)),
+        )
+        .collect()
+}
+
+fn public_pricing_row(
+    provider: ToolType,
+    (model, pricing): &PricingEntry,
+) -> EffectiveModelPricingRow {
+    let hierarchy = provider.hierarchy();
+    EffectiveModelPricingRow {
+        provider,
+        company: hierarchy.vendor,
+        sub_provider: hierarchy.product,
+        model,
+        display_label: (*model == "gpt-5.3-codex-spark").then_some("Research Preview"),
+        input_per_million: pricing.input,
+        output_per_million: pricing.output,
+        cache_read_per_million: pricing.cache_read,
+        cache_write_per_million: pricing.cache_creation,
+        threshold_tokens: pricing.threshold,
+    }
 }
 
 fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
@@ -756,30 +898,10 @@ fn codex_pricing(raw: &str) -> Option<ModelPricing> {
 }
 
 fn codex_pricing_exact(model: &str) -> Option<ModelPricing> {
-    let mut pricing = match model {
-        "gpt-5" | "gpt-5-codex" | "gpt-5.1" | "gpt-5.1-codex" | "gpt-5.1-codex-max" => {
-            ModelPricing::simple(1.25, 10.0, Some(0.125))
-        }
-        "gpt-5-mini" | "gpt-5.1-codex-mini" => ModelPricing::simple(0.25, 2.0, Some(0.025)),
-        "gpt-5-nano" => ModelPricing::simple(0.05, 0.4, Some(0.005)),
-        "gpt-5-pro" => ModelPricing::simple(15.0, 120.0, None),
-        "gpt-5.2" | "gpt-5.2-codex" => ModelPricing::simple(1.75, 14.0, Some(0.175)),
-        "gpt-5.2-pro" => ModelPricing::simple(21.0, 168.0, None),
-        "gpt-5.3-codex" => ModelPricing::simple(1.75, 14.0, Some(0.175)),
-        "gpt-5.3-codex-spark" => ModelPricing::simple(0.0, 0.0, Some(0.0)),
-        "gpt-5.4" => ModelPricing::simple(2.5, 15.0, Some(0.25)),
-        "gpt-5.4-mini" => ModelPricing::simple(0.75, 4.5, Some(0.075)),
-        "gpt-5.4-nano" => ModelPricing::simple(0.2, 1.25, Some(0.02)),
-        "gpt-5.4-pro" | "gpt-5.5-pro" => ModelPricing::simple(30.0, 180.0, None),
-        "gpt-5.5" => ModelPricing::simple(5.0, 30.0, Some(0.5)),
-        _ => return None,
-    };
-    pricing.fast_multiplier = match model {
-        "gpt-5.3-codex" | "gpt-5.4" => Some(2.0),
-        "gpt-5.5" => Some(2.5),
-        _ => None,
-    };
-    Some(pricing)
+    CODEX_PRICES
+        .iter()
+        .find(|(candidate, _)| *candidate == model)
+        .map(|(_, pricing)| *pricing)
 }
 
 fn strip_codex_date_suffix(model: &str) -> Option<&str> {
@@ -801,37 +923,10 @@ fn strip_codex_date_suffix(model: &str) -> Option<&str> {
 
 fn claude_pricing(raw: &str) -> Option<ModelPricing> {
     let model = normalize_claude_model(raw);
-    let mut pricing = match model.as_str() {
-        "claude-haiku-4-5" | "claude-haiku-4-5-20251001" => {
-            ModelPricing::claude(1.0, 5.0, 1.25, 0.1)
-        }
-        "claude-opus-4-5" | "claude-opus-4-5-20251101" => {
-            ModelPricing::claude(5.0, 25.0, 6.25, 0.5)
-        }
-        "claude-opus-4-6" | "claude-opus-4-6-20260205" | "claude-opus-4-7" | "claude-opus-4-8" => {
-            ModelPricing::claude(5.0, 25.0, 6.25, 0.5)
-        }
-        "claude-sonnet-4-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-20250514" => {
-            let mut pricing = ModelPricing::claude(3.0, 15.0, 3.75, 0.3);
-            pricing.threshold = Some(200_000);
-            pricing.input_above = Some(6.0);
-            pricing.output_above = Some(22.5);
-            pricing.cache_creation_above = Some(7.5);
-            pricing.cache_read_above = Some(0.6);
-            pricing
-        }
-        "claude-sonnet-4-6" => ModelPricing::claude(3.0, 15.0, 3.75, 0.3),
-        "claude-opus-4-20250514" | "claude-opus-4-1" => {
-            ModelPricing::claude(15.0, 75.0, 18.75, 1.5)
-        }
-        _ => return None,
-    };
-    pricing.fast_multiplier = match model.as_str() {
-        "claude-opus-4-6" | "claude-opus-4-6-20260205" | "claude-opus-4-7" => Some(6.0),
-        "claude-opus-4-8" => Some(2.0),
-        _ => None,
-    };
-    Some(pricing)
+    CLAUDE_PRICES
+        .iter()
+        .find(|(candidate, _)| *candidate == model)
+        .map(|(_, pricing)| *pricing)
 }
 
 fn normalize_claude_model(raw: &str) -> String {
