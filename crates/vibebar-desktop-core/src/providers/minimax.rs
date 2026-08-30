@@ -211,7 +211,8 @@ fn model_buckets(rows: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> {
     for (index, row) in rows.iter().enumerate() {
         let total = int(row.get("current_interval_total_count")).unwrap_or(0);
         let used = int(row.get("current_interval_usage_count")).filter(|used| *used >= 0);
-        let remaining = number(row.get("current_interval_remaining_percent"));
+        let remaining = number(row.get("current_interval_remaining_percent"))
+            .filter(|percent| percent.is_finite() && (0.0..=100.0).contains(percent));
         if remaining.is_none() && (total <= 0 || used.is_none()) {
             continue;
         }
@@ -267,7 +268,8 @@ fn weekly_bucket(row: &Value, now: f64) -> Option<QuotaBucket> {
         .unwrap_or(0)
         .max(0);
     let used = int(row.get("current_weekly_usage_count")).filter(|used| *used >= 0);
-    let remaining = number(row.get("current_weekly_remaining_percent"));
+    let remaining = number(row.get("current_weekly_remaining_percent"))
+        .filter(|percent| percent.is_finite() && (0.0..=100.0).contains(percent));
     if remaining.is_none() && (total <= 0 || used.is_none()) {
         return None;
     }
@@ -680,6 +682,21 @@ mod tests {
             ),
             Err(QuotaError::ParseFailure(_))
         ));
+        for remaining in [
+            Value::from(-1),
+            Value::from(101),
+            Value::String("NaN".into()),
+        ] {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "data": {"model_remains": [{
+                    "model_name": "invalid-percent",
+                    "current_interval_total_count": 0,
+                    "current_interval_remaining_percent": remaining
+                }]}
+            }))
+            .unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
         assert!(matches!(
             parse(
                 br#"{"data":{"model_remains":[{"model_name":"incomplete","current_interval_total_count":100}]}}"#,
