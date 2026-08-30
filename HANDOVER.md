@@ -219,9 +219,9 @@ four were found by running against a real data root, not by tests.
   it is familiar: show on first run, stay in the tray afterwards. That needs a
   persisted first-run flag, so it is a deliberate open decision rather than an
   oversight.
-- **The app icon is a placeholder.** `apps/desktop/src-tauri/icons/icon.png`
-  is a flat 32×32 square. Real icons (including the `.icns` and `.ico` sets a
-  full bundle wants) are outstanding.
+- **Desktop bundles use the native Vibe Bar icon.** The standard PNG, `.icns`,
+  and `.ico` set in `apps/desktop/src-tauri/icons/` is mechanically generated
+  from the native app's `Resources/AppIcon.png`.
 
 ## 7. Ecosystem notes
 
