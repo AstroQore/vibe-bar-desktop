@@ -811,7 +811,7 @@ mod tests {
         let view: Value = serde_json::from_str(text).unwrap();
         assert_eq!(view["unit"], "USD per 1M tokens");
         assert!(view["generatedAt"].as_f64().unwrap() > 0.0);
-        assert_eq!(view["rows"].as_array().unwrap().len(), 34);
+        assert_eq!(view["rows"].as_array().unwrap().len(), 41);
 
         let gpt = view["rows"]
             .as_array()
@@ -839,6 +839,16 @@ mod tests {
         assert_eq!(sonnet["cacheReadAboveThresholdPerMillion"], 0.6);
         assert_eq!(sonnet["cacheWriteAboveThresholdPerMillion"], 7.5);
 
+        let gemini = view["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["model"] == "gemini-2.5-pro")
+            .unwrap();
+        assert_eq!(gemini["provider"], "gemini");
+        assert_eq!(gemini["thresholdTokens"], 200_000);
+        assert_eq!(gemini["cacheReadAboveThresholdPerMillion"], 0.625);
+
         let filtered = server.handle_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"pricing.effective","arguments":{"provider":"claude","model":"OPUS-4-7"}}}"#).unwrap();
         let response: Value = serde_json::from_str(&filtered).unwrap();
         let text = response["result"]["content"][0]["text"].as_str().unwrap();
@@ -850,10 +860,10 @@ mod tests {
     }
 
     #[test]
-    fn pricing_effective_rejects_unsupported_providers_and_extra_arguments() {
+    fn pricing_effective_rejects_unknown_providers_and_extra_arguments() {
         let temp = tempfile::tempdir().unwrap();
         let server = server(&temp);
-        for arguments in [r#"{"provider":"gemini"}"#, r#"{"refresh":true}"#] {
+        for arguments in [r#"{"provider":"cursor"}"#, r#"{"refresh":true}"#] {
             let request = format!(
                 r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"pricing.effective","arguments":{arguments}}}}}"#
             );
