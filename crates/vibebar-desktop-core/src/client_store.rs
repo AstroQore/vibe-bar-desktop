@@ -431,7 +431,7 @@ fn valid_cost_view(view: &crate::cost::CostView, generated_at: f64) -> bool {
         && view.scanned_at > 0.0
         && view.scanned_at <= now + FUTURE_SKEW_SECONDS
         && generated_at == view.scanned_at
-        && !view.pricing_version.trim().is_empty()
+        && view.pricing_version == crate::cost::PRICING_VERSION
         && [
             &view.today,
             &view.last_7_days,
@@ -821,7 +821,7 @@ mod tests {
     fn completed_cost_view() -> CostView {
         CostView {
             scanned_at: 1_788_038_405.0,
-            pricing_version: "synthetic-v1".into(),
+            pricing_version: crate::cost::PRICING_VERSION.into(),
             ..Default::default()
         }
     }
@@ -924,6 +924,20 @@ mod tests {
             std::fs::read(root.client_cost_snapshot_file()).unwrap(),
             before
         );
+
+        let mut stale = completed_cost_view();
+        stale.pricing_version = "stale-pricing".into();
+        std::fs::write(
+            root.client_cost_snapshot_file(),
+            serde_json::to_vec(&CostSnapshotFile {
+                schema: COST_SNAPSHOT_SCHEMA,
+                generated_at: stale.scanned_at,
+                view: stale,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(store.load_cost_snapshot(), None);
 
         let mut negative = completed_cost_view();
         negative.daily.push(crate::cost::DailyCost {
