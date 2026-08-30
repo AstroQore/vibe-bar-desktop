@@ -26,6 +26,10 @@ use crate::error::CoreError;
 use crate::model::{AccountQuota, QuotaOrigin};
 use crate::paths::DataRoot;
 
+const MAX_COST_SNAPSHOT_BYTES: u64 = 4 * 1024 * 1024;
+const COST_SNAPSHOT_SCHEMA: u8 = 1;
+
+#[derive(Clone)]
 pub struct ClientStore {
     root: DataRoot,
 }
@@ -93,6 +97,14 @@ pub fn startup_action(demo: bool, tray_installed: bool, state: FirstRunState) ->
         FirstRunState::Missing => StartupAction::ShowAndMarkFirstRunComplete,
         FirstRunState::Unusable => StartupAction::Show,
     }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CostSnapshotFile {
+    schema: u8,
+    generated_at: f64,
+    view: crate::cost::CostView,
 }
 
 impl ClientStore {
@@ -278,6 +290,60 @@ impl ClientStore {
         )
     }
 
+    /// A completed Desktop-local cost scan. This is aggregate-only and never
+    /// shares the native cost/history stores.
+    pub(crate) fn load_cost_snapshot(&self) -> Option<crate::cost::CostView> {
+        let root = crate::paths::open_ambient_dir(self.root.shared()).ok()?;
+        let client = crate::paths::open_dir_nofollow(&root, Path::new("client")).ok()?;
+        let desktop = crate::paths::open_dir_nofollow(&client, Path::new("desktop")).ok()?;
+        let mut options = OpenOptions::new();
+        options.read(true).follow(FollowSymlinks::No);
+        let file = desktop
+            .open_with(Path::new("cost-snapshot.json"), &options)
+            .ok()?;
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_COST_SNAPSHOT_BYTES {
+            return None;
+        }
+        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+        if file
+            .take(MAX_COST_SNAPSHOT_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+            || bytes.len() as u64 > MAX_COST_SNAPSHOT_BYTES
+        {
+            return None;
+        }
+        let snapshot = serde_json::from_slice::<CostSnapshotFile>(&bytes).ok()?;
+        if snapshot.schema != COST_SNAPSHOT_SCHEMA
+            || !snapshot.generated_at.is_finite()
+            || !valid_cost_view(&snapshot.view, snapshot.generated_at)
+        {
+            return None;
+        }
+        Some(snapshot.view)
+    }
+
+    pub(crate) fn save_cost_snapshot(&self, view: &crate::cost::CostView) -> Result<(), CoreError> {
+        if !valid_cost_view(view, view.scanned_at) {
+            return Err(CoreError::InvalidClientSnapshot(
+                "cost snapshot is not a completed valid scan".into(),
+            ));
+        }
+        let snapshot = CostSnapshotFile {
+            schema: COST_SNAPSHOT_SCHEMA,
+            generated_at: view.scanned_at,
+            view: view.clone(),
+        };
+        let encoded = serde_json::to_vec_pretty(&snapshot)?;
+        if encoded.len() as u64 + 1 > MAX_COST_SNAPSHOT_BYTES {
+            return Err(CoreError::InvalidClientSnapshot(
+                "cost snapshot exceeds its fixed size limit".into(),
+            ));
+        }
+        self.write_json(&self.root.client_cost_snapshot_file(), &snapshot)
+    }
+
     /// Atomic, namespace-guarded JSON write.
     ///
     /// Kept private so callers cannot turn this into a general-purpose file
@@ -353,6 +419,32 @@ impl ClientStore {
         sync_directory(&directory)?;
         Ok(())
     }
+}
+
+fn valid_cost_view(view: &crate::cost::CostView, generated_at: f64) -> bool {
+    const FUTURE_SKEW_SECONDS: f64 = 300.0;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .unwrap_or(0.0);
+    view.scanned_at.is_finite()
+        && view.scanned_at > 0.0
+        && view.scanned_at <= now + FUTURE_SKEW_SECONDS
+        && generated_at == view.scanned_at
+        && !view.pricing_version.trim().is_empty()
+        && [
+            &view.today,
+            &view.last_7_days,
+            &view.last_30_days,
+            &view.all_time,
+        ]
+        .iter()
+        .all(|totals| totals.priced_cost_micros >= 0)
+        && view.daily.iter().all(|day| day.priced_cost_micros >= 0)
+        && view
+            .models
+            .iter()
+            .all(|model| model.priced_cost_micros >= 0)
 }
 
 /// Round-trip shape for quotas this client wrote. Kept separate from the
@@ -459,6 +551,7 @@ fn sync_directory(_directory: &Dir) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cost::CostView;
     use crate::model::{QuotaBucket, ToolType};
 
     fn sample_quota() -> AccountQuota {
@@ -725,6 +818,26 @@ mod tests {
         assert!(!root.settings_file().exists());
     }
 
+    fn completed_cost_view() -> CostView {
+        CostView {
+            scanned_at: 1_788_038_405.0,
+            pricing_version: "synthetic-v1".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cost_snapshot_round_trips_in_only_the_desktop_namespace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let store = ClientStore::new(root.clone());
+        let view = completed_cost_view();
+        store.save_cost_snapshot(&view).unwrap();
+        assert_eq!(store.load_cost_snapshot(), Some(view));
+        assert!(root.client_cost_snapshot_file().is_file());
+        assert!(!root.settings_file().exists());
+    }
+
     #[test]
     fn first_run_state_round_trips_only_in_the_desktop_namespace() {
         let dir = tempfile::tempdir().unwrap();
@@ -784,6 +897,68 @@ mod tests {
         );
     }
 
+    #[test]
+    fn invalid_or_unknown_cost_snapshot_fails_closed_without_overwriting() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        std::fs::write(
+            root.client_cost_snapshot_file(),
+            r#"{"schema":2,"generatedAt":1788038405,"view":{}}"#,
+        )
+        .unwrap();
+        let before = std::fs::read(root.client_cost_snapshot_file()).unwrap();
+        let store = ClientStore::new(root.clone());
+        assert_eq!(store.load_cost_snapshot(), None);
+        assert_eq!(
+            std::fs::read(root.client_cost_snapshot_file()).unwrap(),
+            before
+        );
+        let mut invalid = completed_cost_view();
+        invalid.scanned_at = 0.0;
+        assert!(matches!(
+            store.save_cost_snapshot(&invalid),
+            Err(CoreError::InvalidClientSnapshot(_))
+        ));
+        assert_eq!(
+            std::fs::read(root.client_cost_snapshot_file()).unwrap(),
+            before
+        );
+
+        let mut negative = completed_cost_view();
+        negative.daily.push(crate::cost::DailyCost {
+            day: "2026-08-30".into(),
+            priced_cost_micros: -1,
+            tokens: 1,
+            requests: 1,
+        });
+        assert!(store.save_cost_snapshot(&negative).is_err());
+    }
+
+    #[test]
+    fn oversized_cost_snapshot_is_ignored_without_rewriting() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        let bytes = vec![b'x'; MAX_COST_SNAPSHOT_BYTES as usize + 1];
+        std::fs::write(root.client_cost_snapshot_file(), &bytes).unwrap();
+        assert_eq!(ClientStore::new(root.clone()).load_cost_snapshot(), None);
+        assert_eq!(
+            std::fs::read(root.client_cost_snapshot_file()).unwrap(),
+            bytes
+        );
+
+        let mut oversized = completed_cost_view();
+        oversized.pricing_version = "x".repeat(MAX_COST_SNAPSHOT_BYTES as usize);
+        assert!(ClientStore::new(root.clone())
+            .save_cost_snapshot(&oversized)
+            .is_err());
+        assert_eq!(
+            std::fs::read(root.client_cost_snapshot_file()).unwrap(),
+            bytes
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlinked_first_run_state_is_never_trusted() {
@@ -823,5 +998,29 @@ mod tests {
             startup_action(false, false, FirstRunState::Completed),
             StartupAction::Show
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cost_snapshot_read_never_follows_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        let outside = dir.path().join("outside.json");
+        let view = completed_cost_view();
+        std::fs::write(
+            &outside,
+            serde_json::to_vec(&CostSnapshotFile {
+                schema: COST_SNAPSHOT_SCHEMA,
+                generated_at: view.scanned_at,
+                view,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        symlink(outside, root.client_cost_snapshot_file()).unwrap();
+        assert_eq!(ClientStore::new(root).load_cost_snapshot(), None);
     }
 }

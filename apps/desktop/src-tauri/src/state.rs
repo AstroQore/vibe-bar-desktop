@@ -30,7 +30,7 @@ impl AppState {
             engine: QuotaEngine::new(data_root.clone()),
             sessions: SessionsService::new(data_root.clone()),
             status: ServiceStatusEngine::new(data_root.clone()),
-            cost: CostEngine::new(scan_home),
+            cost: CostEngine::new(data_root.clone(), scan_home),
             data_root,
         }
     }

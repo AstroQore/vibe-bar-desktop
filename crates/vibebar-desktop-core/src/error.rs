@@ -49,4 +49,6 @@ pub enum CoreError {
     TranscriptUnavailable,
     #[error("Desktop client document is unavailable at a newer or unreadable schema: {0}")]
     ClientDocumentUnavailable(&'static str),
+    #[error("invalid Desktop client snapshot: {0}")]
+    InvalidClientSnapshot(String),
 }

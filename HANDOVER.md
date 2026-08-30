@@ -21,7 +21,7 @@ turned out to be wrong.
 | Tray | One line, fields and labels from the shared settings, remaining/used honoured |
 | Presentation settings | Read-only page; Overview honours display mode, provider visibility/order, and plan labels |
 | Service status | Shared-cache seed plus public live status for OpenAI-wide, Claude, Google AI, and Cursor; Desktop last-good state persists only under `client/desktop/` |
-| Usage / cost | Read-only local Codex + Claude scan with in-memory pricing; no shared ledger writes |
+| Usage / cost | Read-only local Codex + Claude scan with a Desktop-private aggregate snapshot; no shared ledger writes |
 | Resets | Upcoming provider-declared reset times from current quota data; no forecast or history |
 | Mini window | One Desktop-owned regular quota layout; tray toggle and client-private geometry |
 | Skills | Read-only inventory from fixed local SSOT/harness roots; no install, delete, or sync |

@@ -35,8 +35,9 @@ window, on macOS, Windows, and Linux.
   A fresh Desktop last-good snapshot is private to `client/desktop/`; shared
   `service_status.json` remains read-only.
 - **Local usage and cost.** Scans bounded Codex and Claude session JSONL files
-  into an in-memory priced-usage view. Unknown models stay visibly unpriced;
-  Desktop does not write a cost cache or ledger yet.
+  into a priced-usage view. A completed aggregate snapshot persists only under
+  `client/desktop/`; unknown models stay visibly unpriced and no shared ledger
+  or history is written.
 
 API-key adapters read credentials from the process environment and never
 persist them: `DASHSCOPE_API_KEY` (or `ALIBABA_API_KEY`), `Z_AI_API_KEY`,

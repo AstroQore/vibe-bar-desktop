@@ -13,7 +13,7 @@ use std::sync::{Arc, RwLock};
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions as CapOpenOptions};
 use chrono::{DateTime, Local, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::model::ToolType;
@@ -28,7 +28,7 @@ const MAX_DISCOVERY_DEPTH: usize = 32;
 const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 const PRICING_VERSION: &str = "native-2026-06-08-v5";
 
-#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CostTotals {
     pub priced_cost_micros: i64,
@@ -36,7 +36,7 @@ pub struct CostTotals {
     pub requests: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyCost {
     pub day: String,
@@ -45,7 +45,7 @@ pub struct DailyCost {
     pub requests: u64,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCost {
     pub tool: ToolType,
@@ -56,7 +56,7 @@ pub struct ModelCost {
     pub unpriced_events: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CostView {
     pub today: CostTotals,
@@ -76,15 +76,23 @@ pub struct CostView {
 #[derive(Clone)]
 pub struct CostEngine {
     home: PathBuf,
+    store: crate::client_store::ClientStore,
+    is_demo: bool,
     cached: Arc<RwLock<CostView>>,
     refresh_gate: Arc<std::sync::Mutex<()>>,
 }
 
 impl CostEngine {
-    pub fn new(home: impl Into<PathBuf>) -> Self {
+    pub fn new(root: crate::paths::DataRoot, home: impl Into<PathBuf>) -> Self {
+        let store = crate::client_store::ClientStore::new(root.clone());
+        let cached = store
+            .load_cost_snapshot()
+            .unwrap_or_else(|| empty_view(0.0));
         Self {
             home: home.into(),
-            cached: Arc::new(RwLock::new(empty_view(0.0))),
+            store,
+            is_demo: root.is_demo(),
+            cached: Arc::new(RwLock::new(cached)),
             refresh_gate: Arc::new(std::sync::Mutex::new(())),
         }
     }
@@ -143,6 +151,11 @@ impl CostEngine {
         );
         if let Ok(mut cached) = self.cached.write() {
             *cached = view.clone();
+        }
+        if !self.is_demo {
+            // The snapshot is only a restart cache. A completed local scan
+            // remains useful even when the private namespace is unwritable.
+            let _ = self.store.save_cost_snapshot(&view);
         }
         Ok(view)
     }
@@ -997,6 +1010,8 @@ fn add_totals(totals: &mut CostTotals, tokens: u64, cost: Option<i64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client_store::ClientStore;
+    use crate::paths::DataRoot;
 
     fn rfc3339(timestamp: f64) -> String {
         DateTime::<Utc>::from_timestamp(timestamp as i64, 0)
@@ -1032,7 +1047,9 @@ mod tests {
                 serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-5.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"cached_input_tokens":30,"output_tokens":50}}}}),
             ],
         );
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.scanned_files, 1);
         assert_eq!(view.all_time.requests, 2);
         assert_eq!(view.all_time.tokens, 200);
@@ -1061,7 +1078,9 @@ mod tests {
             &home.path().join(".claude/projects/project/session.jsonl"),
             &[keyed.clone(), keyed, fast],
         );
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.all_time.requests, 2);
         assert_eq!(view.all_time.tokens, 21);
         assert_eq!(view.models.len(), 2);
@@ -1091,7 +1110,9 @@ mod tests {
         let mut body = format!("{}\nnot-json\n{}\n", unknown, future).into_bytes();
         body.extend(std::iter::repeat_n(b'x', MAX_LINE_BYTES + 1));
         fs::write(&path, body).unwrap();
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.all_time.requests, 1);
         assert_eq!(view.all_time.tokens, 5);
         assert_eq!(view.unpriced_events, 1);
@@ -1139,13 +1160,61 @@ mod tests {
     fn empty_scan_is_read_only_and_returns_an_explicit_scanned_view() {
         let home = tempfile::tempdir().unwrap();
         let before = fs::read_dir(home.path()).unwrap().count();
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         let after = fs::read_dir(home.path()).unwrap().count();
         assert_eq!(before, after);
         assert_eq!(view.scanned_files, 0);
         assert_eq!(view.all_time.requests, 0);
         assert!(view.scanned_at > 0.0);
         assert_eq!(view.pricing_version, PRICING_VERSION);
+    }
+
+    #[test]
+    fn completed_scan_persists_an_aggregate_snapshot_for_a_new_engine() {
+        let home = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(home.path().join(".vibebar"));
+        let view = CostEngine::new(root.clone(), home.path())
+            .refresh()
+            .unwrap();
+        assert!(root.client_cost_snapshot_file().is_file());
+        assert!(view.scanned_at > 0.0);
+        let reloaded = CostEngine::new(root, home.path()).cached();
+        assert_eq!(reloaded, view);
+    }
+
+    #[test]
+    fn failed_scan_keeps_the_last_private_snapshot_unchanged() {
+        let home = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(home.path().join(".vibebar"));
+        let view = CostEngine::new(root.clone(), home.path())
+            .refresh()
+            .unwrap();
+        let before = fs::read(root.client_cost_snapshot_file()).unwrap();
+        let missing = home.path().join("missing-home");
+        assert!(CostEngine::new(root.clone(), missing).refresh().is_err());
+        assert_eq!(fs::read(root.client_cost_snapshot_file()).unwrap(), before);
+        assert_eq!(ClientStore::new(root).load_cost_snapshot(), Some(view));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_write_failure_keeps_the_completed_scan_in_memory() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(home.path().join(".vibebar"));
+        fs::create_dir_all(root.shared()).unwrap();
+        let outside = home.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, root.shared().join("client")).unwrap();
+
+        let engine = CostEngine::new(root, home.path());
+        let view = engine.refresh().unwrap();
+        assert!(view.scanned_at > 0.0);
+        assert_eq!(engine.cached(), view);
+        assert!(fs::read_dir(outside).unwrap().next().is_none());
     }
 
     #[test]
