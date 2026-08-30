@@ -21,9 +21,10 @@ const TRAY_ID: &str = "vibebar-desktop-tray";
 pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Open Vibe Bar Desktop", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
+    let mini = MenuItem::with_id(app, "mini", "Toggle Mini", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &refresh, &separator, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &refresh, &mini, &separator, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -43,7 +44,11 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Resul
                     let _ = app.emit(crate::QUOTA_EVENT, &view);
                 });
             }
-            "quit" => app.exit(0),
+            "mini" => crate::toggle_mini(app),
+            "quit" => {
+                crate::persist_mini(app);
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

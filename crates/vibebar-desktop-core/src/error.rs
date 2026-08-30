@@ -47,4 +47,6 @@ pub enum CoreError {
     SessionReferenceInvalid,
     #[error("session transcript is unavailable")]
     TranscriptUnavailable,
+    #[error("Desktop client document is unavailable at a newer or unreadable schema: {0}")]
+    ClientDocumentUnavailable(&'static str),
 }

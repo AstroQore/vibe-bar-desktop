@@ -5,6 +5,7 @@
 //! testable on all three platforms without a GUI.
 
 mod commands;
+mod mini_window;
 mod native_app;
 mod state;
 mod tray;
@@ -12,14 +13,14 @@ mod tray;
 use std::time::Duration;
 
 use state::AppState;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, RunEvent};
 
 /// Emitted whenever a refresh completes, carrying the full `QuotaView`.
 pub const QUOTA_EVENT: &str = "vibebar://quota-updated";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         // A second launch focuses the running window instead of starting a
         // rival tray icon and refresh loop against the same data root.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -40,13 +41,27 @@ pub fn run() {
         ])
         .setup(|app| {
             let state = AppState::new();
+            mini_window::install(app.handle(), state.data_root().clone())?;
             tray::install(app.handle(), &state)?;
             app.manage(state);
             spawn_refresh_loop(app.handle().clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Vibe Bar Desktop");
+        .build(tauri::generate_context!())
+        .expect("error while building Vibe Bar Desktop");
+    app.run(|app, event| {
+        if matches!(event, RunEvent::ExitRequested { .. }) {
+            mini_window::persist(app);
+        }
+    });
+}
+
+pub fn toggle_mini<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    mini_window::toggle(app);
+}
+
+pub fn persist_mini<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    mini_window::persist(app);
 }
 
 /// Background refresh: one immediate pass, then on the cadence the shared
