@@ -7,7 +7,9 @@
 
 use std::collections::BTreeSet;
 
-use serde::Serialize;
+use serde::de::{Error as DeError, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
@@ -76,15 +78,29 @@ impl SettingsDocument {
                 max: MAX_SETTINGS_DOCUMENT_BYTES,
             });
         }
-        let value: Value =
+        let object: UniqueTopLevelObject =
             serde_json::from_slice(bytes).map_err(SettingsPatchError::InvalidJson)?;
-        Self::from_value(value)
+        Self::from_object(
+            object.fields,
+            object.schema_token.as_deref(),
+            object.revision_token.as_deref(),
+        )
     }
 
     pub fn from_value(value: Value) -> Result<Self, SettingsPatchError> {
-        let Value::Object(mut object) = value else {
+        let Value::Object(object) = value else {
             return Err(SettingsPatchError::NotObject);
         };
+        let schema_token = object.get(SCHEMA_VERSION_KEY).map(Value::to_string);
+        let revision_token = object.get(REVISION_KEY).map(Value::to_string);
+        Self::from_object(object, schema_token.as_deref(), revision_token.as_deref())
+    }
+
+    fn from_object(
+        mut object: Map<String, Value>,
+        schema_token: Option<&str>,
+        revision_token: Option<&str>,
+    ) -> Result<Self, SettingsPatchError> {
         let schema = object.remove(SCHEMA_VERSION_KEY);
         let revision = object.remove(REVISION_KEY);
         match (schema, revision) {
@@ -93,16 +109,18 @@ impl SettingsDocument {
                 revision: 0,
                 fields: object,
             }),
-            (Some(Value::Number(schema)), Some(Value::Number(revision))) => {
-                let schema = schema
-                    .as_u64()
-                    .ok_or(SettingsPatchError::InvalidSchemaVersion)?;
+            (Some(Value::Number(_)), Some(Value::Number(_))) => {
+                let schema = strict_unsigned_integer(
+                    schema_token.ok_or(SettingsPatchError::InvalidSchemaVersion)?,
+                    SettingsPatchError::InvalidSchemaVersion,
+                )?;
                 if schema != SETTINGS_SCHEMA_VERSION {
                     return Err(SettingsPatchError::UnsupportedSchemaVersion(schema));
                 }
-                let revision = revision
-                    .as_u64()
-                    .ok_or(SettingsPatchError::InvalidRevision)?;
+                let revision = strict_unsigned_integer(
+                    revision_token.ok_or(SettingsPatchError::InvalidRevision)?,
+                    SettingsPatchError::InvalidRevision,
+                )?;
                 Ok(Self {
                     version: SettingsDocumentVersion::V1,
                     revision,
@@ -173,6 +191,69 @@ impl SettingsDocument {
         )
         .map_err(SettingsPatchError::Fixture)?;
         Self::parse_bytes(SETTINGS_V1_UNKNOWN_FIXTURE)
+    }
+}
+
+fn strict_unsigned_integer(
+    token: &str,
+    error: SettingsPatchError,
+) -> Result<u64, SettingsPatchError> {
+    let token = token.trim();
+    if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(error);
+    }
+    token.parse::<u64>().map_err(|_| error)
+}
+
+struct UniqueTopLevelObject {
+    fields: Map<String, Value>,
+    schema_token: Option<String>,
+    revision_token: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for UniqueTopLevelObject {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UniqueObjectVisitor;
+        impl<'de> Visitor<'de> for UniqueObjectVisitor {
+            type Value = UniqueTopLevelObject;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a settings JSON object with unique top-level keys")
+            }
+
+            fn visit_map<A>(self, mut access: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut fields = Map::new();
+                let mut schema_token = None;
+                let mut revision_token = None;
+                while let Some(key) = access.next_key::<String>()? {
+                    let raw = access.next_value::<Box<RawValue>>()?;
+                    if fields.contains_key(&key) {
+                        return Err(A::Error::custom(format!(
+                            "duplicate top-level settings key {key}"
+                        )));
+                    }
+                    if key == SCHEMA_VERSION_KEY {
+                        schema_token = Some(raw.get().to_string());
+                    } else if key == REVISION_KEY {
+                        revision_token = Some(raw.get().to_string());
+                    }
+                    let value: Value = serde_json::from_str(raw.get()).map_err(A::Error::custom)?;
+                    fields.insert(key, value);
+                }
+                Ok(UniqueTopLevelObject {
+                    fields,
+                    schema_token,
+                    revision_token,
+                })
+            }
+        }
+        deserializer.deserialize_map(UniqueObjectVisitor)
     }
 }
 
@@ -384,6 +465,15 @@ mod tests {
             SettingsDocument::from_value(json!({"schemaVersion": 1})),
             Err(SettingsPatchError::InvalidEnvelope)
         ));
+        let signed_zero = SettingsDocument::parse_bytes(br#"{"schemaVersion":1,"revision":-0}"#);
+        assert!(
+            matches!(signed_zero, Err(SettingsPatchError::InvalidRevision)),
+            "got {signed_zero:?}"
+        );
+        assert!(
+            SettingsDocument::parse_bytes(br#"{"schemaVersion":1,"revision":1,"revision":2}"#)
+                .is_err()
+        );
     }
 
     #[test]
@@ -527,5 +617,22 @@ mod tests {
             SettingsDocument::parse_bytes(&bytes),
             Err(SettingsPatchError::SizeLimit { .. })
         ));
+    }
+
+    #[test]
+    fn arbitrary_precision_unknown_numbers_survive_an_unrelated_patch() {
+        const INTEGER: &str = "12345678901234567890123456789012345678901234567890";
+        const DECIMAL: &str = "0.12345678901234567890123456789012345678901234567890";
+        let base = SettingsDocument::v1_unknown_fixture().unwrap();
+        assert_eq!(base.fields()["unknownPreciseInteger"].to_string(), INTEGER);
+        assert_eq!(base.fields()["unknownPreciseDecimal"].to_string(), DECIMAL);
+        let mut desired = base.fields().clone();
+        desired.insert("displayMode".to_string(), json!("used"));
+        let patch = SettingsThreeWayPatch::from_document_and_desired(&base, desired).unwrap();
+        let result = patch.apply(&base).unwrap();
+        assert_eq!(result.document.revision(), 8);
+        let encoded = serde_json::to_string(&result.document.to_value()).unwrap();
+        assert!(encoded.contains(&format!("\"unknownPreciseInteger\":{INTEGER}")));
+        assert!(encoded.contains(&format!("\"unknownPreciseDecimal\":{DECIMAL}")));
     }
 }
