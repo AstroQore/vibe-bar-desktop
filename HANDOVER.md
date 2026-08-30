@@ -201,6 +201,15 @@ four were found by running against a real data root, not by tests.
 - **No Liquid Glass, no Control Center watchdog, no Sparkle.** Platform
   features with no cross-platform equivalent; document them as macOS-native
   advantages rather than gaps.
+- **The window is shown on every launch.** The native app is `LSUIElement` and
+  starts silently in the menu bar. Desktop shows its window so a new user can
+  tell it started at all, which is right for a preview and probably wrong once
+  it is familiar: show on first run, stay in the tray afterwards. That needs a
+  persisted first-run flag, so it is a deliberate open decision rather than an
+  oversight.
+- **The app icon is a placeholder.** `apps/desktop/src-tauri/icons/icon.png`
+  is a flat 32×32 square. Real icons (including the `.icns` and `.ico` sets a
+  full bundle wants) are outstanding.
 
 ## 7. Ecosystem notes
 

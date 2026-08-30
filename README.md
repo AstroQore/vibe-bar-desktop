@@ -47,6 +47,10 @@ contract (single-writer lease, schema negotiation, fail-closed migrations)
 that does not exist on either side yet. Until it does, writing would risk the
 user's history for no gain. See [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
 
+[HANDOVER.md](HANDOVER.md) is the map from here to parity: what the native
+app does that Desktop does not, in what order to close the gap, and the bugs
+this preview found in itself along the way.
+
 ## Layout
 
 ```
