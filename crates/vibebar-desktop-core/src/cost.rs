@@ -172,7 +172,7 @@ impl CostEngine {
         if let Ok(mut cached) = self.cached.write() {
             *cached = view.clone();
         }
-        if !self.is_demo {
+        if !self.is_demo && !view.truncated {
             // The snapshot is only a restart cache. A completed local scan
             // remains useful even when the private namespace is unwritable.
             let _ = self.store.save_cost_snapshot(&view);
@@ -1348,6 +1348,12 @@ fn local_day(timestamp: f64) -> Option<chrono::NaiveDate> {
         .map(|date| date.with_timezone(&Local).date_naive())
 }
 
+pub(crate) fn is_same_local_day(left: f64, right: f64) -> bool {
+    local_day(left)
+        .zip(local_day(right))
+        .is_some_and(|(left, right)| left == right)
+}
+
 fn add_totals(totals: &mut CostTotals, tokens: u64, cost: Option<i64>) {
     totals.tokens = totals.tokens.saturating_add(tokens);
     totals.requests = totals.requests.saturating_add(1);
@@ -1510,7 +1516,9 @@ mod tests {
             ],
         );
 
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.all_time.requests, 2);
         assert_eq!(view.all_time.tokens, 5);
         assert_eq!(view.unpriced_events, 2);
