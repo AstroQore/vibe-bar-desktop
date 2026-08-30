@@ -1306,7 +1306,11 @@ fn normalize_claude_model(raw: &str) -> String {
 fn claude_pricing_exact_base(model: &str) -> bool {
     matches!(
         model,
-        "claude-haiku-4-5" | "claude-opus-4-5" | "claude-opus-4-6" | "claude-sonnet-4-5"
+        "claude-haiku-4-5"
+            | "claude-opus-4-1"
+            | "claude-opus-4-5"
+            | "claude-opus-4-6"
+            | "claude-sonnet-4-5"
     )
 }
 
@@ -1804,6 +1808,17 @@ mod tests {
             source_key: String::new(),
         };
         assert_eq!(priced_cost_micros(&event), Some(1_200_006));
+    }
+
+    #[test]
+    fn claude_snapshot_suffixes_normalize_only_for_supported_aliases() {
+        let supported = "claude-opus-4-1-20250805";
+        assert_eq!(normalize_claude_model(supported), "claude-opus-4-1");
+        assert!(claude_pricing(supported).is_some());
+
+        let unsupported = "claude-future-9-9-20250805";
+        assert_eq!(normalize_claude_model(unsupported), unsupported);
+        assert!(claude_pricing(unsupported).is_none());
     }
 
     #[test]
