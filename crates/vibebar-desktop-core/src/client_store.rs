@@ -27,7 +27,7 @@ use crate::model::{AccountQuota, QuotaOrigin};
 use crate::paths::DataRoot;
 
 const MAX_COST_SNAPSHOT_BYTES: u64 = 4 * 1024 * 1024;
-const COST_SNAPSHOT_SCHEMA: u8 = 1;
+const COST_SNAPSHOT_SCHEMA: u8 = 2;
 
 #[derive(Clone)]
 pub struct ClientStore {
@@ -444,7 +444,7 @@ fn valid_cost_view(view: &crate::cost::CostView, generated_at: f64) -> bool {
         && view
             .models
             .iter()
-            .all(|model| model.priced_cost_micros >= 0)
+            .all(|model| model.priced_cost_micros >= 0 && !model.harness.trim().is_empty())
 }
 
 /// Round-trip shape for quotas this client wrote. Kept separate from the
@@ -904,7 +904,7 @@ mod tests {
         std::fs::create_dir_all(root.client_dir()).unwrap();
         std::fs::write(
             root.client_cost_snapshot_file(),
-            r#"{"schema":2,"generatedAt":1788038405,"view":{}}"#,
+            r#"{"schema":99,"generatedAt":1788038405,"view":{}}"#,
         )
         .unwrap();
         let before = std::fs::read(root.client_cost_snapshot_file()).unwrap();
@@ -947,6 +947,17 @@ mod tests {
             requests: 1,
         });
         assert!(store.save_cost_snapshot(&negative).is_err());
+
+        let mut missing_harness = completed_cost_view();
+        missing_harness.models.push(crate::cost::ModelCost {
+            harness: String::new(),
+            model: "synthetic".into(),
+            priced_cost_micros: 0,
+            tokens: 1,
+            requests: 1,
+            unpriced_events: 0,
+        });
+        assert!(store.save_cost_snapshot(&missing_harness).is_err());
     }
 
     #[test]

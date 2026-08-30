@@ -1,5 +1,5 @@
 import type { CostTotals, CostView, ModelCost } from "../api";
-import { formatRelative, hierarchyFor } from "../api";
+import { formatRelative } from "../api";
 
 export function CostOverview({ cost }: { cost: CostView | null }) {
   if (!cost || cost.scannedAt === 0) {
@@ -45,7 +45,7 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
           <p className="cost-note">Top models · all time</p>
           <ul className="cost-models">
             {models.map((model) => (
-              <ModelRow key={`${model.tool}:${model.model}`} model={model} />
+              <ModelRow key={`${model.harness}:${model.model}`} model={model} />
             ))}
           </ul>
         </>
@@ -73,10 +73,9 @@ function CostPeriod({ label, total }: { label: string; total: CostTotals }) {
 }
 
 function ModelRow({ model }: { model: ModelCost }) {
-  const product = hierarchyFor(model.tool).product;
   return (
     <li>
-      <span>{product} · {model.model || "Unknown model"}</span>
+      <span>{model.harness} · {model.model || "Unknown model"}</span>
       <span>{formatCost(model.pricedCostMicros)}</span>
     </li>
   );

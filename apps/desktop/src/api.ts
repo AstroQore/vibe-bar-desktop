@@ -148,7 +148,7 @@ export interface DailyCost extends CostTotals {
 }
 
 export interface ModelCost extends CostTotals {
-  tool: string;
+  harness: string;
   model: string;
   unpricedEvents: number;
 }
