@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use agent_session_core::discovery::{self, DiscoveredSession};
-use agent_session_core::index::{SessionIndexReader, SessionListFilter, MAX_QUERY_LIMIT};
+use agent_session_core::index::{SessionIndexReader, SessionListFilter};
 use agent_session_core::{resume, SessionProvider};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -31,10 +31,6 @@ use crate::paths::DataRoot;
 
 const SCAN_LIMIT: usize = 400;
 const FUTURE_TIMESTAMP_TOLERANCE_SECONDS: i64 = 300;
-/// At most eight reader pages when future-stamped rows force backfilling.
-const MAX_INDEX_TIMESTAMP_SCAN_ROWS: usize = MAX_QUERY_LIMIT * 8;
-const VALIDATION_LIMIT_NOTE: &str =
-    "The requested session page exceeded Desktop's bounded timestamp validation and was not returned.";
 const SESSION_REFERENCE_TTL: Duration = Duration::from_secs(15 * 60);
 const MAX_SESSION_REFERENCES: usize = 4_096;
 
@@ -130,16 +126,27 @@ impl SessionsService {
     ) -> SessionListing {
         match self.open_index() {
             IndexState::Ready(reader) => {
-                let now = unix_now();
-                let (mut rows, timestamp_note) =
-                    indexed_list_page(&reader, providers, harnesses, since, offset, limit, now);
+                let until = unix_now().saturating_add(FUTURE_TIMESTAMP_TOLERANCE_SECONDS);
+                let mut rows: Vec<_> = reader
+                    .list(&SessionListFilter {
+                        providers: providers.map(<[SessionProvider]>::to_vec),
+                        harnesses: harnesses.map(<[String]>::to_vec),
+                        since,
+                        until: Some(until),
+                        limit,
+                        offset,
+                    })
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(indexed_row)
+                    .collect();
                 self.authorize_rows(&mut rows);
                 let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
                     source: SessionSource::Indexed,
                     rows,
                     indexed_total,
-                    index_note: timestamp_note.map(str::to_string).or(index_note),
+                    index_note,
                 }
             }
             IndexState::Unusable(note) => {
@@ -166,34 +173,25 @@ impl SessionsService {
         }
         match self.open_index() {
             IndexState::Ready(reader) => {
-                let now = unix_now();
-                let filter = |limit| SessionListFilter {
-                    providers: providers.map(<[SessionProvider]>::to_vec),
-                    harnesses: harnesses.map(<[String]>::to_vec),
-                    limit,
-                    ..Default::default()
-                };
-                let mut hits = reader.search(needle, &filter(limit)).unwrap_or_default();
-                if hits.iter().any(|hit| {
-                    hit.session
-                        .last_active_at
-                        .or(hit.session.created_at)
-                        .is_some_and(|timestamp| {
-                            timestamp > now.saturating_add(FUTURE_TIMESTAMP_TOLERANCE_SECONDS)
-                        })
-                }) {
-                    hits = reader
-                        .search(needle, &filter(MAX_QUERY_LIMIT))
-                        .unwrap_or_default();
-                }
-                let mut rows: Vec<_> = hits
+                let until = unix_now().saturating_add(FUTURE_TIMESTAMP_TOLERANCE_SECONDS);
+                let mut rows: Vec<_> = reader
+                    .search(
+                        needle,
+                        &SessionListFilter {
+                            providers: providers.map(<[SessionProvider]>::to_vec),
+                            harnesses: harnesses.map(<[String]>::to_vec),
+                            until: Some(until),
+                            limit,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap_or_default()
                     .into_iter()
-                    .filter_map(|hit| {
+                    .map(|hit| {
                         let mut row = indexed_row(hit.session);
                         row.excerpt = Some(hit.excerpt);
-                        has_plausible_timestamp(&row, now).then_some(row)
+                        row
                     })
-                    .take(limit)
                     .collect();
                 self.authorize_rows(&mut rows);
                 let (indexed_total, index_note) = indexed_summary(&reader);
@@ -440,99 +438,6 @@ impl SessionsService {
         }
         None
     }
-}
-
-fn indexed_list_page(
-    reader: &SessionIndexReader,
-    providers: Option<&[SessionProvider]>,
-    harnesses: Option<&[String]>,
-    since: Option<i64>,
-    offset: usize,
-    limit: usize,
-    now: i64,
-) -> (Vec<SessionRow>, Option<&'static str>) {
-    if limit == 0 {
-        return (Vec::new(), None);
-    }
-    let base_filter = SessionListFilter {
-        providers: providers.map(<[SessionProvider]>::to_vec),
-        harnesses: harnesses.map(<[String]>::to_vec),
-        since,
-        ..Default::default()
-    };
-    let initial = reader
-        .list(&SessionListFilter {
-            limit,
-            offset,
-            ..base_filter.clone()
-        })
-        .unwrap_or_default();
-    if initial.iter().all(|summary| {
-        summary
-            .last_active_at
-            .or(summary.created_at)
-            .is_none_or(|timestamp| {
-                timestamp <= now.saturating_add(FUTURE_TIMESTAMP_TOLERANCE_SECONDS)
-            })
-    }) {
-        return (initial.into_iter().map(indexed_row).collect(), None);
-    }
-
-    let Some(target) = offset.checked_add(limit) else {
-        return (Vec::new(), Some(VALIDATION_LIMIT_NOTE));
-    };
-    if target > MAX_INDEX_TIMESTAMP_SCAN_ROWS {
-        return (Vec::new(), Some(VALIDATION_LIMIT_NOTE));
-    }
-
-    let mut plausible = Vec::with_capacity(target);
-    let mut raw_offset = 0;
-    let mut scanned = 0;
-    let mut saw_future = false;
-    let mut exhausted = false;
-
-    while plausible.len() < target && scanned < MAX_INDEX_TIMESTAMP_SCAN_ROWS {
-        let remaining_scan = MAX_INDEX_TIMESTAMP_SCAN_ROWS - scanned;
-        let needed = target - plausible.len();
-        let requested = if saw_future {
-            MAX_QUERY_LIMIT
-        } else {
-            needed.min(MAX_QUERY_LIMIT)
-        };
-        let query_limit = requested.min(remaining_scan).max(1);
-        let batch = reader
-            .list(&SessionListFilter {
-                limit: query_limit,
-                offset: raw_offset,
-                ..base_filter.clone()
-            })
-            .unwrap_or_default();
-        let returned = batch.len();
-        if returned == 0 {
-            exhausted = true;
-            break;
-        }
-        raw_offset += returned;
-        scanned += returned;
-        for summary in batch {
-            let row = indexed_row(summary);
-            if has_plausible_timestamp(&row, now) {
-                plausible.push(row);
-            } else {
-                saw_future = true;
-            }
-        }
-        if returned < query_limit {
-            exhausted = true;
-            break;
-        }
-    }
-
-    if plausible.len() < target && !exhausted {
-        return (Vec::new(), Some(VALIDATION_LIMIT_NOTE));
-    }
-    let rows = plausible.into_iter().skip(offset).take(limit).collect();
-    (rows, None)
 }
 
 fn unix_now() -> i64 {
@@ -842,23 +747,15 @@ mod tests {
         assert_eq!(first.rows.len(), 1);
         assert_eq!(first.rows[0].session_id, "newer-codex");
 
-        let listing = service.list_filtered(Some(&providers), Some(&harnesses), Some(200), 0, 2);
+        let listing = service.list_filtered(Some(&providers), Some(&harnesses), Some(200), 1, 1);
         assert_eq!(listing.source, SessionSource::Indexed);
-        assert_eq!(listing.rows.len(), 2);
-        assert_eq!(listing.rows[1].session_id, "older-codex");
+        assert_eq!(listing.rows.len(), 1);
+        assert_eq!(listing.rows[0].session_id, "older-codex");
         assert_eq!(listing.indexed_total, Some(5));
         assert!(listing
             .rows
             .iter()
             .all(|row| row.session_id != "future-codex"));
-
-        rusqlite::Connection::open(&index)
-            .unwrap()
-            .execute("DELETE FROM sessions WHERE id = 5", [])
-            .unwrap();
-        let deep = service.list_filtered(Some(&providers), Some(&harnesses), Some(200), 5_000, 1);
-        assert!(deep.rows.is_empty());
-        assert!(deep.index_note.is_none());
         assert!(service
             .list_filtered(Some(&[]), None, None, 0, 10)
             .rows
