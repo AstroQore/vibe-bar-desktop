@@ -699,7 +699,7 @@ fn scan_file(
     let source_key: Arc<str> = source.path.to_string_lossy().into_owned().into();
     let mut gemini_session_id = None;
     let capacity = event_limit.saturating_sub(events.len());
-    let mut retained_events = VecDeque::with_capacity(capacity);
+    let mut retained_events = VecDeque::new();
     let mut parsed_events = Vec::with_capacity(1);
     let mut dropped_events = false;
     for line in bytes.split(|byte| *byte == b'\n') {
