@@ -64,7 +64,7 @@ implementation uses, so both clients read sessions by one set of rules.
 
 ## Build
 
-Requires Rust (stable), Node 20+, pnpm, and the
+Requires Rust (stable), Node 22.13+, pnpm, and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
 platform.
 
