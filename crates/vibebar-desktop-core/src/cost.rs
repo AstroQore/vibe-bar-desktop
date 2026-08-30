@@ -23,6 +23,8 @@ const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_TOTAL_READ_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_RETAINED_MODEL_BYTES: usize = 256;
+const MAX_MODEL_GROUPS_PER_HARNESS: usize = 512;
+const OTHER_MODELS_LABEL: &str = "other-models";
 const MAX_RAW_EVENTS: usize = 400_000;
 const MAX_FILES: usize = 20_000;
 const MAX_FILES_PER_PROVIDER: usize = MAX_FILES / 2;
@@ -1079,7 +1081,7 @@ fn aggregate(
     let mut month_totals = CostTotals::default();
     let mut all_totals = CostTotals::default();
     let mut daily: BTreeMap<String, CostTotals> = BTreeMap::new();
-    let mut models: HashMap<(String, String), ModelCost> = HashMap::new();
+    let mut models: HashMap<ToolType, HashMap<String, ModelCost>> = HashMap::new();
     let mut unpriced_events = 0_u64;
 
     for event in events {
@@ -1108,12 +1110,25 @@ fn aggregate(
         }
         add_totals(daily.entry(day.to_string()).or_default(), tokens, cost);
 
-        let harness = harness_name(event.tool).to_string();
-        let model = models
-            .entry((harness.clone(), event.model.clone()))
+        let models_for_harness = models.entry(event.tool).or_default();
+        let model_label = if event.model.len() <= MAX_RETAINED_MODEL_BYTES {
+            event.model.as_str()
+        } else {
+            OTHER_MODELS_LABEL
+        };
+        let model_label = if model_label == OTHER_MODELS_LABEL
+            || !models_for_harness.contains_key(model_label)
+                && models_for_harness.len() >= MAX_MODEL_GROUPS_PER_HARNESS - 1
+        {
+            OTHER_MODELS_LABEL
+        } else {
+            model_label
+        };
+        let model = models_for_harness
+            .entry(model_label.to_string())
             .or_insert_with(|| ModelCost {
-                harness,
-                model: event.model.clone(),
+                harness: harness_name(event.tool).to_string(),
+                model: model_label.to_string(),
                 priced_cost_micros: 0,
                 tokens: 0,
                 requests: 0,
@@ -1132,7 +1147,10 @@ fn aggregate(
         }
     }
 
-    let mut models = models.into_values().collect::<Vec<_>>();
+    let mut models = models
+        .into_values()
+        .flat_map(HashMap::into_values)
+        .collect::<Vec<_>>();
     models.sort_by(|left, right| {
         right
             .priced_cost_micros
@@ -1281,6 +1299,52 @@ mod tests {
         assert_eq!(view.models.len(), 1);
         assert_eq!(view.models[0].model, "codex-unknown");
         assert!(view.models[0].model.len() <= MAX_RETAINED_MODEL_BYTES);
+    }
+
+    #[test]
+    fn model_groups_are_bounded_and_overflow_totals_are_retained() {
+        let scanned_at = now_unix();
+        let event = |model| UsageEvent {
+            tool: ToolType::Claude,
+            date: scanned_at - 1.0,
+            model,
+            input: 1,
+            cache_read: 0,
+            output: 0,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            service_tier: None,
+            session_id: None,
+            message_id: None,
+            request_id: None,
+            is_sidechain: false,
+            is_parent_path: true,
+            source_key: Arc::from(""),
+        };
+        let mut events = (0..MAX_MODEL_GROUPS_PER_HARNESS + 2)
+            .map(|index| event(format!("custom-model-{index}")))
+            .collect::<Vec<_>>();
+        events.push(event("x".repeat(MAX_RETAINED_MODEL_BYTES + 1)));
+
+        let view = aggregate(&events, 1, 0, false, scanned_at);
+        assert_eq!(view.models.len(), MAX_MODEL_GROUPS_PER_HARNESS);
+        assert!(view
+            .models
+            .iter()
+            .all(|model| model.model.len() <= MAX_RETAINED_MODEL_BYTES));
+        let overflow = view
+            .models
+            .iter()
+            .find(|model| model.harness == "Claude Code" && model.model == OTHER_MODELS_LABEL)
+            .unwrap();
+        assert_eq!(overflow.requests, 4);
+        assert_eq!(overflow.tokens, 4);
+        assert_eq!(overflow.unpriced_events, 4);
+        assert_eq!(view.all_time.requests, events.len() as u64);
+        assert_eq!(view.all_time.tokens, events.len() as u64);
+        assert_eq!(view.today.requests, events.len() as u64);
+        assert_eq!(view.daily[0].requests, events.len() as u64);
+        assert_eq!(view.unpriced_events, events.len() as u64);
     }
 
     #[test]
