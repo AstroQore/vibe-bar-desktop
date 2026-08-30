@@ -15,7 +15,7 @@ repository = "https://github.com/AstroQore/vibe-bar-desktop"
 # builds of the same commit must resolve the same session implementation.
 # To develop against a local checkout, add a `[patch]` section to
 # `.cargo/config.toml` rather than editing this file.
-agent-session-core = { git = "https://github.com/AstroQore/agent-session-kit", rev = "6ad1f228109653dc501fcb64c806e7d27185de5d" }
+agent-session-core = { git = "https://github.com/AstroQore/agent-session-kit", rev = "b3d79734b6fbf571ec959a8147ad9f62f56bf43c" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
