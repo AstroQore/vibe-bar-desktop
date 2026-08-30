@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SessionListing, SessionRow, TranscriptPage } from "../api";
 import { api, formatRelative } from "../api";
@@ -111,6 +111,9 @@ function Transcript({
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
+  const messageRefs = useRef(new Map<number, HTMLDivElement>());
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +130,39 @@ function Transcript({
       cancelled = true;
     };
   }, [session.sessionRef, offset]);
+
+  const matches = useMemo(() => {
+    const needle = findQuery.trim().toLocaleLowerCase();
+    if (!needle || !page) return [];
+    return page.messages.flatMap((message, index) =>
+      message.text.toLocaleLowerCase().includes(needle) ? [index] : [],
+    );
+  }, [findQuery, page]);
+
+  // A changed page or session is a new bounded document. Start the find
+  // cursor over rather than carrying an index into unrelated messages.
+  useEffect(() => {
+    setMatchIndex(0);
+  }, [findQuery, offset, session.sessionRef]);
+
+  useEffect(() => {
+    if (matches.length === 0) {
+      if (matchIndex !== 0) setMatchIndex(0);
+      return;
+    }
+    if (matchIndex >= matches.length) {
+      setMatchIndex(0);
+    }
+  }, [matchIndex, matches]);
+
+  useEffect(() => {
+    const messageIndex = matches[matchIndex];
+    if (messageIndex === undefined) return;
+    messageRefs.current.get(messageIndex)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [matchIndex, matches]);
 
   const total = page?.totalMessages;
   const shown = page?.messages.length ?? 0;
@@ -164,6 +200,48 @@ function Transcript({
         </span>
       </div>
 
+      <div className="transcript-find" role="search">
+        <input
+          type="search"
+          value={findQuery}
+          onChange={(event) => setFindQuery(event.target.value)}
+          placeholder="Find in this page…"
+          aria-label="Find in this transcript page"
+        />
+        {findQuery.trim() ? (
+          <span className="transcript-find-count" aria-live="polite">
+            {matches.length === 0 ? "No matches" : `${matchIndex + 1}/${matches.length}`}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          disabled={matches.length === 0}
+          onClick={() =>
+            setMatchIndex((current) =>
+              matches.length === 0 ? 0 : (current - 1 + matches.length) % matches.length,
+            )
+          }
+        >
+          Previous match
+        </button>
+        <button
+          type="button"
+          disabled={matches.length === 0}
+          onClick={() =>
+            setMatchIndex((current) =>
+              matches.length === 0 ? 0 : (current + 1) % matches.length,
+            )
+          }
+        >
+          Next match
+        </button>
+        {findQuery ? (
+          <button type="button" onClick={() => setFindQuery("")}>
+            Clear
+          </button>
+        ) : null}
+      </div>
+
       {error ? (
         <p className="empty">Could not read this transcript: {error}</p>
       ) : !page ? (
@@ -178,8 +256,14 @@ function Transcript({
           ) : (
             page.messages.map((message, index) => (
               <div
-                className={`transcript-message ${message.role}`}
+                className={`transcript-message ${message.role}${
+                  matches[matchIndex] === index ? " transcript-match-current" : ""
+                }`}
                 key={`${offset}-${index}`}
+                ref={(element) => {
+                  if (element) messageRefs.current.set(index, element);
+                  else messageRefs.current.delete(index);
+                }}
               >
                 <div className="transcript-role">{message.role}</div>
                 <div className="transcript-text">{message.text}</div>
