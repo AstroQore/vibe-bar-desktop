@@ -81,6 +81,15 @@ parser and top-level three-way patch engine for the native expected
 manifest remains `json_unversioned` and `legacy_unsafe`; production
 `SharedStoreLeaseBatch::acquire_writer` continues to reject Settings.
 
+The diagnostic-only transaction foundation fingerprints the exact settings
+source it read (existence, length, SHA-256) and re-reads it through the same
+directory capability immediately before rename. A cooperative writer that
+changes the file in that window receives `SourceChangedBeforeCommit`; Desktop
+cleans its temp sibling and never reports success. No user-space check can
+close a hostile, non-cooperating replacement between that final check and the
+OS rename; the future enabled protocol therefore still requires the shared
+lease and joint interop testing before this path becomes product authority.
+
 The prospective v1 envelope is `schemaVersion: 1` plus an unsigned `revision`.
 Legacy objects with neither key read as v0 / revision 0. A patch preserves raw
 unknown values, changes only the documented Desktop first-batch whitelist, and
