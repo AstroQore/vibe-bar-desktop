@@ -16,7 +16,8 @@ turned out to be wrong.
 | Area | State |
 | --- | --- |
 | Quota — Codex, Claude | Live fetch from the provider's own API using CLI credentials |
-| Quota — the other 23 providers | Read from the shared cache, labeled `shared data` |
+| Quota — Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, Warp | Live fetch using explicit credentials or official CLI |
+| Quota — the other 15 providers | Read from the shared cache, labeled `shared data` |
 | Tray | One line, fields and labels from the shared settings, remaining/used honoured |
 | Presentation settings | Read-only page; Overview honours display mode, provider visibility/order, and plan labels |
 | Service status | Shared-cache seed plus public live status for OpenAI-wide, Claude, Google AI, and Cursor; Desktop last-good state persists only under `client/desktop/` |

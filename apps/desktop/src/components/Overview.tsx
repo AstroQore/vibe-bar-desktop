@@ -20,8 +20,9 @@ export function Overview({
   if (accounts.length === 0) {
     return (
       <p className="empty">
-        No quota yet. Sign in with the Codex or Claude CLI, or launch the macOS
-        app once to populate shared Vibe Bar data.
+        No quota yet. Sign in with the Codex or Claude CLI, configure a supported
+        provider API key, or launch the macOS app once to populate shared Vibe
+        Bar data.
       </p>
     );
   }

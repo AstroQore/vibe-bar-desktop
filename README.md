@@ -13,10 +13,11 @@ window, on macOS, Windows, and Linux.
 
 ## What it does today
 
-- **Quota.** Fetches Codex and Claude usage directly from their own APIs,
-  using the credentials the Codex and Claude CLIs already wrote. Every other
-  provider Vibe Bar tracks is read from the shared data root and labeled
-  `shared data`, so the UI never overstates how fresh a number is.
+- **Quota.** Fetches Codex and Claude with their CLI credentials, plus Alibaba
+  Coding Plan, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, and Warp with
+  explicit credentials or their official CLI. The other 15 providers are read
+  from the shared data root and labeled `shared data`, so the UI never
+  overstates how fresh a number is.
 - **Upcoming resets.** Sorts provider-declared reset times from the current
   quota view, while keeping expired or future-dated observations visibly
   separate. It does not manufacture history or a forecast.
@@ -36,6 +37,14 @@ window, on macOS, Windows, and Linux.
 - **Local usage and cost.** Scans bounded Codex and Claude session JSONL files
   into an in-memory priced-usage view. Unknown models stay visibly unpriced;
   Desktop does not write a cost cache or ledger yet.
+
+API-key adapters read credentials from the process environment and never
+persist them: `DASHSCOPE_API_KEY` (or `ALIBABA_API_KEY`), `Z_AI_API_KEY`,
+`COPILOT_TOKEN`, `MINIMAX_CODING_API_KEY` (or `MINIMAX_API_KEY`),
+`KILO_API_KEY`, `OPENROUTER_API_KEY`, and `WARP_API_KEY` (or `WARP_TOKEN`).
+Kilo can also read its CLI login file; Kiro runs `kiro-cli` non-interactively.
+Endpoint/region overrides retain each provider's standard env names; see the
+corresponding module in `providers/`.
 
 ## One product, two clients
 
