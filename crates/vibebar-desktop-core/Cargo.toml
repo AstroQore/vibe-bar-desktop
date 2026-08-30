@@ -6,6 +6,16 @@ license.workspace = true
 repository.workspace = true
 description = "Platform-independent core of Vibe Bar Desktop: shared-data readers, provider quota adapters, and refresh scheduling."
 
+[features]
+default = []
+# Builds the synthetic-root cross-client lease probe. This is deliberately
+# non-default: production Desktop has no public shared-store probe API.
+contract-probe = []
+
+[[example]]
+name = "shared_store_lease_probe"
+required-features = ["contract-probe"]
+
 [dependencies]
 agent-session-core.workspace = true
 serde.workspace = true

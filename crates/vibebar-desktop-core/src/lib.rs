@@ -22,6 +22,7 @@ pub mod providers;
 pub mod refresh;
 pub mod sessions;
 pub mod shared;
+pub mod storage_contract;
 
 pub use error::{CoreError, QuotaError};
 pub use model::{AccountQuota, QuotaBucket, ToolType};

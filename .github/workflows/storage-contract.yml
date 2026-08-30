@@ -1,0 +1,47 @@
+name: Storage contract parity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/vibebar-desktop-core/Cargo.toml"
+      - "crates/vibebar-desktop-core/src/storage_contract/**"
+      - "crates/vibebar-desktop-core/examples/shared_store_lease_probe.rs"
+      - "docs/contracts/**"
+      - ".github/workflows/storage-contract.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/vibebar-desktop-core/Cargo.toml"
+      - "crates/vibebar-desktop-core/src/storage_contract/**"
+      - "crates/vibebar-desktop-core/examples/shared_store_lease_probe.rs"
+      - "docs/contracts/**"
+      - ".github/workflows/storage-contract.yml"
+
+jobs:
+  swift-rust-parity:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify Rust contract and build the synthetic probe
+        run: |
+          cargo test -p vibebar-desktop-core --features contract-probe --locked storage_contract
+          cargo build -p vibebar-desktop-core --example shared_store_lease_probe --features contract-probe --locked
+      - name: Check out the matching native contract implementation
+        uses: actions/checkout@v4
+        with:
+          repository: AstroQore/vibe-bar
+          ref: 7df5efce33a08675d7411f7688f88d71152da55a
+          path: native-vibe-bar
+      - name: Exercise Swift and Rust against the same locks and fixtures
+        env:
+          VIBEBAR_RUST_LEASE_PROBE: ${{ github.workspace }}/target/debug/examples/shared_store_lease_probe
+        run: swift test --package-path native-vibe-bar --filter RustProbeInteroperability
