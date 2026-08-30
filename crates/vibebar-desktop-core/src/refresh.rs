@@ -218,14 +218,17 @@ fn consolidate(accounts: Vec<AccountQuota>, now: f64) -> Vec<AccountQuota> {
             .into_iter()
             .partition(|a| a.error.is_none() && a.has_plausible_timestamp(now));
 
-        // bucket id -> (observed at, bucket), newest wins.
-        let mut newest: HashMap<String, (f64, QuotaBucket)> = HashMap::new();
+        // bucket id -> (observed at, provenance, bucket), newest wins.
+        let mut newest: HashMap<String, (f64, QuotaOrigin, QuotaBucket)> = HashMap::new();
         let mut source: Option<&AccountQuota> = None;
         for account in &usable {
             for bucket in &account.buckets {
                 let entry = newest.get(&bucket.id);
-                if entry.is_none_or(|(at, _)| account.queried_at > *at) {
-                    newest.insert(bucket.id.clone(), (account.queried_at, bucket.clone()));
+                if entry.is_none_or(|(at, _, _)| account.queried_at > *at) {
+                    newest.insert(
+                        bucket.id.clone(),
+                        (account.queried_at, account.origin, bucket.clone()),
+                    );
                 }
             }
             if !account.buckets.is_empty()
@@ -244,11 +247,11 @@ fn consolidate(accounts: Vec<AccountQuota>, now: f64) -> Vec<AccountQuota> {
         }
 
         let Some(source) = source else { continue };
-        let mut buckets: Vec<(f64, QuotaBucket)> = newest.into_values().collect();
+        let mut buckets: Vec<(f64, QuotaOrigin, QuotaBucket)> = newest.into_values().collect();
         // Preserve the source account's bucket order, then append anything
         // only other routes reported.
         let order: Vec<&str> = source.buckets.iter().map(|b| b.id.as_str()).collect();
-        buckets.sort_by_key(|(_, bucket)| {
+        buckets.sort_by_key(|(_, _, bucket)| {
             order
                 .iter()
                 .position(|id| *id == bucket.id)
@@ -257,20 +260,13 @@ fn consolidate(accounts: Vec<AccountQuota>, now: f64) -> Vec<AccountQuota> {
 
         let queried_at = buckets
             .iter()
-            .map(|(at, _)| *at)
+            .map(|(at, _, _)| *at)
             .fold(f64::MIN, f64::max);
-        let origin = if usable
-            .iter()
-            .any(|a| a.origin == QuotaOrigin::Live && a.queried_at >= queried_at)
-        {
-            QuotaOrigin::Live
-        } else if usable
-            .iter()
-            .any(|a| a.origin == QuotaOrigin::DesktopCache && a.queried_at >= queried_at)
-        {
-            QuotaOrigin::DesktopCache
+        let first_origin = buckets[0].1;
+        let origin = if buckets.iter().all(|(_, origin, _)| *origin == first_origin) {
+            first_origin
         } else {
-            QuotaOrigin::SharedCache
+            QuotaOrigin::Mixed
         };
         let auth_error = failures
             .iter()
@@ -281,7 +277,7 @@ fn consolidate(accounts: Vec<AccountQuota>, now: f64) -> Vec<AccountQuota> {
         out.push(AccountQuota {
             account_id: source.account_id.clone(),
             tool,
-            buckets: buckets.into_iter().map(|(_, bucket)| bucket).collect(),
+            buckets: buckets.into_iter().map(|(_, _, bucket)| bucket).collect(),
             plan: usable
                 .iter()
                 .filter(|a| a.plan.is_some())
@@ -321,6 +317,7 @@ fn origin_rank(origin: QuotaOrigin) -> u8 {
         QuotaOrigin::Live => 2,
         QuotaOrigin::DesktopCache => 1,
         QuotaOrigin::SharedCache => 0,
+        QuotaOrigin::Mixed => 1,
     }
 }
 
@@ -465,6 +462,28 @@ mod tests {
             .collect();
         got.sort_by(|a, b| a.0.cmp(b.0));
         assert_eq!(got, vec![("five_hour", 20.0), ("weekly", 55.0)]);
+    }
+
+    #[test]
+    fn consolidated_windows_from_multiple_sources_are_labeled_mixed() {
+        let mut desktop = quota_with(
+            "desktop",
+            ToolType::Codex,
+            NOW - 60.0,
+            &[("weekly", 55.0)],
+        );
+        desktop.origin = QuotaOrigin::DesktopCache;
+        let shared = quota_with(
+            "shared",
+            ToolType::Codex,
+            NOW - 3600.0,
+            &[("five_hour", 20.0)],
+        );
+
+        let card = &QuotaEngine::view_at(vec![desktop, shared], true, false, NOW).accounts[0];
+
+        assert_eq!(card.origin, QuotaOrigin::Mixed);
+        assert_eq!(card.buckets.len(), 2);
     }
 
     #[test]

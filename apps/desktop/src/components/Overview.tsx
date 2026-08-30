@@ -66,6 +66,14 @@ function QuotaCard({ account }: { account: AccountQuota }) {
             desktop cache
           </span>
         ) : null}
+        {account.origin === "mixed" ? (
+          <span
+            className="pill"
+            title="This card combines quota windows from Desktop cache and shared Vibe Bar data."
+          >
+            mixed sources
+          </span>
+        ) : null}
         <span className="card-meta">{formatRelative(account.queriedAt)}</span>
       </div>
 
