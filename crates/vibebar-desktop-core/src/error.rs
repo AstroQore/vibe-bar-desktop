@@ -40,4 +40,11 @@ pub enum CoreError {
     /// read-only for this client.
     #[error("refusing to write outside the Desktop client namespace: {0}")]
     WriteOutsideClientNamespace(String),
+    /// The UI did not present a transcript capability issued for a current
+    /// session listing. Keep this deliberately path-free: session paths are
+    /// local implementation details, never part of the IPC error surface.
+    #[error("session transcript is no longer available")]
+    SessionReferenceInvalid,
+    #[error("session transcript is unavailable")]
+    TranscriptUnavailable,
 }

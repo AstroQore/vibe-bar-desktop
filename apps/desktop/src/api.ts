@@ -47,7 +47,8 @@ export interface SessionRow {
   title?: string;
   projectDir?: string;
   lastActiveAt?: number;
-  sourcePath: string;
+  /** Opaque backend-issued reference; never a filesystem path. */
+  sessionRef: string;
   messageCount?: number;
   resumeCommand?: string;
   excerpt?: string;
@@ -68,8 +69,10 @@ export interface TranscriptMessage {
 
 export interface TranscriptPage {
   messages: TranscriptMessage[];
-  totalMessages: number;
+  /** Omitted when a safety limit truncates a very large transcript scan. */
+  totalMessages?: number;
   offset: number;
+  truncated: boolean;
 }
 
 export interface NativeAppPresence {
@@ -95,14 +98,12 @@ export const api = {
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),
   sessionTranscript: (
-    provider: string,
-    sourcePath: string,
+    sessionRef: string,
     offset = 0,
     limit = 50,
   ) =>
     invoke<TranscriptPage>("session_transcript", {
-      provider,
-      sourcePath,
+      sessionRef,
       offset,
       limit,
     }),

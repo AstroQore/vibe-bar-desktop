@@ -15,6 +15,12 @@ The boundary is enforced in code, not by convention:
 `ClientStore::write_json` refuses any path outside the client namespace
 (`crates/vibebar-desktop-core/src/client_store.rs`), and there is a test that
 a write to each shared store is rejected *and* creates nothing.
+The writer accepts only fixed client destinations, rejects `..` path
+components, and refuses symlinks in the private directory chain so a lexical
+`client/desktop/` prefix cannot escape back into shared state. It anchors the
+shared root once and performs creation, temporary-file allocation, and rename
+through capability directory handles, so a concurrent pathname replacement
+cannot redirect the final write.
 
 | Path | Desktop |
 | --- | --- |

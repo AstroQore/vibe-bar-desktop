@@ -2,7 +2,7 @@
 
 Written for the agent taking `vibe-bar-desktop` from its 0.1 preview to full
 parity with the macOS native app. Baseline: `AstroQore/vibe-bar` `main` at
-`fbd5371` (dev channel `v1.4.1-dev.50`).
+`83391a5` (dev channel `v1.4.1-dev.52`).
 
 Read [AGENTS.md](AGENTS.md) first — the rules there prevent data loss.
 This document is the map: what exists, what the native app does that Desktop
@@ -74,12 +74,14 @@ repo as much as here:
    readers already.
 3. Replace destructive schema handling with fail-closed everywhere:
    `session_index` (drop + rebuild), `usage_events` (reset), `scan_cache` and
-   `cost_snapshots` (delete file), `settings.json` (overwrite with defaults on
-   a parse failure).
+   `cost_snapshots` (delete file), the fill and forecast timelines (delete the
+   database and sidecars), `layout.json` (overwrite), and `settings.json`
+   (overwrite with defaults on a parse failure).
 4. Move the shared mutable JSON stores (`cost_history`, `subscription_history`,
-   `service_status`) to SQLite. This continues the direction the native app
-   already took with the timeline stores in PR #243, and it is far cheaper
-   than making cross-language byte-identical JSON CAS work.
+   `service_status`, and the quota field registry) to SQLite. This continues
+   the direction the native app already took with the timeline stores in PR
+   #243, and it is far cheaper than making cross-language byte-identical JSON
+   CAS work.
 5. `settings.json` stays JSON but gains a revision and lossless patch
    semantics: re-read, preserve unknown fields, write back.
 6. Flush every coalesced store on exit, not only settings.
@@ -213,6 +215,11 @@ four were found by running against a real data root, not by tests.
 
 ## 7. Ecosystem notes
 
+- Native `v1.4.1-dev.51` added bounded session indexing and a compactor for
+  the accumulated 2.5 GB index; `dev.52` refined the menu-bar, Mini, and Resets
+  surfaces. The compactor correctly refuses an unknown session-index schema,
+  but the raw schema-init/rebuild path still belongs to `agent-session-kit`
+  and remains part of the P1 fail-closed audit.
 - `agent-session-core` lives in `AstroQore/agent-session-kit` alongside the
   Swift implementation, added by PR #12. Desktop depends on it by git
   reference; once that PR merges, switch the dependency to a tag.

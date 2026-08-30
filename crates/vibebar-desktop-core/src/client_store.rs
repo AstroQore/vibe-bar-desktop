@@ -14,8 +14,12 @@
 //! files stays readable.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
+#[cfg(unix)]
+use cap_std::fs::OpenOptionsExt;
+use cap_std::fs::{Dir, OpenOptions};
 use serde::Serialize;
 
 use crate::error::CoreError;
@@ -68,7 +72,11 @@ impl ClientStore {
     }
 
     /// Atomic, namespace-guarded JSON write.
-    pub fn write_json<T: Serialize>(&self, path: &Path, value: &T) -> Result<(), CoreError> {
+    ///
+    /// Kept private so callers cannot turn this into a general-purpose file
+    /// writer. Every production destination is constructed from one of the
+    /// fixed `DataRoot::client_*` paths above.
+    fn write_json<T: Serialize>(&self, path: &Path, value: &T) -> Result<(), CoreError> {
         if !self.root.is_within_client_namespace(path) {
             return Err(CoreError::WriteOutsideClientNamespace(
                 path.display().to_string(),
@@ -79,12 +87,39 @@ impl ClientStore {
                 path.display().to_string(),
             ));
         };
-        std::fs::create_dir_all(parent)?;
-        // Tighten every directory we created, not just the leaf: the client
-        // namespace holds observations about the user's accounts.
-        for directory in [self.root.client_dir().as_path(), parent].iter().copied() {
-            restrict_directory(directory);
+        let relative_parent = parent
+            .strip_prefix(self.root.client_dir())
+            .map_err(|_| CoreError::WriteOutsideClientNamespace(path.display().to_string()))?;
+        let filename = path
+            .file_name()
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| CoreError::WriteOutsideClientNamespace(path.display().to_string()))?;
+        if (!relative_parent.as_os_str().is_empty()
+            && crate::paths::normal_components(relative_parent).is_err())
+            || crate::paths::normal_components(Path::new(filename)).is_err()
+        {
+            return Err(CoreError::WriteOutsideClientNamespace(
+                path.display().to_string(),
+            ));
         }
+
+        // The only ambient operation is opening the shared-root anchor. The
+        // client namespace is then created/opened component by component with
+        // no-follow handles; temp creation and rename stay on that same final
+        // directory handle, so a path replacement cannot redirect a write.
+        let root = crate::paths::open_or_create_ambient_dir(self.root.shared())?;
+        let client = crate::paths::open_or_create_dir_nofollow(&root, Path::new("client"))?;
+        let desktop = crate::paths::open_or_create_dir_nofollow(&client, Path::new("desktop"))?;
+        let directory = if relative_parent.as_os_str().is_empty() {
+            desktop.try_clone()?
+        } else {
+            crate::paths::open_or_create_dir_nofollow(&desktop, relative_parent)?
+        };
+        // `root` and `client` are shared ancestors. Creating them when absent
+        // is necessary to reach this namespace, but Desktop must never change
+        // their existing metadata; only its own subtree is private authority.
+        restrict_directory(&desktop)?;
+        restrict_directory(&directory)?;
 
         let mut buffer = Vec::new();
         let formatter = serde_json::ser::PrettyFormatter::with_indent(b"  ");
@@ -92,14 +127,23 @@ impl ClientStore {
         value.serialize(&mut serializer)?;
         buffer.push(b'\n');
 
-        let temp = temp_sibling(path);
-        {
-            let mut file = std::fs::File::create(&temp)?;
+        let (temp, mut file) = create_temp_file(&directory, filename)?;
+        let write_result = (|| -> std::io::Result<()> {
+            restrict_file(&file)?;
             file.write_all(&buffer)?;
             file.sync_all()?;
+            Ok(())
+        })();
+        drop(file);
+        if let Err(error) = write_result {
+            let _ = directory.remove_file(&temp);
+            return Err(error.into());
         }
-        restrict_file(&temp);
-        std::fs::rename(&temp, path)?;
+        if let Err(error) = directory.rename(&temp, &directory, filename) {
+            let _ = directory.remove_file(&temp);
+            return Err(error.into());
+        }
+        sync_directory(&directory)?;
         Ok(())
     }
 }
@@ -133,36 +177,80 @@ impl StoredClientQuota {
     }
 }
 
-fn temp_sibling(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "tmp".to_string());
+fn temp_sibling(path: &std::ffi::OsStr, attempt: u8) -> std::ffi::OsString {
+    let name = path.to_string_lossy();
     let unique = std::process::id();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
-    path.with_file_name(format!(".{name}.tmp-{unique}-{stamp}"))
+    format!(".{name}.tmp-{unique}-{stamp}-{attempt}").into()
+}
+
+/// `create_new` refuses a pre-existing temp path instead of following a
+/// symlink the process does not own.
+fn create_temp_file(
+    directory: &Dir,
+    name: &std::ffi::OsStr,
+) -> std::io::Result<(std::ffi::OsString, cap_std::fs::File)> {
+    for attempt in 0..16 {
+        let temp = temp_sibling(name, attempt);
+        let mut options = OpenOptions::new();
+        options
+            .write(true)
+            .create_new(true)
+            .follow(FollowSymlinks::No);
+        #[cfg(unix)]
+        options.mode(0o600);
+        match directory.open_with(Path::new(&temp), &options) {
+            Ok(file) => return Ok((temp, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate a private temporary file",
+    ))
 }
 
 #[cfg(unix)]
-fn restrict_directory(path: &Path) {
+fn restrict_directory(directory: &Dir) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+    directory
+        .try_clone()?
+        .into_std_file()
+        .set_permissions(std::fs::Permissions::from_mode(0o700))
 }
 
 #[cfg(unix)]
-fn restrict_file(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+fn restrict_file(file: &cap_std::fs::File) -> std::io::Result<()> {
+    use cap_std::fs::PermissionsExt;
+    file.set_permissions(cap_std::fs::Permissions::from_mode(0o600))
 }
 
 #[cfg(not(unix))]
-fn restrict_directory(_path: &Path) {}
+fn restrict_directory(_directory: &Dir) -> std::io::Result<()> {
+    Ok(())
+}
 
 #[cfg(not(unix))]
-fn restrict_file(_path: &Path) {}
+fn restrict_file(_file: &cap_std::fs::File) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_directory(directory: &Dir) -> std::io::Result<()> {
+    directory.try_clone()?.into_std_file().sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Dir) -> std::io::Result<()> {
+    // Windows has no portable std equivalent of fsyncing a directory handle;
+    // the atomic rename is still capability-scoped and crash consistency is
+    // provided by the filesystem's replace semantics.
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -214,10 +302,83 @@ mod tests {
             root.quotas_dir().join("quota-v1-abc.json"),
             root.shared().join("cost_history.json"),
         ] {
-            let err = store.write_json(&forbidden, &serde_json::json!({})).unwrap_err();
+            let err = store
+                .write_json(&forbidden, &serde_json::json!({}))
+                .unwrap_err();
             assert!(matches!(err, CoreError::WriteOutsideClientNamespace(_)));
-            assert!(!forbidden.exists(), "nothing may be created outside the namespace");
+            assert!(
+                !forbidden.exists(),
+                "nothing may be created outside the namespace"
+            );
         }
+    }
+
+    #[test]
+    fn refuses_a_parent_directory_escape() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let store = ClientStore::new(root.clone());
+        let escaped = root
+            .client_dir()
+            .join("..")
+            .join("..")
+            .join("settings.json");
+
+        let err = store
+            .write_json(&escaped, &serde_json::json!({}))
+            .unwrap_err();
+        assert!(matches!(err, CoreError::WriteOutsideClientNamespace(_)));
+        assert!(!root.settings_file().exists());
+    }
+
+    #[test]
+    fn writes_a_direct_client_namespace_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let store = ClientStore::new(root.clone());
+        let path = root.client_settings_file();
+
+        store
+            .write_json(&path, &serde_json::json!({"firstRun": false}))
+            .unwrap();
+
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["firstRun"], false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_symlinked_private_subdirectory() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        symlink(root.shared(), root.client_quotas_dir()).unwrap();
+
+        let result = ClientStore::new(root.clone()).save_quota(&sample_quota());
+        let escaped_quota = root
+            .shared()
+            .join(crate::shared::quota_cache::cache_file_component(
+                "oauth-codex",
+            ))
+            .with_extension("json");
+        assert!(
+            result.is_err(),
+            "a symlink must never be followed for writes"
+        );
+        assert!(
+            !escaped_quota.exists(),
+            "the shared root must not receive a client quota"
+        );
+        assert!(!root.settings_file().exists());
     }
 
     #[test]
@@ -246,12 +407,47 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::at(dir.path().join(".vibebar"));
-        ClientStore::new(root.clone()).save_quota(&sample_quota()).unwrap();
+        ClientStore::new(root.clone())
+            .save_quota(&sample_quota())
+            .unwrap();
 
         for directory in [root.client_dir(), root.client_quotas_dir()] {
             let mode = std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o700, "{} is {mode:o}", directory.display());
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_shared_ancestor_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.shared().join("client")).unwrap();
+        std::fs::set_permissions(root.shared(), std::fs::Permissions::from_mode(0o751)).unwrap();
+        std::fs::set_permissions(
+            root.shared().join("client"),
+            std::fs::Permissions::from_mode(0o711),
+        )
+        .unwrap();
+
+        ClientStore::new(root.clone())
+            .save_quota(&sample_quota())
+            .unwrap();
+
+        let root_mode = std::fs::metadata(root.shared())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        let client_mode = std::fs::metadata(root.shared().join("client"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(root_mode, 0o751);
+        assert_eq!(client_mode, 0o711);
     }
 
     #[test]

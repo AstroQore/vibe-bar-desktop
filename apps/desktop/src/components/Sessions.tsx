@@ -70,7 +70,7 @@ export function Sessions() {
         listing?.rows.map((row) => (
           <button
             className="session-row"
-            key={`${row.provider}:${row.sessionId}:${row.sourcePath}`}
+            key={row.sessionRef}
             onClick={() => setSelected(row)}
           >
             <span className="session-title">
@@ -110,7 +110,7 @@ function Transcript({
     let cancelled = false;
     setError(null);
     api
-      .sessionTranscript(session.provider, session.sourcePath, offset, PAGE_SIZE)
+      .sessionTranscript(session.sessionRef, offset, PAGE_SIZE)
       .then((result) => {
         if (!cancelled) setPage(result);
       })
@@ -120,10 +120,15 @@ function Transcript({
     return () => {
       cancelled = true;
     };
-  }, [session.provider, session.sourcePath, offset]);
+  }, [session.sessionRef, offset]);
 
-  const total = page?.totalMessages ?? 0;
+  const total = page?.totalMessages;
   const shown = page?.messages.length ?? 0;
+  const hasMore = page
+    ? page.truncated
+      ? shown === PAGE_SIZE
+      : total !== undefined && offset + shown < total
+    : false;
 
   return (
     <>
@@ -143,15 +148,15 @@ function Transcript({
           </button>
         ) : null}
         <span className="status-line" style={{ marginLeft: "auto" }}>
-          {total > 0
+          {total !== undefined && total > 0
             ? `Messages ${offset + 1}–${offset + shown} of ${total}`
-            : ""}
+            : page?.truncated
+              ? shown > 0
+                ? `Messages ${offset + 1}–${offset + shown} (scan limit reached)`
+                : "Scan limit reached before this page."
+              : ""}
         </span>
       </div>
-
-      <p className="mono" style={{ marginTop: 0 }}>
-        {session.sourcePath}
-      </p>
 
       {error ? (
         <p className="empty">Could not read this transcript: {error}</p>
@@ -181,7 +186,7 @@ function Transcript({
               Previous
             </button>
             <button
-              disabled={offset + shown >= total}
+              disabled={!hasMore}
               onClick={() => setOffset(offset + PAGE_SIZE)}
             >
               Next
