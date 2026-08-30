@@ -466,7 +466,10 @@ fn matches_filters(
         }
     }
     if let Some(harnesses) = harnesses {
-        if !harnesses.iter().any(|harness| harness == &row.harness) {
+        if !harnesses
+            .iter()
+            .any(|harness| harness_matches_row(harness, &row.harness))
+        {
             return false;
         }
     }
@@ -476,6 +479,25 @@ fn matches_filters(
         }
     }
     true
+}
+
+fn harness_matches_row(filter: &str, row: &str) -> bool {
+    filter == row || harness_display_name(filter).is_some_and(|display| display == row)
+}
+
+fn harness_display_name(raw: &str) -> Option<&'static str> {
+    match raw {
+        "codex" => Some("Codex"),
+        "chatgptWork" => Some("ChatGPT Work"),
+        "claudeCode" => Some("Claude Code"),
+        "claudeCowork" => Some("Claude Cowork"),
+        "geminiCLI" => Some("Gemini CLI"),
+        "antigravity" => Some("AntiGravity"),
+        "grokBuild" => Some("Grok Build"),
+        "cursor" => Some("Cursor"),
+        "grokBot" => Some("Grok Bot"),
+        _ => None,
+    }
 }
 
 enum IndexState {
@@ -517,7 +539,8 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
         provider: session.provider.raw_value().to_string(),
         harness: session
             .harness
-            .clone()
+            .as_deref()
+            .map(|raw| harness_display_name(raw).unwrap_or(raw).to_string())
             .unwrap_or_else(|| session.provider.default_harness().to_string()),
         session_id: session.session_id,
         title: session.title,
@@ -731,21 +754,22 @@ mod tests {
                size_bytes INTEGER, message_count INTEGER\
              );\
              INSERT INTO sessions(id, provider, session_id, harness, last_active_at, source_path) VALUES\
-               (1, 'codex', 'older-codex', 'Codex', 250, '/Users/example/older.jsonl'),\
-               (2, 'codex', 'work', 'ChatGPT Work', 300, '/Users/example/work.jsonl'),\
-               (3, 'claude', 'claude', 'Claude Code', 350, '/Users/example/claude.jsonl'),\
-               (4, 'codex', 'newer-codex', 'Codex', 400, '/Users/example/newer.jsonl'),\
-               (5, 'codex', 'future-codex', 'Codex', 9223372036854775807, '/Users/example/future.jsonl');",
+               (1, 'codex', 'older-codex', 'codex', 250, '/Users/example/older.jsonl'),\
+               (2, 'codex', 'work', 'chatgptWork', 300, '/Users/example/work.jsonl'),\
+               (3, 'claude', 'claude', 'claudeCode', 350, '/Users/example/claude.jsonl'),\
+               (4, 'codex', 'newer-codex', 'codex', 400, '/Users/example/newer.jsonl'),\
+               (5, 'codex', 'future-codex', 'codex', 9223372036854775807, '/Users/example/future.jsonl');",
         )
         .unwrap();
         drop(conn);
 
         let service = service(root, home);
         let providers = [SessionProvider::Codex];
-        let harnesses = ["Codex".to_string()];
+        let harnesses = ["codex".to_string()];
         let first = service.list_filtered(Some(&providers), Some(&harnesses), Some(200), 0, 1);
         assert_eq!(first.rows.len(), 1);
         assert_eq!(first.rows[0].session_id, "newer-codex");
+        assert_eq!(first.rows[0].harness, "Codex");
 
         let listing = service.list_filtered(Some(&providers), Some(&harnesses), Some(200), 1, 1);
         assert_eq!(listing.source, SessionSource::Indexed);
