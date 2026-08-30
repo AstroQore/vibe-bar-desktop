@@ -107,9 +107,19 @@ fn parse_credits(body: &[u8]) -> Result<Credits, QuotaError> {
     let envelope: CreditsEnvelope = serde_json::from_slice(body).map_err(|_| {
         QuotaError::ParseFailure("OpenRouter credits response not parseable".into())
     })?;
-    envelope
+    let credits = envelope
         .data
-        .ok_or_else(|| QuotaError::ParseFailure("OpenRouter credits response missing data".into()))
+        .ok_or_else(|| QuotaError::ParseFailure("OpenRouter credits response missing data".into()))?;
+    if !credits.total_credits.is_finite()
+        || !credits.total_usage.is_finite()
+        || credits.total_credits < 0.0
+        || credits.total_usage < 0.0
+    {
+        return Err(QuotaError::ParseFailure(
+            "OpenRouter credits response contains invalid values".into(),
+        ));
+    }
+    Ok(credits)
 }
 
 fn parse_key_stats(body: &[u8]) -> Result<KeyStats, QuotaError> {
@@ -251,6 +261,12 @@ mod tests {
             parse_credits(br#"{"data":null}"#),
             Err(QuotaError::ParseFailure(_))
         ));
+        for body in [
+            br#"{"data":{"total_credits":-1,"total_usage":0}}"#.as_slice(),
+            br#"{"data":{"total_credits":20,"total_usage":-5}}"#.as_slice(),
+        ] {
+            assert!(matches!(parse_credits(body), Err(QuotaError::ParseFailure(_))));
+        }
         assert!(safe_label(Some("sk-or-v1-abcdef123456")).is_none());
         assert!(safe_label(Some("aaaabbbbbcc.cccccddddde.eeeeefffff")).is_none());
         assert_eq!(
