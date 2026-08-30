@@ -100,11 +100,21 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
 
     let selected: Vec<String> = if field_ids.is_empty() {
         // No shared configuration: show what this build can actually fetch.
-        vec![
+        let mut defaults = vec![
             "codex.weekly".to_string(),
             "claude.weekly".to_string(),
             "claude.five_hour".to_string(),
-        ]
+        ];
+        for account in &view.accounts {
+            let Some(bucket) = account.buckets.first() else {
+                continue;
+            };
+            let field = format!("{}.{}", account.tool.raw_value(), bucket.id);
+            if !defaults.contains(&field) {
+                defaults.push(field);
+            }
+        }
+        defaults
     } else {
         field_ids
     };
@@ -123,7 +133,7 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
         let Some(bucket) = view
             .accounts
             .iter()
-            .filter(|account| account.tool.raw_value() == tool_raw && account.error.is_none())
+            .filter(|account| account.tool.raw_value() == tool_raw)
             .filter(|account| account.has_plausible_timestamp(now))
             .filter_map(|account| {
                 account
@@ -314,5 +324,23 @@ mod tests {
             ..account("x", ToolType::Claude, NOW - 1.0, 0.0)
         };
         assert_eq!(render_title_at(&settings, &view(vec![failed]), NOW), "Vibe Bar · sign in");
+    }
+
+    #[test]
+    fn fallback_uses_available_adapter_buckets_and_keeps_cached_auth_values() {
+        let mut zai = account("zai", ToolType::Zai, NOW - 10.0, 31.0);
+        zai.buckets[0].id = "zai.tokens".to_string();
+        assert_eq!(
+            render_title_at(&SharedSettings::default(), &view(vec![zai]), NOW),
+            "GLM 69%"
+        );
+
+        let mut cached = account("codex", ToolType::Codex, NOW - 10.0, 24.0);
+        cached.origin = QuotaOrigin::DesktopCache;
+        cached.error = Some(vibebar_desktop_core::error::QuotaError::NeedsLogin);
+        assert_eq!(
+            render_title_at(&SharedSettings::default(), &view(vec![cached]), NOW),
+            "ChatGPT Agentic 76%"
+        );
     }
 }
