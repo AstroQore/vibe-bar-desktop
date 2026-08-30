@@ -1,7 +1,7 @@
 import type { ProviderStatus, ServiceStatusView, StatusIncident } from "../api";
 import { formatRelative } from "../api";
 
-const WATCHED_TOOLS = ["claude", "cursor"] as const;
+const WATCHED_TOOLS = ["codex", "claude", "gemini", "cursor"] as const;
 
 export function ServiceStatus({
   status,
@@ -21,7 +21,11 @@ export function ServiceStatus({
   const watched = WATCHED_TOOLS.map((tool) => status.providers.find((provider) => provider.tool === tool));
   const incident = watched
     .flatMap((provider) => provider?.incidents ?? [])
-    .sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0))[0];
+    .sort(
+      (left, right) =>
+        Number(isResolved(left)) - Number(isResolved(right)) ||
+        (right.createdAt ?? 0) - (left.createdAt ?? 0),
+    )[0];
 
   return (
     <section className="service-status" aria-label="Service status">
@@ -45,7 +49,7 @@ export function ServiceStatus({
 }
 
 function ProviderPill({ tool, provider }: { tool: string; provider?: ProviderStatus }) {
-  const label = tool === "claude" ? "Claude" : "Cursor";
+  const label = tool === "codex" ? "OpenAI-wide" : tool === "claude" ? "Claude" : tool === "gemini" ? "Gemini Web" : "Cursor";
   if (!provider) {
     return <span className="status-pill unavailable">{label} unavailable</span>;
   }
@@ -69,7 +73,11 @@ function ProviderPill({ tool, provider }: { tool: string; provider?: ProviderSta
 function Incident({ incident }: { incident: StatusIncident }) {
   return (
     <p className="service-incident" title={incident.impact}>
-      {incident.name}: {incident.impact || incident.status}
+      {isResolved(incident) ? "Resolved" : incident.impact || incident.status} · {incident.name}
     </p>
   );
+}
+
+function isResolved(incident: StatusIncident) {
+  return ["resolved", "postmortem", "completed"].includes(incident.status.trim().toLowerCase());
 }

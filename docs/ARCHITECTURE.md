@@ -43,7 +43,7 @@ one sitting.
 | One provider's endpoint and wire shape | `providers/<name>.rs` |
 | Merging live and cached into what the UI shows | `refresh.rs` |
 | Read-only presentation preferences | `shared/settings.rs` → `presentation_settings` IPC |
-| Public Claude/Cursor service status | `status.rs` → in-memory cache → status IPC |
+| Public OpenAI-wide/Claude/Google AI/Cursor service status | `status.rs` → in-memory cache → status IPC |
 | Local Codex/Claude usage and priced portion | `cost.rs` → in-memory cache → cost IPC |
 | Indexed vs scanned sessions | `sessions.rs` |
 

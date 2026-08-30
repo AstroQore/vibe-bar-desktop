@@ -27,7 +27,7 @@ window, on macOS, Windows, and Linux.
   visibility/order, plan labels, and menu-bar field labels. A read-only
   Settings page shows the effective values; Desktop does not save them yet.
 - **Service status.** Reads cached native status immediately, then refreshes
-  Claude and Cursor from their public Statuspage feeds without credentials.
+  OpenAI-wide, Claude, Google AI, and Cursor status from public feeds without credentials.
 - **Local usage and cost.** Scans bounded Codex and Claude session JSONL files
   into an in-memory priced-usage view. Unknown models stay visibly unpriced;
   Desktop does not write a cost cache or ledger yet.
