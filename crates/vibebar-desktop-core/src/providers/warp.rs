@@ -176,7 +176,10 @@ fn parse(body: &[u8], now: f64) -> Result<Snapshot, QuotaError> {
         .get("requestLimitInfo")
         .and_then(Value::as_object)
         .ok_or_else(|| QuotaError::ParseFailure("Warp missing requestLimitInfo".into()))?;
-    let is_unlimited = bool_value(limit.get("isUnlimited"));
+    let is_unlimited = limit
+        .get("isUnlimited")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| QuotaError::ParseFailure("Warp missing or invalid isUnlimited".into()))?;
     let request_limit = match optional_int(limit.get("requestLimit")) {
         Some(value) if value >= 0 => value,
         None if is_unlimited => 0,
@@ -363,18 +366,6 @@ fn optional_int(value: Option<&Value>) -> Option<i64> {
         })
 }
 
-fn bool_value(value: Option<&Value>) -> bool {
-    match value {
-        Some(Value::Bool(value)) => *value,
-        Some(Value::Number(value)) => value.as_f64().is_some_and(|value| value != 0.0),
-        Some(Value::String(value)) => matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "true" | "1" | "yes"
-        ),
-        _ => false,
-    }
-}
-
 fn error_message(value: &Value) -> Option<String> {
     value
         .as_str()
@@ -551,6 +542,30 @@ mod tests {
                         "isUnlimited": false,
                         "requestLimit": request_limit,
                         "requestsUsedSinceLastRefresh": 0
+                    }}
+                }}
+            }))
+            .unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
+    }
+
+    #[test]
+    fn response_requires_an_explicit_boolean_unlimited_flag() {
+        let missing = br#"{"data":{"user":{"__typename":"UserOutput","user":{"requestLimitInfo":{"requestLimit":100,"requestsUsedSinceLastRefresh":25}}}}}"#;
+        assert!(matches!(
+            parse(missing, 0.0),
+            Err(QuotaError::ParseFailure(_))
+        ));
+
+        for flag in [Value::Null, Value::String("false".into()), Value::from(0)] {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "data": {"user": {
+                    "__typename": "UserOutput",
+                    "user": {"requestLimitInfo": {
+                        "isUnlimited": flag,
+                        "requestLimit": 100,
+                        "requestsUsedSinceLastRefresh": 25
                     }}
                 }}
             }))

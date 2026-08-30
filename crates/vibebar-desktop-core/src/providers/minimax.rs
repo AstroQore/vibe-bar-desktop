@@ -1,6 +1,6 @@
 //! MiniMax Token Plan quota adapter.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
@@ -317,7 +317,7 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
     let Some(services) = services else {
         return Vec::new();
     };
-    services
+    let buckets: Vec<_> = services
         .iter()
         .filter_map(|service| {
             let raw = ["window_type", "time_range", "service_type"]
@@ -336,14 +336,14 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
                 ("minimax.coding", "5 Hours", "5h", 5 * 3_600)
             };
             let total = number(service.get("limit").or_else(|| service.get("total")));
-            let used = number(service.get("usage").or_else(|| service.get("used")));
+            let used_count = number(service.get("usage").or_else(|| service.get("used")));
             let percent = number(service.get("percent"));
             if percent.is_none()
-                && (total.filter(|total| *total > 0.0).is_none() || used.is_none())
+                && (total.filter(|total| *total > 0.0).is_none() || used_count.is_none())
             {
                 return None;
             }
-            let used = used.unwrap_or(0.0);
+            let used = used_count.unwrap_or(0.0);
             let used_percent = percent.map_or_else(
                 || {
                     total
@@ -358,8 +358,13 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
                     }
                 },
             );
-            let group =
-                total.map(|total| format!("{:.0}/{total:.0} left", (total - used).max(0.0)));
+            let group = total.map(|total| {
+                let remaining = used_count.map_or_else(
+                    || total * (100.0 - used_percent).clamp(0.0, 100.0) / 100.0,
+                    |used| (total - used).max(0.0),
+                );
+                format!("{remaining:.0}/{total:.0} left")
+            });
             Some(QuotaBucket::new(
                 id,
                 title,
@@ -370,7 +375,16 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
                 group,
             ))
         })
-        .collect()
+        .collect();
+    let mut ids = HashSet::new();
+    if buckets.iter().any(|bucket| !ids.insert(&bucket.id)) {
+        // Bucket ids are a shared storage contract. Do not invent suffixes;
+        // fail this service shape closed so parse can fall back to model rows
+        // (or retain the last-good snapshot when none exist).
+        Vec::new()
+    } else {
+        buckets
+    }
 }
 
 fn service_reset_at(service: &Value, now: f64) -> Option<f64> {
@@ -600,10 +614,11 @@ mod tests {
         assert_eq!(buckets[0].used_percent, 25.0);
         assert_eq!(buckets[0].reset_at, Some(1_700_003_600.0));
 
-        let monthly = br#"{"data":{"services":[{"window_type":"monthly","percent":0.25,"reset_in_seconds":2592000}]}}"#;
+        let monthly = br#"{"data":{"services":[{"window_type":"monthly","limit":100,"percent":0.25,"reset_in_seconds":2592000}]}}"#;
         let (buckets, _) = parse(monthly, 1_700_000_000.0).unwrap();
         assert_eq!(buckets[0].used_percent, 25.0);
         assert_eq!(buckets[0].reset_at, Some(1_702_592_000.0));
+        assert_eq!(buckets[0].group_title.as_deref(), Some("75/100 left"));
     }
     #[test]
     fn zero_limit_service_placeholders_do_not_hide_model_rows() {
@@ -612,6 +627,19 @@ mod tests {
         assert_eq!(buckets.len(), 1);
         assert_eq!(buckets[0].id, "minimax.coding.0.minimax-m2");
         assert_eq!(buckets[0].used_percent, 25.0);
+    }
+    #[test]
+    fn duplicate_service_bucket_ids_fail_closed_to_model_rows() {
+        let body = br#"{"data":{"services":[{"service_type":"coding","usage":10,"limit":100},{"service_type":"coding","usage":20,"limit":100}],"model_remains":[{"model_name":"MiniMax-M2","current_interval_total_count":100,"current_interval_usage_count":25}]}}"#;
+        let (buckets, _) = parse(body, 1_700_000_000.0).unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].id, "minimax.coding.0.minimax-m2");
+
+        let duplicate_only = br#"{"data":{"services":[{"service_type":"coding","usage":10,"limit":100},{"service_type":"coding","usage":20,"limit":100}]}}"#;
+        assert!(matches!(
+            parse(duplicate_only, 1_700_000_000.0),
+            Err(QuotaError::ParseFailure(_))
+        ));
     }
     #[test]
     fn dashboard_model_names_are_stable_english_labels() {
