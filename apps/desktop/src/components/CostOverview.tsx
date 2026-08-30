@@ -10,6 +10,11 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
     );
   }
 
+  const malformedWarning = cost.malformedLines > 0 ? (
+    <p className="cost-note">
+      Skipped {cost.malformedLines} malformed local log line{cost.malformedLines === 1 ? "" : "s"} · totals are incomplete.
+    </p>
+  ) : null;
   const hasUsage = cost.last30Days.tokens > 0 || cost.last30Days.requests > 0;
   if (!hasUsage) {
     return (
@@ -19,8 +24,9 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
           <span className="status-line">scanned {formatRelative(cost.scannedAt)}</span>
         </div>
         <p className="cost-note">No local usage in the last 30 days.</p>
-        {cost.truncated ? (
-          <p className="cost-note">Scan reached its local file budget.</p>
+        {malformedWarning}
+        {cost.truncated && cost.malformedLines === 0 ? (
+          <p className="cost-note">Local scan is incomplete.</p>
         ) : null}
       </section>
     );
@@ -55,8 +61,9 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
           Priced portion only · {cost.unpricedEvents} event{cost.unpricedEvents === 1 ? "" : "s"} unpriced.
         </p>
       ) : null}
-      {cost.truncated ? (
-        <p className="cost-note">Scan reached its local file budget.</p>
+      {malformedWarning}
+      {cost.truncated && cost.malformedLines === 0 ? (
+        <p className="cost-note">Local scan is incomplete.</p>
       ) : null}
     </section>
   );
