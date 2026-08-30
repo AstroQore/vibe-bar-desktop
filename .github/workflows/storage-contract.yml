@@ -33,12 +33,13 @@ jobs:
       - name: Verify Rust contract and build the synthetic probe
         run: |
           cargo test -p vibebar-desktop-core --features contract-probe --locked storage_contract
+          cargo test -p vibebar-desktop-core --example shared_store_lease_probe --features contract-probe --locked
           cargo build -p vibebar-desktop-core --example shared_store_lease_probe --features contract-probe --locked
       - name: Check out the matching native contract implementation
         uses: actions/checkout@v4
         with:
           repository: AstroQore/vibe-bar
-          ref: b875c7ecedce75d48b0c1d23c7fe5ed2676beca4
+          ref: 5271051feb67a46421fa2c5a1a5c2a1c83196bdc
           path: native-vibe-bar
       - name: Exercise Swift and Rust against the same locks and fixtures
         env:

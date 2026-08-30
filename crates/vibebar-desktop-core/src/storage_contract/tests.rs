@@ -63,6 +63,14 @@ fn endpoint_and_legacy_contracts_are_classified_fail_closed() {
         SharedStoreSchemaKind::SqliteUnversioned
     );
     assert_eq!(remote_usage.current_schema_version, None);
+    let maintenance = manifest
+        .contract(SharedStoreId::SessionIndexMaintenance)
+        .unwrap();
+    assert_eq!(
+        maintenance.schema_kind,
+        SharedStoreSchemaKind::JsonUnversioned
+    );
+    assert_eq!(maintenance.current_schema_version, None);
     assert!(manifest
         .stores
         .iter()
@@ -314,6 +322,31 @@ fn diagnostic_probe_different_stores_parallel_and_maintenance_fences() {
         Some(LeaseError::Busy)
     );
     maintenance.release();
+}
+
+#[cfg(unix)]
+#[test]
+fn diagnostic_probe_maintenance_role_must_belong_to_the_store() {
+    let root = temp_root();
+    assert_eq!(
+        SharedStoreLeaseBatch::acquire_synthetic_probe(
+            root.path(),
+            &[SharedStoreId::SessionIndexScratch],
+            SharedStoreLeaseRole::Migrator,
+            true,
+            "test",
+        )
+        .err(),
+        Some(LeaseError::InvalidRole)
+    );
+    SharedStoreLeaseBatch::acquire_synthetic_probe(
+        root.path(),
+        &[SharedStoreId::SessionIndexScratch],
+        SharedStoreLeaseRole::Pruner,
+        true,
+        "test",
+    )
+    .unwrap();
 }
 
 #[cfg(unix)]

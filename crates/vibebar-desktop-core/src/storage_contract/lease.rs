@@ -108,7 +108,8 @@ impl SharedStoreLeaseBatch {
                 if !matches!(
                     role,
                     SharedStoreLeaseRole::Migrator | SharedStoreLeaseRole::Pruner
-                ) {
+                ) || !contract.writer_roles.contains(&role)
+                {
                     return Err(LeaseError::InvalidRole);
                 }
             } else if !contract.writer_roles.contains(&role) {

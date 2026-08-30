@@ -37,11 +37,7 @@ fn run(args: Vec<String>) -> Result<(), LeaseError> {
         .parse::<u64>()
         .map_err(|_| LeaseError::InvalidRecord("--milliseconds must be an integer"))?;
     let maintenance = has_flag(&args, "--maintenance");
-    let role = if maintenance {
-        SharedStoreLeaseRole::Migrator
-    } else {
-        role_for(store)?
-    };
+    let role = role_for(store, maintenance)?;
     let mut lease = SharedStoreLeaseBatch::acquire_synthetic_probe(
         std::path::Path::new(root),
         &[store],
@@ -68,16 +64,30 @@ fn has_flag(args: &[String], name: &str) -> bool {
     args.iter().any(|argument| argument == name)
 }
 
-fn role_for(store: SharedStoreId) -> Result<SharedStoreLeaseRole, LeaseError> {
+fn role_for(store: SharedStoreId, maintenance: bool) -> Result<SharedStoreLeaseRole, LeaseError> {
     let manifest = SharedStoreManifest::native_fixture().map_err(LeaseError::Contract)?;
     let contract = manifest.contract(store).ok_or_else(|| {
         LeaseError::Contract(ContractError::UnknownStore(store.as_raw().to_owned()))
     })?;
-    contract
-        .writer_roles
-        .first()
-        .copied()
-        .ok_or(LeaseError::InvalidRole)
+    if maintenance {
+        contract
+            .writer_roles
+            .iter()
+            .copied()
+            .find(|role| {
+                matches!(
+                    role,
+                    SharedStoreLeaseRole::Migrator | SharedStoreLeaseRole::Pruner
+                )
+            })
+            .ok_or(LeaseError::InvalidRole)
+    } else {
+        contract
+            .writer_roles
+            .first()
+            .copied()
+            .ok_or(LeaseError::InvalidRole)
+    }
 }
 
 #[cfg(test)]
@@ -98,15 +108,23 @@ mod tests {
     #[test]
     fn role_is_selected_from_each_store_manifest() {
         assert_eq!(
-            role_for(SharedStoreId::Settings).unwrap(),
+            role_for(SharedStoreId::Settings, false).unwrap(),
             SharedStoreLeaseRole::SettingsEditor
         );
         assert_eq!(
-            role_for(SharedStoreId::UsageEvents).unwrap(),
+            role_for(SharedStoreId::UsageEvents, false).unwrap(),
             SharedStoreLeaseRole::UsageScanner
         );
         assert_eq!(
-            role_for(SharedStoreId::SessionIndexMaintenance).unwrap(),
+            role_for(SharedStoreId::SessionIndexMaintenance, false).unwrap(),
+            SharedStoreLeaseRole::Pruner
+        );
+        assert_eq!(
+            role_for(SharedStoreId::QuotaCache, true).unwrap(),
+            SharedStoreLeaseRole::Migrator
+        );
+        assert_eq!(
+            role_for(SharedStoreId::SessionIndexScratch, true).unwrap(),
             SharedStoreLeaseRole::Pruner
         );
     }
