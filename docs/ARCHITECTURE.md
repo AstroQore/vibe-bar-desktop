@@ -78,8 +78,9 @@ fallback is deliberately narrower rather than a second, competing indexer —
 one index, one writer, and Desktop is not that writer yet.
 
 Session paths stay inside the Rust process. List and search results expose an
-opaque, CSPRNG-backed `sessionRef` that expires after 15 minutes or the next
-listing; transcript IPC resolves that capability back to the currently
+opaque, CSPRNG-backed `sessionRef` that expires after 15 minutes; overlapping
+list/search requests retain each other's unexpired references. Transcript IPC
+resolves that capability back to the currently
 authorized index/discovery result and rejects stale,
 unknown, symlinked, or out-of-root files. A webview-supplied path is never an
 authorization decision. The parser receives an already-open, no-follow file

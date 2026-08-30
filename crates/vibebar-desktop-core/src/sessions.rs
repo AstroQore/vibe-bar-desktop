@@ -31,6 +31,7 @@ use crate::paths::DataRoot;
 
 const SCAN_LIMIT: usize = 400;
 const SESSION_REFERENCE_TTL: Duration = Duration::from_secs(15 * 60);
+const MAX_SESSION_REFERENCES: usize = 4_096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,8 +53,9 @@ pub struct SessionRow {
     /// Unix epoch seconds.
     pub last_active_at: Option<i64>,
     /// CSPRNG-backed in-memory capability issued with this listing. It expires
-    /// after 15 minutes or the next list/search and intentionally contains
-    /// neither a path nor a provider selected by the web UI.
+    /// after 15 minutes and intentionally contains neither a path nor a
+    /// provider selected by the web UI. References from overlapping listings
+    /// coexist so a slower stale request cannot revoke the visible result.
     pub session_ref: String,
     /// Never serialize local paths into the webview. The backend associates
     /// this with `session_ref` before returning a listing.
@@ -185,8 +187,8 @@ impl SessionsService {
     /// Transcript page for a session capability issued by `list` or `search`.
     ///
     /// The capability is only an in-memory lookup key. It is not a path (or a
-    /// path encoding), expires after 15 minutes or the next list/search, and a
-    /// stale process/listing cannot be used to read a newly supplied file.
+    /// path encoding), expires after 15 minutes, and a stale process cannot be
+    /// used to read a newly supplied file.
     pub fn transcript(
         &self,
         session_ref: &str,
@@ -255,7 +257,9 @@ impl SessionsService {
             }
             return;
         };
-        references.clear();
+        let now = Instant::now();
+        references.retain(|_, resolved| resolved.expires_at > now);
+        trim_oldest_references(&mut references, rows.len());
         for row in rows {
             let Some(provider) = SessionProvider::from_raw(&row.provider) else {
                 row.session_ref.clear();
@@ -270,7 +274,7 @@ impl SessionsService {
                 ResolvedSession {
                     provider,
                     source_path: PathBuf::from(&row.source_path),
-                    expires_at: Instant::now() + SESSION_REFERENCE_TTL,
+                    expires_at: now + SESSION_REFERENCE_TTL,
                 },
             );
             row.session_ref = session_ref;
@@ -442,6 +446,24 @@ fn opaque_reference(references: &HashMap<String, ResolvedSession>) -> Option<Str
     None
 }
 
+fn trim_oldest_references(references: &mut HashMap<String, ResolvedSession>, incoming: usize) {
+    let overflow = references
+        .len()
+        .saturating_add(incoming)
+        .saturating_sub(MAX_SESSION_REFERENCES);
+    if overflow == 0 {
+        return;
+    }
+    let mut oldest: Vec<_> = references
+        .iter()
+        .map(|(key, resolved)| (key.clone(), resolved.expires_at))
+        .collect();
+    oldest.sort_by_key(|(_, expires_at)| *expires_at);
+    for (key, _) in oldest.into_iter().take(overflow) {
+        references.remove(&key);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,13 +606,34 @@ mod tests {
             Err(CoreError::SessionReferenceInvalid)
         ));
 
-        // A refreshed listing retires all previously issued capabilities.
+        // A newer listing gets a distinct token but does not revoke an
+        // unexpired token from an overlapping, slower request.
         let refreshed_ref = service.list(20).rows[0].session_ref.clone();
         assert_ne!(refreshed_ref, session_ref);
-        assert!(matches!(
-            service.transcript(&session_ref, 0, 1),
-            Err(CoreError::SessionReferenceInvalid)
-        ));
+        assert_eq!(
+            service.transcript(&session_ref, 0, 1).unwrap().messages[0].text,
+            "first message"
+        );
+    }
+
+    #[test]
+    fn session_reference_cache_is_bounded() {
+        let dir = tempfile::tempdir().unwrap();
+        let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
+        let expires_at = Instant::now() + SESSION_REFERENCE_TTL;
+        let mut references = service.references.lock().unwrap();
+        for index in 0..(MAX_SESSION_REFERENCES + 32) {
+            references.insert(
+                format!("reference-{index}"),
+                ResolvedSession {
+                    provider: SessionProvider::Codex,
+                    source_path: PathBuf::from("/synthetic"),
+                    expires_at,
+                },
+            );
+        }
+        trim_oldest_references(&mut references, 0);
+        assert_eq!(references.len(), MAX_SESSION_REFERENCES);
     }
 
     #[test]
