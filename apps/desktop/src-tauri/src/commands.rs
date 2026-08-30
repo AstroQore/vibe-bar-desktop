@@ -1,7 +1,7 @@
 //! IPC surface for the web UI.
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::SessionListing;
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
@@ -38,6 +38,13 @@ pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings
 #[tauri::command]
 pub async fn refresh_quota(state: State<'_, AppState>) -> Result<QuotaView, String> {
     Ok(state.engine().refresh().await)
+}
+
+/// Hide the borderless Mini through the same state/persistence path as the
+/// tray toggle. The Mini's own close button is the user-reachable close path.
+#[tauri::command]
+pub fn hide_mini(app: AppHandle) {
+    crate::mini_window::hide(&app);
 }
 
 #[tauri::command]

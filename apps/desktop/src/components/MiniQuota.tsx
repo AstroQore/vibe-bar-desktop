@@ -21,7 +21,16 @@ export function MiniQuota() {
 
   return (
     <main className="mini-quota" data-tauri-drag-region>
-      <div className="mini-title" data-tauri-drag-region>Vibe Bar</div>
+      <div className="mini-title" data-tauri-drag-region="deep">
+        <span>Vibe Bar</span>
+        <button
+          className="mini-close"
+          aria-label="Hide Mini"
+          onClick={() => void api.hideMini().catch(() => undefined)}
+        >
+          ×
+        </button>
+      </div>
       {!view ? (
         <p className="mini-empty">Loading quota…</p>
       ) : rows.length === 0 ? (

@@ -79,7 +79,7 @@ fn show<R: Runtime>(app: &AppHandle<R>) {
     };
 }
 
-fn hide<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn hide<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(LABEL) {
         let _ = window.hide();
     }

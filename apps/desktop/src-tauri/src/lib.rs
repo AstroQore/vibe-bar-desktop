@@ -34,6 +34,7 @@ pub fn run() {
             commands::quota_view,
             commands::presentation_settings,
             commands::refresh_quota,
+            commands::hide_mini,
             commands::session_list,
             commands::session_search,
             commands::session_transcript,
