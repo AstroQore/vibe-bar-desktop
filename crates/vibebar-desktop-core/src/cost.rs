@@ -26,7 +26,7 @@ const MAX_DISCOVERED_PER_PROVIDER: usize = MAX_FILES_PER_PROVIDER * 10;
 const MAX_DISCOVERY_ENTRIES: usize = 200_000;
 const MAX_DISCOVERY_DEPTH: usize = 32;
 const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
-const PRICING_VERSION: &str = "native-2026-06-08-v5";
+pub(crate) const PRICING_VERSION: &str = "native-2026-06-08-v5";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
