@@ -388,6 +388,85 @@ input[type="text"] {
   padding: 48px 24px;
 }
 
+.resets-page {
+  max-width: 880px;
+  margin: 0 auto;
+}
+.resets-heading {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.resets-heading > :first-child {
+  margin-right: auto;
+}
+.resets-heading h1 {
+  margin: 0;
+  font-size: 18px;
+}
+.resets-heading p {
+  margin: 2px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.reset-warning {
+  color: var(--warning);
+  font-size: 11px;
+}
+.reset-section {
+  margin-bottom: 20px;
+}
+.reset-section .vendor-name span {
+  margin-left: 5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.reset-card.expired,
+.reset-card.due {
+  opacity: 0.72;
+}
+.reset-card-line {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 7px;
+}
+.reset-card-line > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.reset-card-line > :first-child {
+  flex: 1;
+}
+.reset-card-line strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reset-card-line span,
+.reset-list-empty {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.reset-when {
+  width: 210px;
+  text-align: right;
+}
+.reset-when strong {
+  font-variant-numeric: tabular-nums;
+}
+.reset-card .track {
+  height: 4px;
+}
+.reset-list-empty {
+  padding: 14px;
+  text-align: center;
+}
+
 .session-row {
   display: block;
   width: 100%;

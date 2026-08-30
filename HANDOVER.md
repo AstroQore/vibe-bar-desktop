@@ -21,6 +21,7 @@ turned out to be wrong.
 | Presentation settings | Read-only page; Overview honours display mode, provider visibility/order, and plan labels |
 | Service status | Shared-cache seed plus public live status for OpenAI-wide, Claude, Google AI, and Cursor; Desktop last-good state persists only under `client/desktop/` |
 | Usage / cost | Read-only local Codex + Claude scan with in-memory pricing; no shared ledger writes |
+| Resets | Upcoming provider-declared reset times from current quota data; no forecast or history |
 | Sessions | Shared index when present (all harnesses, FTS); otherwise Codex + Claude log scan |
 | Transcripts | Codex and Claude Code JSONL, paged, tolerant of unknown lines |
 | Resume | Command built by the kit's shared builder, copied to the clipboard |

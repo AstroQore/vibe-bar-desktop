@@ -17,6 +17,9 @@ window, on macOS, Windows, and Linux.
   using the credentials the Codex and Claude CLIs already wrote. Every other
   provider Vibe Bar tracks is read from the shared data root and labeled
   `shared data`, so the UI never overstates how fresh a number is.
+- **Upcoming resets.** Sorts provider-declared reset times from the current
+  quota view, while keeping expired or future-dated observations visibly
+  separate. It does not manufacture history or a forecast.
 - **Tray.** One line of the fields you picked, with your labels and your
   remaining-vs-used preference — read from the same settings the macOS menu
   bar uses.

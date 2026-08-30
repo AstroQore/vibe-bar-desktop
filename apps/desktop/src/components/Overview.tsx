@@ -121,7 +121,7 @@ function QuotaCard({
   );
 }
 
-function orderedVisibleAccounts(
+export function orderedVisibleAccounts(
   accounts: AccountQuota[],
   settings: PresentationSettings | null,
 ): AccountQuota[] {

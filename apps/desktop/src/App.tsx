@@ -5,11 +5,12 @@ import { api, formatRelative } from "./api";
 import { About } from "./components/About";
 import { CostOverview } from "./components/CostOverview";
 import { Overview } from "./components/Overview";
+import { Resets } from "./components/Resets";
 import { Sessions } from "./components/Sessions";
 import { ServiceStatus } from "./components/ServiceStatus";
 import { Settings } from "./components/Settings";
 
-type Tab = "overview" | "sessions" | "settings" | "about";
+type Tab = "overview" | "resets" | "sessions" | "settings" | "about";
 
 export function App() {
   const [tab, setTab] = useState<Tab>("overview");
@@ -20,6 +21,7 @@ export function App() {
   const [statusRefreshFailed, setStatusRefreshFailed] = useState(false);
   const [cost, setCost] = useState<CostView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const showsQuotaRefresh = tab === "overview" || tab === "resets";
 
   useEffect(() => {
     // Cached view first so the window paints immediately, then live updates
@@ -74,7 +76,7 @@ export function App() {
 
       <header className="header">
         <nav className="tabs" role="tablist">
-          {(["overview", "sessions", "settings", "about"] as const).map((id) => (
+          {(["overview", "resets", "sessions", "settings", "about"] as const).map((id) => (
             <button
               key={id}
               className="tab"
@@ -84,16 +86,18 @@ export function App() {
             >
               {id === "overview"
                 ? "Quota"
-                : id === "sessions"
-                  ? "Sessions"
-                  : id === "settings"
-                    ? "Settings"
-                    : "About"}
+                : id === "resets"
+                  ? "Resets"
+                  : id === "sessions"
+                    ? "Sessions"
+                    : id === "settings"
+                      ? "Settings"
+                      : "About"}
             </button>
           ))}
         </nav>
 
-        {tab === "overview" ? (
+        {showsQuotaRefresh ? (
           <>
             <span className="status-line">
               updated {formatRelative(view?.lastUpdated)}
@@ -116,6 +120,12 @@ export function App() {
               <CostOverview cost={cost} />
               <Overview view={view} settings={presentation} />
             </>
+          ) : (
+            <p className="empty">Loading quota…</p>
+          )
+        ) : tab === "resets" ? (
+          view ? (
+            <Resets view={view} settings={presentation} />
           ) : (
             <p className="empty">Loading quota…</p>
           )
