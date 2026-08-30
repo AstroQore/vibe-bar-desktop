@@ -189,9 +189,11 @@ impl ToolType {
             ToolType::Codex
                 | ToolType::Claude
                 | ToolType::Alibaba
+                | ToolType::Copilot
                 | ToolType::Zai
                 | ToolType::Minimax
                 | ToolType::Kilo
+                | ToolType::Kiro
                 | ToolType::OpenRouter
                 | ToolType::Warp
         )
