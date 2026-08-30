@@ -136,11 +136,10 @@ fn parse_snapshot(body: &[u8]) -> Result<Snapshot, QuotaError> {
     let mut token_limits = Vec::new();
     let mut time_limit = None;
     for limit in &data.limits {
-        let bucket = limit.bucket()?;
         match limit.kind.as_str() {
-            "TOKENS_LIMIT" => token_limits.push(bucket),
-            "TIME_LIMIT" => time_limit = Some(bucket),
-            _ => {}
+            "TOKENS_LIMIT" => token_limits.push(limit.bucket()?),
+            "TIME_LIMIT" => time_limit = Some(limit.bucket()?),
+            _ => continue,
         }
     }
 
@@ -419,6 +418,13 @@ mod tests {
                 Err(QuotaError::ParseFailure(_))
             ));
         }
+        let buckets = parse(&payload(vec![
+            serde_json::json!({"type":"FUTURE_LIMIT","unit":6,"number":0,"percentage":999}),
+            limit("TOKENS_LIMIT", 6, 1, 100, 25),
+        ]))
+        .unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].id, "zai.tokens.6.1");
         for invalid in [
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":-1,"percentage":0}),
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":i64::MAX,"percentage":0}),
