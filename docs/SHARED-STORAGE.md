@@ -73,6 +73,21 @@ Before either client may write shared state:
 - `flushPendingWrites` on exit for every coalesced store (the native app
   currently flushes only settings).
 
+## Settings v1 patch foundation (not a product writer)
+
+`shared::settings_document` now supplies a pure, product-disabled v1 document
+parser and top-level three-way patch engine for the native expected
+`settings.json` location. It has no file-write or lease acquisition API. The
+manifest remains `json_unversioned` and `legacy_unsafe`; production
+`SharedStoreLeaseBatch::acquire_writer` continues to reject Settings.
+
+The prospective v1 envelope is `schemaVersion: 1` plus an unsigned `revision`.
+Legacy objects with neither key read as v0 / revision 0. A patch preserves raw
+unknown values, changes only the documented Desktop first-batch whitelist, and
+fails without partial changes on an unknown version or a per-key conflict. See
+[settings-document-v1.md](contracts/settings-document-v1.md) for the synthetic
+fixture, conflict table, and enablement boundary.
+
 ## Reading the session index safely
 
 The index is opened `SQLITE_OPEN_READONLY`, and any `user_version` other than
