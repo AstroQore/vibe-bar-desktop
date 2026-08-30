@@ -28,7 +28,7 @@ impl AppState {
         };
         Self {
             engine: QuotaEngine::new(data_root.clone()),
-            sessions: SessionsService::new(data_root.clone()),
+            sessions: SessionsService::with_home(data_root.clone(), scan_home.clone()),
             status: ServiceStatusEngine::new(data_root.clone()),
             cost: CostEngine::new(data_root.clone(), scan_home),
             data_root,
