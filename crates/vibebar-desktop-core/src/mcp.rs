@@ -71,7 +71,7 @@ impl ReadonlyMcp {
     fn dispatch(&self, method: &str, params: Option<&Value>) -> Result<Value, Problem> {
         match method {
             "initialize" => {
-                object_params(params, &["protocolVersion", "capabilities", "clientInfo"])?;
+                request_params(params, &["protocolVersion", "capabilities", "clientInfo"])?;
                 Ok(json!({
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {"tools": {"listChanged": false}, "resources": {"listChanged": false, "subscribe": false}},
@@ -80,15 +80,15 @@ impl ReadonlyMcp {
                 }))
             }
             "ping" => {
-                object_params(params, &[])?;
+                request_params(params, &[])?;
                 Ok(json!({}))
             }
             "tools/list" => {
-                object_params(params, &[])?;
+                request_params(params, &[])?;
                 Ok(json!({"tools": tool_catalog()}))
             }
             "resources/list" => {
-                object_params(params, &[])?;
+                request_params(params, &[])?;
                 Ok(json!({"resources": []}))
             }
             "tools/call" => self.call_tool(params),
@@ -97,7 +97,7 @@ impl ReadonlyMcp {
     }
 
     fn call_tool(&self, params: Option<&Value>) -> Result<Value, Problem> {
-        let params = object_params(params, &["name", "arguments"])?;
+        let params = request_params(params, &["name", "arguments"])?;
         let name = params
             .get("name")
             .and_then(Value::as_str)
@@ -111,6 +111,12 @@ impl ReadonlyMcp {
                 if let Some(tools) = tools {
                     view.accounts
                         .retain(|account| tools.contains(&account.tool));
+                    view.last_updated = view
+                        .accounts
+                        .iter()
+                        .filter(|account| account.error.is_none())
+                        .map(|account| account.queried_at)
+                        .reduce(f64::max);
                 }
                 serde_json::to_value(view).map_err(|_| Problem::internal())?
             }
@@ -211,6 +217,26 @@ fn object_params<'a>(
         None => &EMPTY_PARAMS,
     };
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err(Problem::invalid_params());
+    }
+    Ok(object)
+}
+
+fn request_params<'a>(
+    params: Option<&'a Value>,
+    allowed: &[&str],
+) -> Result<&'a Map<String, Value>, Problem> {
+    let object = match params {
+        Some(params) => params.as_object().ok_or_else(Problem::invalid_params)?,
+        None => &EMPTY_PARAMS,
+    };
+    if object.get("_meta").is_some_and(|meta| !meta.is_object()) {
+        return Err(Problem::invalid_params());
+    }
+    if object
+        .keys()
+        .any(|key| key != "_meta" && !allowed.contains(&key.as_str()))
+    {
         return Err(Problem::invalid_params());
     }
     Ok(object)
@@ -334,6 +360,58 @@ mod tests {
                 code
             );
         }
+    }
+
+    #[test]
+    fn request_metadata_is_accepted_but_tool_arguments_stay_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let server = server(&temp);
+        let accepted = server.handle_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"quota.get","arguments":{},"_meta":{"progressToken":"p"}}}"#).unwrap();
+        assert!(serde_json::from_str::<Value>(&accepted).unwrap()["result"].is_object());
+        let rejected = server.handle_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"quota.get","arguments":{"_meta":{}}}}"#).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&rejected).unwrap()["error"]["code"],
+            -32602
+        );
+        let malformed = server
+            .handle_line(r#"{"jsonrpc":"2.0","id":3,"method":"ping","params":{"_meta":"bad"}}"#)
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&malformed).unwrap()["error"]["code"],
+            -32602
+        );
+    }
+
+    #[test]
+    fn quota_filter_recomputes_last_updated() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(temp.path().join(".vibebar"));
+        let store = crate::client_store::ClientStore::new(root.clone());
+        for (tool, at) in [
+            (ToolType::Codex, 1_788_038_400.0),
+            (ToolType::Claude, 1_788_038_500.0),
+        ] {
+            store
+                .save_quota(&crate::model::AccountQuota {
+                    account_id: format!("{}-test", tool.raw_value()),
+                    tool,
+                    buckets: vec![crate::model::QuotaBucket::new(
+                        "weekly", "Weekly", "wk", 25.0, None, None, None,
+                    )],
+                    plan: None,
+                    queried_at: at,
+                    origin: crate::model::QuotaOrigin::Live,
+                    error: None,
+                })
+                .unwrap();
+        }
+        let server = ReadonlyMcp::with_home(root, temp.path());
+        let reply = server.handle_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"quota.get","arguments":{"tools":["codex"]}}}"#).unwrap();
+        let response: Value = serde_json::from_str(&reply).unwrap();
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        let view: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(view["lastUpdated"], 1_788_038_400.0);
+        assert_eq!(view["accounts"].as_array().unwrap().len(), 1);
     }
 
     #[test]
