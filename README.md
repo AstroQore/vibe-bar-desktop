@@ -27,7 +27,7 @@ window, on macOS, Windows, and Linux.
   visibility/order, plan labels, and menu-bar field labels. A read-only
   Settings page shows the effective values; Desktop does not save them yet.
 - **Service status.** Reads cached native status immediately, then refreshes
-  Codex/OpenAI, Claude, Google AI, and Cursor from public feeds without credentials.
+  OpenAI-wide, Claude, Google AI, and Cursor status from public feeds without credentials.
 
 ## One product, two clients
 

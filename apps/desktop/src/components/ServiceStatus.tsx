@@ -49,7 +49,7 @@ export function ServiceStatus({
 }
 
 function ProviderPill({ tool, provider }: { tool: string; provider?: ProviderStatus }) {
-  const label = tool === "codex" ? "ChatGPT Agentic" : tool === "claude" ? "Claude" : tool === "gemini" ? "Gemini Web" : "Cursor";
+  const label = tool === "codex" ? "OpenAI-wide" : tool === "claude" ? "Claude" : tool === "gemini" ? "Gemini Web" : "Cursor";
   if (!provider) {
     return <span className="status-pill unavailable">{label} unavailable</span>;
   }
