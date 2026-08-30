@@ -72,6 +72,11 @@ pub struct EffectiveModelPricingRow {
     pub cache_read_per_million: Option<f64>,
     pub cache_write_per_million: Option<f64>,
     pub threshold_tokens: Option<u64>,
+    pub input_above_threshold_per_million: Option<f64>,
+    pub output_above_threshold_per_million: Option<f64>,
+    pub cache_read_above_threshold_per_million: Option<f64>,
+    pub cache_write_above_threshold_per_million: Option<f64>,
+    pub fast_multiplier: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -838,6 +843,11 @@ fn public_pricing_row(
         cache_read_per_million: pricing.cache_read,
         cache_write_per_million: pricing.cache_creation,
         threshold_tokens: pricing.threshold,
+        input_above_threshold_per_million: pricing.input_above,
+        output_above_threshold_per_million: pricing.output_above,
+        cache_read_above_threshold_per_million: pricing.cache_read_above,
+        cache_write_above_threshold_per_million: pricing.cache_creation_above,
+        fast_multiplier: pricing.fast_multiplier,
     }
 }
 

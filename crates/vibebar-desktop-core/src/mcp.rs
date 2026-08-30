@@ -499,6 +499,19 @@ mod tests {
         assert_eq!(gpt["inputPerMillion"], 2.5);
         assert_eq!(gpt["outputPerMillion"], 15.0);
         assert_eq!(gpt["cacheReadPerMillion"], 0.25);
+        assert_eq!(gpt["fastMultiplier"], 2.0);
+
+        let sonnet = view["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["model"] == "claude-sonnet-4-5")
+            .unwrap();
+        assert_eq!(sonnet["thresholdTokens"], 200_000);
+        assert_eq!(sonnet["inputAboveThresholdPerMillion"], 6.0);
+        assert_eq!(sonnet["outputAboveThresholdPerMillion"], 22.5);
+        assert_eq!(sonnet["cacheReadAboveThresholdPerMillion"], 0.6);
+        assert_eq!(sonnet["cacheWriteAboveThresholdPerMillion"], 7.5);
 
         let filtered = server.handle_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"pricing.effective","arguments":{"provider":"claude","model":"OPUS-4-7"}}}"#).unwrap();
         let response: Value = serde_json::from_str(&filtered).unwrap();
