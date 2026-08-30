@@ -39,6 +39,7 @@ protocol_enum!(SharedStoreDurability { Durable = "durable", Reconstructible = "r
 protocol_enum!(SharedStoreSchemaKind {
     JsonUnversioned = "json_unversioned", JsonSchemaVersion = "json_schema_version",
     SqliteUserVersion = "sqlite_user_version", SqliteMetadataVersion = "sqlite_metadata_version",
+    SqliteUnversioned = "sqlite_unversioned",
     KeychainEnvelope = "keychain_envelope", UnixSocket = "unix_socket", Directory = "directory"
 });
 protocol_enum!(SharedStoreLocatorKind { FilesystemRelative = "filesystem_relative", KeychainItem = "keychain_item", Endpoint = "endpoint" });

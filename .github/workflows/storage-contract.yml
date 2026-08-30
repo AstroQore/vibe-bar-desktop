@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: AstroQore/vibe-bar
-          ref: b25d6033a57c352e8968c7c82cfa885823627cd9
+          ref: b875c7ecedce75d48b0c1d23c7fe5ed2676beca4
           path: native-vibe-bar
       - name: Exercise Swift and Rust against the same locks and fixtures
         env:

@@ -57,6 +57,12 @@ fn endpoint_and_legacy_contracts_are_classified_fail_closed() {
             .relative_locator,
         "mcp.sock"
     );
+    let remote_usage = manifest.contract(SharedStoreId::RemoteUsage).unwrap();
+    assert_eq!(
+        remote_usage.schema_kind,
+        SharedStoreSchemaKind::SqliteUnversioned
+    );
+    assert_eq!(remote_usage.current_schema_version, None);
     assert!(manifest
         .stores
         .iter()
