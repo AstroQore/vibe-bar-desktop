@@ -149,13 +149,13 @@ impl CostEngine {
             truncated,
             now_unix(),
         );
-        if !self.is_demo {
-            self.store
-                .save_cost_snapshot(&view)
-                .map_err(|error| error.to_string())?;
-        }
         if let Ok(mut cached) = self.cached.write() {
             *cached = view.clone();
+        }
+        if !self.is_demo {
+            // The snapshot is only a restart cache. A completed local scan
+            // remains useful even when the private namespace is unwritable.
+            let _ = self.store.save_cost_snapshot(&view);
         }
         Ok(view)
     }
@@ -1196,6 +1196,25 @@ mod tests {
         assert!(CostEngine::new(root.clone(), missing).refresh().is_err());
         assert_eq!(fs::read(root.client_cost_snapshot_file()).unwrap(), before);
         assert_eq!(ClientStore::new(root).load_cost_snapshot(), Some(view));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_write_failure_keeps_the_completed_scan_in_memory() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(home.path().join(".vibebar"));
+        fs::create_dir_all(root.shared()).unwrap();
+        let outside = home.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, root.shared().join("client")).unwrap();
+
+        let engine = CostEngine::new(root, home.path());
+        let view = engine.refresh().unwrap();
+        assert!(view.scanned_at > 0.0);
+        assert_eq!(engine.cached(), view);
+        assert!(fs::read_dir(outside).unwrap().next().is_none());
     }
 
     #[test]
