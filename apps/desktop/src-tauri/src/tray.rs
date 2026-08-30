@@ -26,13 +26,17 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Resul
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&show, &refresh, &mini, &separator, &quit])?;
 
-    TrayIconBuilder::with_id(TRAY_ID)
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .title(initial_title(state))
         .tooltip("Vibe Bar Desktop")
         // Left-click opens the window; the menu stays on right-click, so the
         // tray behaves the way the native item does.
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false);
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
             "refresh" => {

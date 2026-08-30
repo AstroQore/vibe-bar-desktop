@@ -60,6 +60,41 @@ enum MiniWindowGeometryFile {
     Unavailable,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct LaunchStateFile {
+    schema: u8,
+    has_completed_first_run: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstRunState {
+    Missing,
+    Completed,
+    Unusable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupAction {
+    Show,
+    ShowAndMarkFirstRunComplete,
+    HideToTray,
+}
+
+/// The only safe tray-only transition: a known local completion record plus
+/// a successfully installed tray. Every uncertainty leaves the main window
+/// visible, rather than creating a headless app with no usable control.
+pub fn startup_action(demo: bool, tray_installed: bool, state: FirstRunState) -> StartupAction {
+    if demo || !tray_installed {
+        return StartupAction::Show;
+    }
+    match state {
+        FirstRunState::Completed => StartupAction::HideToTray,
+        FirstRunState::Missing => StartupAction::ShowAndMarkFirstRunComplete,
+        FirstRunState::Unusable => StartupAction::Show,
+    }
+}
+
 impl ClientStore {
     pub fn new(root: DataRoot) -> Self {
         Self { root }
@@ -206,6 +241,41 @@ impl ClientStore {
             Some(geometry) if geometry.schema == 1 => MiniWindowGeometryFile::Ready(geometry),
             _ => MiniWindowGeometryFile::Unavailable,
         }
+    }
+
+    pub fn first_run_state(&self) -> FirstRunState {
+        let path = self.root.client_launch_state_file();
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return FirstRunState::Missing
+            }
+            Err(_) => return FirstRunState::Unusable,
+        };
+        if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > 16 * 1024 {
+            return FirstRunState::Unusable;
+        }
+        let Some(state) = crate::shared::read_json_file::<LaunchStateFile>(&path, 16 * 1024) else {
+            return FirstRunState::Unusable;
+        };
+        if state.schema != 1 {
+            return FirstRunState::Unusable;
+        }
+        if state.has_completed_first_run {
+            FirstRunState::Completed
+        } else {
+            FirstRunState::Missing
+        }
+    }
+
+    pub fn mark_first_run_complete(&self) -> Result<(), CoreError> {
+        self.write_json(
+            &self.root.client_launch_state_file(),
+            &LaunchStateFile {
+                schema: 1,
+                has_completed_first_run: true,
+            },
+        )
     }
 
     /// Atomic, namespace-guarded JSON write.
@@ -656,6 +726,18 @@ mod tests {
     }
 
     #[test]
+    fn first_run_state_round_trips_only_in_the_desktop_namespace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let store = ClientStore::new(root.clone());
+        assert_eq!(store.first_run_state(), FirstRunState::Missing);
+        store.mark_first_run_complete().unwrap();
+        assert_eq!(store.first_run_state(), FirstRunState::Completed);
+        assert!(root.client_launch_state_file().is_file());
+        assert!(!root.settings_file().exists());
+    }
+
+    #[test]
     fn unknown_mini_geometry_schema_falls_back_without_rewriting() {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::at(dir.path().join(".vibebar"));
@@ -678,6 +760,68 @@ mod tests {
         assert_eq!(
             std::fs::read(root.client_mini_window_file()).unwrap(),
             before
+        );
+    }
+
+    #[test]
+    fn unknown_first_run_schema_is_unusable_and_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        std::fs::write(
+            root.client_launch_state_file(),
+            r#"{"schema":2,"hasCompletedFirstRun":true}"#,
+        )
+        .unwrap();
+        let before = std::fs::read(root.client_launch_state_file()).unwrap();
+        assert_eq!(
+            ClientStore::new(root.clone()).first_run_state(),
+            FirstRunState::Unusable
+        );
+        assert_eq!(
+            std::fs::read(root.client_launch_state_file()).unwrap(),
+            before
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_first_run_state_is_never_trusted() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        let outside = dir.path().join("outside.json");
+        std::fs::write(&outside, r#"{"schema":1,"hasCompletedFirstRun":true}"#).unwrap();
+        symlink(&outside, root.client_launch_state_file()).unwrap();
+        assert_eq!(
+            ClientStore::new(root).first_run_state(),
+            FirstRunState::Unusable
+        );
+    }
+
+    #[test]
+    fn startup_decision_fails_open_to_a_visible_window() {
+        assert_eq!(
+            startup_action(false, true, FirstRunState::Completed),
+            StartupAction::HideToTray
+        );
+        assert_eq!(
+            startup_action(false, true, FirstRunState::Missing),
+            StartupAction::ShowAndMarkFirstRunComplete
+        );
+        assert_eq!(
+            startup_action(false, true, FirstRunState::Unusable),
+            StartupAction::Show
+        );
+        assert_eq!(
+            startup_action(true, true, FirstRunState::Completed),
+            StartupAction::Show
+        );
+        assert_eq!(
+            startup_action(false, false, FirstRunState::Completed),
+            StartupAction::Show
         );
     }
 }
