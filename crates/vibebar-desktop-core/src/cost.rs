@@ -1909,9 +1909,9 @@ mod tests {
         write_jsonl(
             &path,
             &[
-                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-3.0*86_400.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}),
-                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-2.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":2}}}}),
-                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-1.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":3}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-3.0*86_400.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-2.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":102}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-1.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":105}}}}),
             ],
         );
         let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
