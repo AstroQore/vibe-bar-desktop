@@ -292,18 +292,26 @@ fn bonus_summary(
     now: f64,
 ) -> Result<BonusSummary, QuotaError> {
     let mut grants = Vec::new();
-    if let Some(values) = user.get("bonusGrants").and_then(Value::as_array) {
+    if let Some(values) = optional_array(user.get("bonusGrants"))? {
         for value in values {
             grants.push(grant(value)?);
         }
     }
-    if let Some(workspaces) = user.get("workspaces").and_then(Value::as_array) {
+    if let Some(workspaces) = optional_array(user.get("workspaces"))? {
         for workspace in workspaces {
-            if let Some(values) = workspace
-                .get("bonusGrantsInfo")
-                .and_then(|value| value.get("grants"))
-                .and_then(Value::as_array)
-            {
+            let workspace = workspace.as_object().ok_or_else(|| {
+                QuotaError::ParseFailure("Warp workspace grant is not an object".into())
+            })?;
+            let info = match workspace.get("bonusGrantsInfo") {
+                None | Some(Value::Null) => None,
+                Some(Value::Object(info)) => Some(info),
+                Some(_) => {
+                    return Err(QuotaError::ParseFailure(
+                        "Warp bonus grant container is invalid".into(),
+                    ));
+                }
+            };
+            if let Some(values) = optional_array(info.and_then(|info| info.get("grants")))? {
                 for value in values {
                     grants.push(grant(value)?);
                 }
@@ -344,6 +352,16 @@ fn bonus_summary(
         next_expiration,
         next_expiration_remaining,
     })
+}
+
+fn optional_array(value: Option<&Value>) -> Result<Option<&Vec<Value>>, QuotaError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(values)) => Ok(Some(values)),
+        Some(_) => Err(QuotaError::ParseFailure(
+            "Warp bonus grant container is invalid".into(),
+        )),
+    }
 }
 
 fn checked_total(mut values: impl Iterator<Item = i64>) -> Option<i64> {
@@ -585,6 +603,19 @@ mod tests {
         root["data"]["user"]["user"]["workspaces"] = Value::Array(Vec::new());
         let body = serde_json::to_vec(&root).unwrap();
         assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+    }
+
+    #[test]
+    fn malformed_bonus_grant_containers_fail_the_snapshot_closed() {
+        for (path, value) in [
+            ("bonusGrants", serde_json::json!({"not":"an array"})),
+            ("workspaces", serde_json::json!({"not":"an array"})),
+        ] {
+            let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
+            root["data"]["user"]["user"][path] = value;
+            let body = serde_json::to_vec(&root).unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
     }
 
     #[test]
