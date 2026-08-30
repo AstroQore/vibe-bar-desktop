@@ -78,6 +78,39 @@ input[type="text"] {
   height: 100vh;
 }
 
+.mini-quota {
+  min-height: 150px;
+  padding: 16px 14px 12px;
+  background: var(--bg);
+  color: var(--text);
+  user-select: none;
+}
+.mini-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.mini-close {
+  border: 0;
+  padding: 0 2px;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+}
+.mini-row { margin-bottom: 10px; }
+.mini-row:last-child { margin-bottom: 0; }
+.mini-row-head { display: flex; align-items: baseline; gap: 6px; font-size: 11px; }
+.mini-row-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-row-head small { color: var(--text-faint); }
+.mini-row-head strong { margin-left: auto; font-variant-numeric: tabular-nums; }
+.mini-empty { color: var(--text-faint); font-size: 12px; margin: 42px 0 0; text-align: center; }
+
 .titlebar {
   height: 32px;
   flex: none;

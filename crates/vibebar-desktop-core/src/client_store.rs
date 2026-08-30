@@ -30,6 +30,36 @@ pub struct ClientStore {
     root: DataRoot,
 }
 
+/// Desktop-owned geometry for the one first-slice Mini window. This is not
+/// native `miniWindow` configuration and must never be written to settings.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniWindowGeometry {
+    pub schema: u8,
+    pub x: i32,
+    pub y: i32,
+    pub was_open: bool,
+}
+
+impl Default for MiniWindowGeometry {
+    fn default() -> Self {
+        Self {
+            schema: 1,
+            // An unmistakably off-screen sentinel makes the first open
+            // center instead of treating the top-left corner as restored.
+            x: i32::MIN,
+            y: i32::MIN,
+            was_open: false,
+        }
+    }
+}
+
+enum MiniWindowGeometryFile {
+    Missing,
+    Ready(MiniWindowGeometry),
+    Unavailable,
+}
+
 impl ClientStore {
     pub fn new(root: DataRoot) -> Self {
         Self { root }
@@ -134,6 +164,48 @@ impl ClientStore {
             .into());
         }
         self.write_json(path, value)
+    }
+
+    pub fn load_mini_window_geometry(&self) -> MiniWindowGeometry {
+        match self.mini_window_geometry_file() {
+            MiniWindowGeometryFile::Ready(geometry) => geometry,
+            MiniWindowGeometryFile::Missing | MiniWindowGeometryFile::Unavailable => {
+                MiniWindowGeometry::default()
+            }
+        }
+    }
+
+    pub fn save_mini_window_geometry(
+        &self,
+        geometry: &MiniWindowGeometry,
+    ) -> Result<(), CoreError> {
+        if matches!(
+            self.mini_window_geometry_file(),
+            MiniWindowGeometryFile::Unavailable
+        ) {
+            return Err(CoreError::ClientDocumentUnavailable("mini-window"));
+        }
+        let mut geometry = geometry.clone();
+        geometry.schema = 1;
+        self.write_json(&self.root.client_mini_window_file(), &geometry)
+    }
+
+    fn mini_window_geometry_file(&self) -> MiniWindowGeometryFile {
+        let path = self.root.client_mini_window_file();
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return MiniWindowGeometryFile::Missing
+            }
+            Err(_) => return MiniWindowGeometryFile::Unavailable,
+        };
+        if !metadata.file_type().is_file() {
+            return MiniWindowGeometryFile::Unavailable;
+        }
+        match crate::shared::read_json_file::<MiniWindowGeometry>(&path, 16 * 1024) {
+            Some(geometry) if geometry.schema == 1 => MiniWindowGeometryFile::Ready(geometry),
+            _ => MiniWindowGeometryFile::Unavailable,
+        }
     }
 
     /// Atomic, namespace-guarded JSON write.
@@ -556,5 +628,56 @@ mod tests {
         };
         assert!(store.save_status_snapshot(&oversized).is_err());
         assert_eq!(store.load_status_snapshot(now).unwrap().providers.len(), 0);
+    }
+
+    #[test]
+    fn mini_geometry_round_trips_only_in_the_desktop_namespace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let store = ClientStore::new(root.clone());
+        let geometry = MiniWindowGeometry {
+            schema: 99,
+            x: 120,
+            y: -40,
+            was_open: true,
+        };
+        store.save_mini_window_geometry(&geometry).unwrap();
+        assert_eq!(
+            store.load_mini_window_geometry(),
+            MiniWindowGeometry {
+                schema: 1,
+                x: 120,
+                y: -40,
+                was_open: true
+            }
+        );
+        assert!(root.client_mini_window_file().is_file());
+        assert!(!root.settings_file().exists());
+    }
+
+    #[test]
+    fn unknown_mini_geometry_schema_falls_back_without_rewriting() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        std::fs::write(
+            root.client_mini_window_file(),
+            r#"{"schema":2,"x":9,"y":8,"wasOpen":true}"#,
+        )
+        .unwrap();
+        let before = std::fs::read(root.client_mini_window_file()).unwrap();
+        assert_eq!(
+            ClientStore::new(root.clone()).load_mini_window_geometry(),
+            MiniWindowGeometry::default()
+        );
+        assert!(matches!(
+            ClientStore::new(root.clone())
+                .save_mini_window_geometry(&MiniWindowGeometry::default()),
+            Err(CoreError::ClientDocumentUnavailable("mini-window"))
+        ));
+        assert_eq!(
+            std::fs::read(root.client_mini_window_file()).unwrap(),
+            before
+        );
     }
 }
