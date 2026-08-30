@@ -10,7 +10,7 @@ use chrono::{DateTime, Datelike, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::model::ToolType;
+use crate::model::{ToolType, CLOCK_SKEW_TOLERANCE_SECONDS};
 use crate::paths::DataRoot;
 use crate::shared::service_status;
 
@@ -150,26 +150,36 @@ fn now_unix() -> f64 {
 
 fn seed(root: &DataRoot) -> ServiceStatusView {
     let cached = service_status::load(root);
+    let now = now_unix();
+    let plausible = |snapshot: &&service_status::ServiceStatusSnapshot| {
+        snapshot
+            .updated_at
+            .is_none_or(|updated_at| updated_at <= now + CLOCK_SKEW_TOLERANCE_SECONDS)
+    };
     let mut providers = [ToolType::Claude, ToolType::Cursor]
         .into_iter()
         .filter_map(|tool| {
-            cached.get(&tool).map(|snapshot| ProviderStatus {
-                tool,
-                indicator: normalize_indicator(snapshot.indicator.as_deref())
-                    .unwrap_or("unknown")
-                    .to_string(),
-                description: snapshot
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| "Status unavailable".to_string()),
-                updated_at: snapshot.updated_at,
-                incidents: Vec::new(),
-            })
+            cached
+                .get(&tool)
+                .filter(plausible)
+                .map(|snapshot| ProviderStatus {
+                    tool,
+                    indicator: normalize_indicator(snapshot.indicator.as_deref())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    description: snapshot
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| "Status unavailable".to_string()),
+                    updated_at: snapshot.updated_at,
+                    incidents: Vec::new(),
+                })
         })
         .collect::<Vec<_>>();
     let google = [ToolType::Gemini, ToolType::Antigravity]
         .into_iter()
         .filter_map(|tool| cached.get(&tool))
+        .filter(plausible)
         .max_by(|left, right| {
             let left_indicator =
                 normalize_indicator(left.indicator.as_deref()).unwrap_or("unknown");
@@ -629,6 +639,29 @@ mod tests {
         assert_eq!(view.providers[1].indicator, "major");
         assert_eq!(view.providers[2].tool, ToolType::Gemini);
         assert_eq!(view.providers[2].indicator, "minor");
+    }
+
+    #[test]
+    fn seed_rejects_a_future_google_ai_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+        let future_apple_seconds = now_unix() - 978_307_200.0 + 86_400.0;
+        std::fs::write(
+            root.service_status_file(),
+            serde_json::json!([
+                "gemini",
+                {"indicator": "none", "description": "Current"},
+                "antigravity",
+                {"indicator": "critical", "description": "Future", "updatedAt": future_apple_seconds}
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        let view = ServiceStatusEngine::new(root).cached();
+        assert_eq!(view.providers.len(), 1);
+        assert_eq!(view.providers[0].tool, ToolType::Gemini);
+        assert_eq!(view.providers[0].indicator, "none");
     }
 
     #[test]
