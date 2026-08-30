@@ -184,7 +184,15 @@ impl ToolType {
     /// Providers this build can fetch live. Everything else is rendered from
     /// the shared cache the native app wrote, clearly attributed as such.
     pub fn has_live_adapter(self) -> bool {
-        matches!(self, ToolType::Codex | ToolType::Claude)
+        matches!(
+            self,
+            ToolType::Codex
+                | ToolType::Claude
+                | ToolType::Zai
+                | ToolType::Minimax
+                | ToolType::OpenRouter
+                | ToolType::Warp
+        )
     }
 }
 

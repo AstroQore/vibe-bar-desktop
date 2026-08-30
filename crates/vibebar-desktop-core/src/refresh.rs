@@ -2,8 +2,8 @@
 //!
 //! Merges two sources into the one list the UI renders:
 //!
-//! 1. What this client fetched (Codex, Claude) — authoritative and labeled
-//!    live.
+//! 1. What this client fetched through a live adapter — authoritative and
+//!    labeled live.
 //! 2. What the shared cache holds — every other provider the native app
 //!    tracks, labeled as cache so the UI never overstates freshness.
 //!

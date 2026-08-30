@@ -5,11 +5,15 @@
 //! kept in free functions taking bytes so the wire shapes are unit-tested
 //! against synthetic fixtures without a network.
 //!
-//! This preview slice ships Codex and Claude. Every other provider renders
-//! from the shared cache, attributed as such, until its adapter lands.
+//! This preview slice ships six live adapters. The remaining providers render
+//! from the shared cache, attributed as such, until their adapters land.
 
 pub mod claude;
 pub mod codex;
+pub mod minimax;
+pub mod openrouter;
+pub mod warp;
+pub mod zai;
 
 use std::path::Path;
 use std::time::Duration;
@@ -33,6 +37,10 @@ pub async fn fetch(
     match tool {
         ToolType::Codex => codex::fetch(home, client).await,
         ToolType::Claude => claude::fetch(home, client).await,
+        ToolType::Zai => zai::fetch(home, client).await,
+        ToolType::Minimax => minimax::fetch(client).await,
+        ToolType::OpenRouter => openrouter::fetch(client).await,
+        ToolType::Warp => warp::fetch(client).await,
         _ => Err(QuotaError::NotImplemented),
     }
 }
