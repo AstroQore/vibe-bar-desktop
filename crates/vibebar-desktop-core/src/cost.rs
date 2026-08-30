@@ -111,7 +111,7 @@ impl CostEngine {
             .map_err(|_| "cost refresh lock poisoned".to_string())?;
         let home = crate::paths::open_ambient_dir(&self.home)
             .map_err(|_| "cost scan home is not readable".to_string())?;
-        let (mut codex_files, codex_truncated) = collect_provider_files(
+        let (codex_files, codex_truncated) = collect_provider_files(
             &self.home,
             ToolType::Codex,
             &[".codex/sessions", ".codex/archived_sessions"],
@@ -123,8 +123,7 @@ impl CostEngine {
             &[".claude/projects", ".config/claude/projects"],
             MAX_FILES_PER_PROVIDER,
         );
-        codex_files.extend(claude_files);
-        let files = codex_files;
+        let files = interleave_provider_files([codex_files, claude_files]);
         let mut truncated = codex_truncated || claude_truncated;
 
         let mut events = Vec::new();
@@ -243,6 +242,22 @@ fn collect_provider_files(
     (files, truncated)
 }
 
+fn interleave_provider_files<const N: usize>(groups: [Vec<SourceFile>; N]) -> Vec<SourceFile> {
+    let mut files = Vec::with_capacity(groups.iter().map(Vec::len).sum());
+    let mut iterators = groups.map(Vec::into_iter);
+    loop {
+        let before = files.len();
+        for iterator in &mut iterators {
+            if let Some(file) = iterator.next() {
+                files.push(file);
+            }
+        }
+        if files.len() == before {
+            return files;
+        }
+    }
+}
+
 #[derive(Default)]
 struct DiscoveryBudget {
     entries: usize,
@@ -318,7 +333,8 @@ fn collect_jsonl(
             }
         };
         if file_type.is_symlink() {
-            continue;
+            budget.truncated = true;
+            return;
         }
         if file_type.is_dir() {
             collect_jsonl(&path, tool, out, depth + 1, budget);
@@ -933,7 +949,11 @@ fn normalize_claude_model(raw: &str) -> String {
 fn claude_pricing_exact_base(model: &str) -> bool {
     matches!(
         model,
-        "claude-haiku-4-5" | "claude-opus-4-5" | "claude-opus-4-6" | "claude-sonnet-4-5"
+        "claude-haiku-4-5"
+            | "claude-opus-4-1"
+            | "claude-opus-4-5"
+            | "claude-opus-4-6"
+            | "claude-sonnet-4-5"
     )
 }
 
@@ -1434,6 +1454,17 @@ mod tests {
     }
 
     #[test]
+    fn claude_snapshot_suffixes_normalize_only_for_supported_aliases() {
+        let supported = "claude-opus-4-1-20250805";
+        assert_eq!(normalize_claude_model(supported), "claude-opus-4-1");
+        assert!(claude_pricing(supported).is_some());
+
+        let unsupported = "claude-future-9-9-20250805";
+        assert_eq!(normalize_claude_model(unsupported), unsupported);
+        assert!(claude_pricing(unsupported).is_none());
+    }
+
+    #[test]
     fn sonnet_split_cache_threshold_selects_one_rate_for_the_whole_request() {
         let event = |cache_read, cache_creation_5m, cache_creation_1h| UsageEvent {
             tool: ToolType::Claude,
@@ -1517,6 +1548,35 @@ mod tests {
     }
 
     #[test]
+    fn small_cap_reaches_each_provider_before_more_codex_files() {
+        let source = |tool, name| SourceFile {
+            tool,
+            path: PathBuf::from(name),
+        };
+        let files = interleave_provider_files([
+            vec![
+                source(ToolType::Codex, "codex-1"),
+                source(ToolType::Codex, "codex-2"),
+            ],
+            vec![source(ToolType::Claude, "claude-1")],
+            vec![source(ToolType::Gemini, "gemini-1")],
+        ]);
+
+        // With one retained event per file and a limit of three, every
+        // provider is scheduled before Codex can consume another slot.
+        let first_round = files
+            .iter()
+            .take(3)
+            .map(|source| source.tool)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            first_round,
+            vec![ToolType::Codex, ToolType::Claude, ToolType::Gemini]
+        );
+        assert_eq!(files[3].path, PathBuf::from("codex-2"));
+    }
+
+    #[test]
     fn deeply_nested_empty_trees_stop_at_the_discovery_budget() {
         let home = tempfile::tempdir().unwrap();
         let mut directory = home.path().join(".codex/sessions");
@@ -1557,6 +1617,23 @@ mod tests {
 
         let (files, truncated) =
             collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
+        assert!(files.is_empty());
+        assert!(truncated);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_project_below_an_accepted_root_is_truncated() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let projects = home.path().join(".claude/projects");
+        fs::create_dir_all(&projects).unwrap();
+        symlink(outside.path(), projects.join("linked-project")).unwrap();
+
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Claude, &[".claude/projects"], 1);
         assert!(files.is_empty());
         assert!(truncated);
     }
