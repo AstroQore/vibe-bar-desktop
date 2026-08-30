@@ -460,10 +460,14 @@ fn number(value: Option<&Value>) -> Option<f64> {
             .as_f64()
             .or_else(|| value.as_str()?.trim().parse().ok())
     })
+    .filter(|value| value.is_finite())
 }
 
 fn int(value: Option<&Value>) -> Option<i64> {
-    number(value).map(|value| value as i64)
+    number(value).and_then(|value| {
+        (value.fract() == 0.0 && value >= i64::MIN as f64 && value <= i64::MAX as f64)
+            .then_some(value as i64)
+    })
 }
 
 fn text(value: Option<&Value>) -> Option<String> {
@@ -692,6 +696,17 @@ mod tests {
                     "model_name": "invalid-percent",
                     "current_interval_total_count": 0,
                     "current_interval_remaining_percent": remaining
+                }]}
+            }))
+            .unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
+        for usage in ["NaN", "Infinity"] {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "data": {"model_remains": [{
+                    "model_name": "invalid-usage",
+                    "current_interval_total_count": 100,
+                    "current_interval_usage_count": usage
                 }]}
             }))
             .unwrap();
