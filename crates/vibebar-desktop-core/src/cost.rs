@@ -173,7 +173,7 @@ struct UsageEvent {
     request_id: Option<String>,
     is_sidechain: bool,
     is_parent_path: bool,
-    source_key: String,
+    source_key: Arc<str>,
 }
 
 impl UsageEvent {
@@ -495,6 +495,7 @@ fn scan_file(
 
     let mut codex_previous = (0_u64, 0_u64, 0_u64);
     let mut codex_model = "codex-unknown".to_string();
+    let source_key: Arc<str> = source.path.to_string_lossy().into_owned().into();
     for line in bytes.split(|byte| *byte == b'\n') {
         if events.len() >= event_limit {
             return ScanFileResult::EventLimit;
@@ -515,10 +516,10 @@ fn scan_file(
                 &value,
                 &mut codex_model,
                 &mut codex_previous,
-                &source.path,
+                &source_key,
                 events,
             ),
-            ToolType::Claude => parse_claude(&value, &source.path, events),
+            ToolType::Claude => parse_claude(&value, &source.path, &source_key, events),
             _ => {}
         }
         if events.len() >= event_limit {
@@ -559,7 +560,7 @@ fn parse_codex(
     value: &Value,
     current_model: &mut String,
     previous: &mut (u64, u64, u64),
-    source_path: &Path,
+    source_key: &Arc<str>,
     events: &mut Vec<UsageEvent>,
 ) {
     if let Some(model) = value
@@ -646,7 +647,7 @@ fn parse_codex(
         request_id: None,
         is_sidechain: false,
         is_parent_path: true,
-        source_key: source_path.to_string_lossy().into_owned(),
+        source_key: Arc::clone(source_key),
     });
 }
 
@@ -664,7 +665,12 @@ fn explicit_service_tier(value: &Value, payload: &Value, info: &Value) -> Option
         .map(str::to_string)
 }
 
-fn parse_claude(value: &Value, source_path: &Path, events: &mut Vec<UsageEvent>) {
+fn parse_claude(
+    value: &Value,
+    source_path: &Path,
+    source_key: &Arc<str>,
+    events: &mut Vec<UsageEvent>,
+) {
     if value.get("type").and_then(Value::as_str) != Some("assistant") {
         return;
     }
@@ -739,7 +745,7 @@ fn parse_claude(value: &Value, source_path: &Path, events: &mut Vec<UsageEvent>)
         is_parent_path: !source_path
             .components()
             .any(|component| component.as_os_str() == "subagents"),
-        source_key: source_path.to_string_lossy().into_owned(),
+        source_key: Arc::clone(source_key),
     });
 }
 
@@ -1354,13 +1360,17 @@ mod tests {
             }}
         });
         let mut events = Vec::new();
+        let source_path = Path::new("/Users/example/.claude/projects/session.jsonl");
+        let source_key: Arc<str> = source_path.to_string_lossy().into_owned().into();
         parse_claude(
             &value,
-            Path::new("/Users/example/.claude/projects/session.jsonl"),
+            source_path,
+            &source_key,
             &mut events,
         );
 
         assert_eq!(events.len(), 1);
+        assert!(Arc::ptr_eq(&events[0].source_key, &source_key));
         assert_eq!(events[0].cache_creation_5m, 8);
         assert_eq!(events[0].cache_creation_1h, 6);
         assert_eq!(events[0].tokens(), 38);
@@ -1457,7 +1467,7 @@ mod tests {
             request_id: None,
             is_sidechain: false,
             is_parent_path: true,
-            source_key: String::new(),
+            source_key: Arc::from(""),
         };
         let view = aggregate(&[event(0), event(8), event(31)], 3, 0, false, scanned_at);
         assert_eq!(view.today.requests, 1);
@@ -1497,7 +1507,7 @@ mod tests {
             request_id: None,
             is_sidechain: false,
             is_parent_path: true,
-            source_key: String::new(),
+            source_key: Arc::from(""),
         };
         assert_eq!(priced_cost_micros(&event), Some(1_200_006));
     }
@@ -1530,7 +1540,7 @@ mod tests {
             request_id: None,
             is_sidechain: false,
             is_parent_path: true,
-            source_key: String::new(),
+            source_key: Arc::from(""),
         };
 
         // Exactly 200k input-context tokens stays on the base rates.
