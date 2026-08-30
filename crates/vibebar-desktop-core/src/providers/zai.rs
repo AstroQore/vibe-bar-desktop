@@ -243,12 +243,13 @@ impl RawLimit {
                 "Z.ai quota limit has invalid counters".into(),
             ));
         }
-        if let (Some(usage), Some(remaining)) = (self.usage, self.remaining) {
-            if usage < 0 || remaining < 0 || remaining > usage {
-                return Err(QuotaError::ParseFailure(
-                    "Z.ai quota limit has invalid counters".into(),
-                ));
-            }
+        if self.usage.is_some_and(|usage| usage < 0)
+            || self.remaining.is_some_and(|remaining| remaining < 0)
+            || matches!((self.usage, self.remaining), (Some(usage), Some(remaining)) if remaining > usage)
+        {
+            return Err(QuotaError::ParseFailure(
+                "Z.ai quota limit has invalid counters".into(),
+            ));
         }
         let (title, short_label) = match self.unit {
             1 if self.number == 1 => ("Daily".to_string(), "Day".to_string()),
@@ -410,6 +411,8 @@ mod tests {
         }
         for invalid in [
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"usage":100,"remaining":120,"percentage":0}),
+            serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"usage":-1,"percentage":0}),
+            serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"remaining":-1,"percentage":0}),
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":101}),
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":-1}),
         ] {
