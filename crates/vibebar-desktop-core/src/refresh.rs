@@ -2,8 +2,8 @@
 //!
 //! Merges two sources into the one list the UI renders:
 //!
-//! 1. What this client fetched through a live adapter — authoritative and
-//!    labeled live.
+//! 1. What this client fetched through a live adapter, including its last
+//!    successful local snapshot — authoritative and labeled live.
 //! 2. What the shared cache holds — every other provider the native app
 //!    tracks, labeled as cache so the UI never overstates freshness.
 //!
@@ -133,11 +133,11 @@ impl QuotaEngine {
         // Everything this client knows about, live or previously persisted,
         // so the shared cache's hashed filenames can be matched back to real
         // account ids rather than surfacing the same account twice.
-        let mut own = self.store.load_quotas();
-        own.extend(ok.iter().cloned());
-        let (shared, has_shared_data) = self.load_shared(&own);
+        let mut current = self.store.load_quotas();
+        current.extend(ok);
+        let (shared, has_shared_data) = self.load_shared(&current);
 
-        let mut accounts = merge(ok, shared);
+        let mut accounts = merge(current, shared);
         for failure in failed {
             let covered = accounts.iter().any(|a| a.tool == failure.tool);
             if !covered {

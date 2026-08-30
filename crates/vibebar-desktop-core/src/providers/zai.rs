@@ -68,7 +68,7 @@ fn endpoint(environment: &HashMap<String, String>) -> Url {
         .map(String::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .and_then(|value| Url::parse(value).ok())
+        .and_then(|value| super::trusted_https_url(value, &["z.ai", "bigmodel.cn"]))
     {
         return url;
     }
@@ -92,7 +92,7 @@ fn endpoint_from_host(host: &str) -> Option<Url> {
     } else {
         format!("https://{host}")
     };
-    let mut url = Url::parse(&base).ok()?;
+    let mut url = super::trusted_https_url(&base, &["z.ai", "bigmodel.cn"])?;
     let existing = url.path().trim_end_matches('/');
     let path = if existing.is_empty() || existing == "/" {
         "/api/monitor/usage/quota/limit".to_string()
@@ -373,13 +373,12 @@ mod tests {
             endpoint(&environment).as_str(),
             "https://open.bigmodel.cn/base/api/monitor/usage/quota/limit"
         );
-        environment.insert(
-            "Z_AI_QUOTA_URL".into(),
-            "https://example.test/custom".into(),
-        );
+        environment.insert("Z_AI_QUOTA_URL".into(), "https://api.z.ai/custom".into());
+        assert_eq!(endpoint(&environment).as_str(), "https://api.z.ai/custom");
+        environment.insert("Z_AI_QUOTA_URL".into(), "https://example.test/steal".into());
         assert_eq!(
             endpoint(&environment).as_str(),
-            "https://example.test/custom"
+            "https://open.bigmodel.cn/base/api/monitor/usage/quota/limit"
         );
         environment.insert("Z_AI_API_KEY".into(), "  synthetic-key  ".into());
         assert_eq!(api_key(&environment), Some("synthetic-key"));

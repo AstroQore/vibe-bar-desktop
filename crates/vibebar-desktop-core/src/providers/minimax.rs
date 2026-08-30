@@ -22,15 +22,28 @@ pub fn resolve_api_key(env: &HashMap<String, String>) -> Option<String> {
 pub fn remains_urls(env: &HashMap<String, String>, mainland: bool) -> Vec<String> {
     let mut urls = Vec::new();
     for key in ["MINIMAX_REMAINS_URL", "MINIMAX_CODING_PLAN_URL"] {
-        if let Some(v) = env.get(key).filter(|v| !v.trim().is_empty()) {
-            urls.push(v.clone());
+        if let Some(url) = env
+            .get(key)
+            .and_then(|value| super::trusted_https_url(value, &["minimax.io", "minimaxi.com"]))
+        {
+            urls.push(url.to_string());
         }
     }
-    if let Some(host) = env.get("MINIMAX_HOST").filter(|v| !v.trim().is_empty()) {
-        urls.push(format!(
-            "{}/v1/api/openplatform/coding_plan/remains",
-            host.trim_end_matches('/')
-        ));
+    if let Some(host) = env
+        .get("MINIMAX_HOST")
+        .filter(|value| !value.trim().is_empty())
+    {
+        let raw = if host.contains("://") {
+            host.trim().to_string()
+        } else {
+            format!("https://{}", host.trim())
+        };
+        if let Some(url) = super::trusted_https_url(&raw, &["minimax.io", "minimaxi.com"]) {
+            urls.push(format!(
+                "{}/v1/api/openplatform/coding_plan/remains",
+                url.as_str().trim_end_matches('/')
+            ));
+        }
     }
     let (www, api) = if mainland {
         ("www.minimaxi.com", "api.minimaxi.com")
@@ -71,6 +84,7 @@ pub async fn fetch(client: &reqwest::Client) -> Result<AccountQuota, QuotaError>
         [false, true]
     };
     let mut last = None;
+    let mut saw_auth_error = false;
     for mainland in regions {
         for url in remains_urls(&env, mainland) {
             let mut request = client.get(&url).timeout(super::REQUEST_TIMEOUT);
@@ -89,7 +103,10 @@ pub async fn fetch(client: &reqwest::Client) -> Result<AccountQuota, QuotaError>
             }
             if !response.status().is_success() {
                 last = Some(match response.status().as_u16() {
-                    401 | 403 => QuotaError::NeedsLogin,
+                    401 | 403 => {
+                        saw_auth_error = true;
+                        QuotaError::NeedsLogin
+                    }
                     status => QuotaError::Network(format!("MiniMax returned HTTP {status}")),
                 });
                 continue;
@@ -114,11 +131,19 @@ pub async fn fetch(client: &reqwest::Client) -> Result<AccountQuota, QuotaError>
                     });
                 }
                 Err(QuotaError::RateLimited) => return Err(QuotaError::RateLimited),
+                Err(QuotaError::NeedsLogin) => {
+                    saw_auth_error = true;
+                    last = Some(QuotaError::NeedsLogin);
+                }
                 Err(error) => last = Some(error),
             }
         }
     }
-    Err(last.unwrap_or(QuotaError::Network("MiniMax endpoints exhausted".into())))
+    if saw_auth_error {
+        Err(QuotaError::NeedsLogin)
+    } else {
+        Err(last.unwrap_or(QuotaError::Network("MiniMax endpoints exhausted".into())))
+    }
 }
 
 pub fn parse(body: &[u8], now: f64) -> Result<(Vec<QuotaBucket>, Option<String>), QuotaError> {
@@ -189,26 +214,6 @@ fn model_buckets(rows: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> {
             if let Some(weekly) = weekly_bucket(row, now) {
                 buckets.push(weekly);
                 added_weekly = true;
-            }
-        }
-    }
-    if buckets.is_empty() {
-        let preferred = rows
-            .iter()
-            .find(|row| {
-                text(row.get("model_name"))
-                    .is_some_and(|name| name.to_ascii_lowercase().starts_with("minimax-m"))
-                    && int(row.get("current_interval_total_count")).unwrap_or(0) > 0
-            })
-            .or_else(|| {
-                rows.iter()
-                    .find(|row| int(row.get("current_interval_total_count")).unwrap_or(0) > 0)
-            })
-            .or_else(|| rows.first());
-        if let Some(row) = preferred {
-            buckets.push(model_bucket(row, 0, now));
-            if let Some(weekly) = weekly_bucket(row, now) {
-                buckets.push(weekly);
             }
         }
     }
@@ -350,21 +355,27 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
                 title,
                 short,
                 used_percent,
-                reset_at(
-                    service
-                        .get("end_time")
-                        .or_else(|| service.get("reset_at"))
-                        .or_else(|| service.get("reset_time")),
-                    service
-                        .get("remains_time")
-                        .or_else(|| service.get("reset_in_seconds")),
-                    now,
-                ),
+                service_reset_at(service, now),
                 Some(window),
                 group,
             ))
         })
         .collect()
+}
+
+fn service_reset_at(service: &Value, now: f64) -> Option<f64> {
+    let end = service
+        .get("end_time")
+        .or_else(|| service.get("reset_at"))
+        .or_else(|| service.get("reset_time"));
+    if let Some(reset) = reset_at(end, service.get("remains_time"), now) {
+        return Some(reset);
+    }
+    service
+        .get("reset_in_seconds")
+        .and_then(|value| number(Some(value)))
+        .filter(|seconds| *seconds > 0.0)
+        .map(|seconds| now + seconds)
 }
 
 fn reset_at(end: Option<&Value>, remains: Option<&Value>, now: f64) -> Option<f64> {
@@ -538,9 +549,23 @@ mod tests {
         let mut e = HashMap::new();
         e.insert("MINIMAX_API_KEY".into(), "env".into());
         e.insert("MINIMAX_CODING_API_KEY".into(), "coding".into());
-        e.insert("MINIMAX_REMAINS_URL".into(), "https://x".into());
+        e.insert(
+            "MINIMAX_REMAINS_URL".into(),
+            "https://proxy.minimax.io/remains".into(),
+        );
         assert_eq!(resolve_api_key(&e).as_deref(), Some("coding"));
-        assert_eq!(remains_urls(&e, false)[0], "https://x");
+        assert_eq!(
+            remains_urls(&e, false)[0],
+            "https://proxy.minimax.io/remains"
+        );
+        e.insert(
+            "MINIMAX_REMAINS_URL".into(),
+            "https://example.test/steal".into(),
+        );
+        assert_eq!(
+            remains_urls(&e, false)[0],
+            "https://www.minimax.io/v1/token_plan/remains"
+        );
     }
     #[test]
     fn parses_model_and_weekly() {
@@ -564,6 +589,11 @@ mod tests {
         assert_eq!(buckets[0].id, "minimax.weekly");
         assert_eq!(buckets[0].used_percent, 25.0);
         assert_eq!(buckets[0].reset_at, Some(1_700_003_600.0));
+
+        let monthly = br#"{"data":{"services":[{"window_type":"monthly","percent":0.25,"reset_in_seconds":2592000}]}}"#;
+        let (buckets, _) = parse(monthly, 1_700_000_000.0).unwrap();
+        assert_eq!(buckets[0].used_percent, 25.0);
+        assert_eq!(buckets[0].reset_at, Some(1_702_592_000.0));
     }
     #[test]
     fn dashboard_model_names_are_stable_english_labels() {
@@ -592,6 +622,13 @@ mod tests {
         );
         assert!(matches!(
             parse(br#"{"data":{"model_remains":[]}}"#, 0.0),
+            Err(QuotaError::ParseFailure(_))
+        ));
+        assert!(matches!(
+            parse(
+                br#"{"data":{"model_remains":[{"model_name":"inactive","current_interval_total_count":0}]}}"#,
+                0.0
+            ),
             Err(QuotaError::ParseFailure(_))
         ));
     }

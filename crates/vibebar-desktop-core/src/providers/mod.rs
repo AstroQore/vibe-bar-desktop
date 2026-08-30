@@ -21,7 +21,7 @@ use std::time::Duration;
 use crate::error::QuotaError;
 use crate::model::{AccountQuota, ToolType};
 
-/// Per-request ceiling. The native app quarantines an adapter that blows this
+/// Per-adapter ceiling. The native app quarantines an adapter that blows this
 /// budget; here it simply becomes [`QuotaError::TimedOut`], and the previous
 /// observation stays on screen.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -34,15 +34,34 @@ pub async fn fetch(
     home: &Path,
     client: &reqwest::Client,
 ) -> Result<AccountQuota, QuotaError> {
-    match tool {
-        ToolType::Codex => codex::fetch(home, client).await,
-        ToolType::Claude => claude::fetch(home, client).await,
-        ToolType::Zai => zai::fetch(home, client).await,
-        ToolType::Minimax => minimax::fetch(client).await,
-        ToolType::OpenRouter => openrouter::fetch(client).await,
-        ToolType::Warp => warp::fetch(client).await,
-        _ => Err(QuotaError::NotImplemented),
+    let result = tokio::time::timeout(REQUEST_TIMEOUT, async {
+        match tool {
+            ToolType::Codex => codex::fetch(home, client).await,
+            ToolType::Claude => claude::fetch(home, client).await,
+            ToolType::Zai => zai::fetch(home, client).await,
+            ToolType::Minimax => minimax::fetch(client).await,
+            ToolType::OpenRouter => openrouter::fetch(client).await,
+            ToolType::Warp => warp::fetch(client).await,
+            _ => Err(QuotaError::NotImplemented),
+        }
+    })
+    .await;
+    match result {
+        Ok(result) => result,
+        Err(_) => Err(QuotaError::TimedOut),
     }
+}
+
+pub(crate) fn trusted_https_url(raw: &str, allowed_domains: &[&str]) -> Option<reqwest::Url> {
+    let url = reqwest::Url::parse(raw.trim()).ok()?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return None;
+    }
+    let host = url.host_str()?.to_ascii_lowercase();
+    allowed_domains
+        .iter()
+        .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
+        .then_some(url)
 }
 
 /// Map a transport failure onto the shared error taxonomy.
@@ -95,5 +114,19 @@ mod tests {
             classify_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
             Some(QuotaError::Unknown("HTTP 500".into()))
         );
+    }
+
+    #[test]
+    fn credentialed_overrides_require_https_provider_hosts() {
+        assert!(
+            trusted_https_url("https://proxy.openrouter.ai/api/v1", &["openrouter.ai"]).is_some()
+        );
+        assert!(trusted_https_url("http://openrouter.ai/api/v1", &["openrouter.ai"]).is_none());
+        assert!(trusted_https_url("https://example.test/api/v1", &["openrouter.ai"]).is_none());
+        assert!(trusted_https_url(
+            "https://openrouter.ai@example.test/api/v1",
+            &["openrouter.ai"]
+        )
+        .is_none());
     }
 }

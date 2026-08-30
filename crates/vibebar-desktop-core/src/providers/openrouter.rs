@@ -9,7 +9,10 @@ const DEFAULT_API_URL: &str = "https://openrouter.ai/api/v1";
 
 pub async fn fetch(client: &reqwest::Client) -> Result<AccountQuota, QuotaError> {
     let api_key = env_value("OPENROUTER_API_KEY").ok_or(QuotaError::NoCredential)?;
-    let base = env_value("OPENROUTER_API_URL").unwrap_or_else(|| DEFAULT_API_URL.to_string());
+    let base = env_value("OPENROUTER_API_URL")
+        .and_then(|value| super::trusted_https_url(&value, &["openrouter.ai"]))
+        .map(|url| url.to_string())
+        .unwrap_or_else(|| DEFAULT_API_URL.to_string());
     let credits = get_json(client, &endpoint(&base, "credits"), &api_key).await?;
     let credits = parse_credits(&credits)?;
     let key_stats = match get_json(client, &endpoint(&base, "key"), &api_key).await {
