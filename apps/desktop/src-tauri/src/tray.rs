@@ -120,7 +120,10 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
     };
 
     let mut parts: Vec<String> = Vec::new();
-    for field_id in selected.iter().take(6) {
+    for field_id in &selected {
+        if parts.len() >= 6 {
+            break;
+        }
         let Some((tool_raw, bucket_id)) = field_id.split_once('.') else {
             continue;
         };
@@ -342,5 +345,21 @@ mod tests {
             render_title_at(&SharedSettings::default(), &view(vec![cached]), NOW),
             "ChatGPT Agentic 76%"
         );
+
+        let accounts = [
+            (ToolType::Zai, "zai.tokens"),
+            (ToolType::Minimax, "minimax.coding"),
+            (ToolType::OpenRouter, "openrouter.credits"),
+            (ToolType::Warp, "warp.credits"),
+        ]
+        .into_iter()
+        .map(|(tool, bucket_id)| {
+            let mut account = account(tool.raw_value(), tool, NOW - 10.0, 25.0);
+            account.buckets[0].id = bucket_id.to_string();
+            account
+        })
+        .collect();
+        let title = render_title_at(&SharedSettings::default(), &view(accounts), NOW);
+        assert_eq!(title.split(" · ").count(), 4, "{title}");
     }
 }
