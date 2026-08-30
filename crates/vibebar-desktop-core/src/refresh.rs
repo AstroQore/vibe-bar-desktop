@@ -10,7 +10,7 @@
 //! Per account, the newer observation wins regardless of which side produced
 //! it: on a Mac running both clients, whichever refreshed last is the truth.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -136,12 +136,21 @@ impl QuotaEngine {
         // account ids rather than surfacing the same account twice.
         let mut current = self.store.load_quotas();
         current.extend(ok);
+        let desktop_snapshot_tools: HashSet<_> = current
+            .iter()
+            .filter(|quota| quota.origin == QuotaOrigin::DesktopCache)
+            .map(|quota| quota.tool)
+            .collect();
         let (shared, has_shared_data) = self.load_shared(&current);
 
         let mut accounts = merge(current, shared);
         for failure in failed {
             let covered = accounts.iter().any(|a| a.tool == failure.tool);
-            if !covered || is_auth_failure(&failure) {
+            if should_keep_failure(
+                covered,
+                desktop_snapshot_tools.contains(&failure.tool),
+                &failure,
+            ) {
                 accounts.push(failure);
             }
         }
@@ -319,6 +328,14 @@ fn is_auth_failure(quota: &AccountQuota) -> bool {
     quota.error.as_ref().is_some_and(is_auth_error)
 }
 
+fn should_keep_failure(
+    covered: bool,
+    had_desktop_snapshot: bool,
+    failure: &AccountQuota,
+) -> bool {
+    !covered || (had_desktop_snapshot && is_auth_failure(failure))
+}
+
 fn is_auth_error(error: &crate::error::QuotaError) -> bool {
     matches!(
         error,
@@ -489,6 +506,8 @@ mod tests {
             error: Some(crate::error::QuotaError::NeedsLogin),
             ..quota_with("codex-unavailable", ToolType::Codex, NOW, &[])
         };
+        assert!(should_keep_failure(true, true, &failure));
+        assert!(!should_keep_failure(true, false, &failure));
 
         let view = QuotaEngine::view_at(vec![cached, failure], false, false, NOW);
 
