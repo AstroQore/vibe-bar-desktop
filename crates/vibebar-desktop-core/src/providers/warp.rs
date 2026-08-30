@@ -315,29 +315,39 @@ fn bonus_summary(
             .expiration
             .is_none_or(|expiration| expiration > now)
     });
-    let remaining = grants.iter().map(|grant| grant.remaining).sum();
-    let total = grants.iter().map(|grant| grant.granted).sum();
+    let remaining = checked_total(grants.iter().map(|grant| grant.remaining)).ok_or_else(|| {
+        QuotaError::ParseFailure("Warp bonus grant totals overflow".into())
+    })?;
+    let total = checked_total(grants.iter().map(|grant| grant.granted)).ok_or_else(|| {
+        QuotaError::ParseFailure("Warp bonus grant totals overflow".into())
+    })?;
     let next_expiration = grants
         .iter()
         .filter(|grant| grant.remaining > 0)
         .filter_map(|grant| grant.expiration)
         .min_by(f64::total_cmp);
-    let next_expiration_remaining = next_expiration.map_or(0, |earliest| {
-        grants
+    let next_expiration_remaining = if let Some(earliest) = next_expiration {
+        checked_total(grants
             .iter()
             .filter(|grant| {
                 grant.remaining > 0
                     && grant.expiration.map(|value| value as i64) == Some(earliest as i64)
             })
-            .map(|grant| grant.remaining)
-            .sum()
-    });
+            .map(|grant| grant.remaining))
+        .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant totals overflow".into()))?
+    } else {
+        0
+    };
     Ok(BonusSummary {
         remaining,
         total,
         next_expiration,
         next_expiration_remaining,
     })
+}
+
+fn checked_total(mut values: impl Iterator<Item = i64>) -> Option<i64> {
+    values.try_fold(0_i64, |sum, value| sum.checked_add(value))
 }
 
 struct BonusGrant {
@@ -564,6 +574,18 @@ mod tests {
             let body = serde_json::to_vec(&root).unwrap();
             assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
         }
+    }
+
+    #[test]
+    fn overflowing_bonus_grant_totals_fail_the_snapshot_closed() {
+        let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
+        root["data"]["user"]["user"]["bonusGrants"] = serde_json::json!([
+            {"requestCreditsGranted": i64::MAX, "requestCreditsRemaining": i64::MAX},
+            {"requestCreditsGranted": 1, "requestCreditsRemaining": 1}
+        ]);
+        root["data"]["user"]["user"]["workspaces"] = Value::Array(Vec::new());
+        let body = serde_json::to_vec(&root).unwrap();
+        assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
     }
 
     #[test]
