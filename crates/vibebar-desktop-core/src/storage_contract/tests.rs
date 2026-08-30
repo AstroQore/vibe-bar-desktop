@@ -140,6 +140,54 @@ fn malformed_manifest_is_rejected() {
         manifest.validate(),
         Err(ContractError::MissingStore(_))
     ));
+
+    let mut manifest = SharedStoreManifest::native_fixture().unwrap();
+    manifest
+        .stores
+        .iter_mut()
+        .find(|store| store.store_id == SharedStoreId::CredentialVault)
+        .unwrap()
+        .endpoint_protocol = Some("mcp-jsonrpc".to_string());
+    assert!(matches!(
+        manifest.validate(),
+        Err(ContractError::InvalidStore { .. })
+    ));
+
+    let mut manifest = SharedStoreManifest::native_fixture().unwrap();
+    manifest
+        .stores
+        .iter_mut()
+        .find(|store| store.store_id == SharedStoreId::McpSocket)
+        .unwrap()
+        .keychain_service = Some("synthetic".to_string());
+    assert!(matches!(
+        manifest.validate(),
+        Err(ContractError::InvalidStore { .. })
+    ));
+
+    let mut manifest = SharedStoreManifest::native_fixture().unwrap();
+    manifest
+        .stores
+        .iter_mut()
+        .find(|store| store.store_id == SharedStoreId::UsageEvents)
+        .unwrap()
+        .current_schema_version = None;
+    assert!(matches!(
+        manifest.validate(),
+        Err(ContractError::InvalidStore { .. })
+    ));
+
+    let mut manifest = SharedStoreManifest::native_fixture().unwrap();
+    manifest
+        .stores
+        .iter_mut()
+        .find(|store| store.store_id == SharedStoreId::Settings)
+        .unwrap()
+        .current_schema_version = Some(1);
+    assert!(matches!(
+        manifest.validate(),
+        Err(ContractError::InvalidStore { .. })
+    ));
 }
 
 #[cfg(unix)]

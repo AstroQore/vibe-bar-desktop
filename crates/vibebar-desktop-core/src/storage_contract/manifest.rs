@@ -238,6 +238,29 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
     {
         return Err(invalid(store.store_id, "invalid sidecar name"));
     }
+    let schema_requires_version = matches!(
+        store.schema_kind,
+        SharedStoreSchemaKind::JsonSchemaVersion
+            | SharedStoreSchemaKind::SqliteUserVersion
+            | SharedStoreSchemaKind::SqliteMetadataVersion
+            | SharedStoreSchemaKind::KeychainEnvelope
+    );
+    if schema_requires_version {
+        if store
+            .current_schema_version
+            .is_none_or(|version| version == 0)
+        {
+            return Err(invalid(
+                store.store_id,
+                "versioned schema requires a positive currentSchemaVersion",
+            ));
+        }
+    } else if store.current_schema_version.is_some() {
+        return Err(invalid(
+            store.store_id,
+            "unversioned schema must not declare currentSchemaVersion",
+        ));
+    }
     match store.locator_kind {
         SharedStoreLocatorKind::FilesystemRelative => {
             if !safe_relative(&store.relative_locator) {
@@ -280,6 +303,8 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
                     .as_deref()
                     .filter(|v| !v.is_empty())
                     .is_none()
+                || store.endpoint_protocol.is_some()
+                || store.endpoint_version.is_some()
                 || store
                     .keychain_account
                     .as_deref()
@@ -305,6 +330,8 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
                     .as_deref()
                     .filter(|v| !v.is_empty())
                     .is_none()
+                || store.keychain_service.is_some()
+                || store.keychain_account.is_some()
                 || store
                     .endpoint_version
                     .as_deref()
