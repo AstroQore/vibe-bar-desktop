@@ -269,6 +269,15 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
                     "filesystem locator must be a safe relative path",
                 ));
             }
+            if matches!(
+                store.schema_kind,
+                SharedStoreSchemaKind::KeychainEnvelope | SharedStoreSchemaKind::UnixSocket
+            ) {
+                return Err(invalid(
+                    store.store_id,
+                    "filesystem locator has an incompatible schema kind",
+                ));
+            }
             if store.keychain_service.is_some()
                 || store.keychain_account.is_some()
                 || store.endpoint_protocol.is_some()
@@ -297,7 +306,8 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
             }
         }
         SharedStoreLocatorKind::KeychainItem => {
-            if !store.relative_locator.is_empty()
+            if store.schema_kind != SharedStoreSchemaKind::KeychainEnvelope
+                || !store.relative_locator.is_empty()
                 || store
                     .keychain_service
                     .as_deref()
@@ -324,7 +334,8 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
             }
         }
         SharedStoreLocatorKind::Endpoint => {
-            if !safe_relative(&store.relative_locator)
+            if store.schema_kind != SharedStoreSchemaKind::UnixSocket
+                || !safe_relative(&store.relative_locator)
                 || store
                     .endpoint_protocol
                     .as_deref()

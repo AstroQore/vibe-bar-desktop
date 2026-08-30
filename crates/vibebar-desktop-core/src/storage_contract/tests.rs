@@ -188,6 +188,42 @@ fn malformed_manifest_is_rejected() {
         manifest.validate(),
         Err(ContractError::InvalidStore { .. })
     ));
+
+    let mut manifest = SharedStoreManifest::native_fixture().unwrap();
+    let settings = manifest
+        .stores
+        .iter_mut()
+        .find(|store| store.store_id == SharedStoreId::Settings)
+        .unwrap();
+    settings.schema_kind = SharedStoreSchemaKind::UnixSocket;
+    assert!(matches!(
+        manifest.validate(),
+        Err(ContractError::InvalidStore { .. })
+    ));
+
+    let mut manifest = SharedStoreManifest::native_fixture().unwrap();
+    manifest
+        .stores
+        .iter_mut()
+        .find(|store| store.store_id == SharedStoreId::CredentialVault)
+        .unwrap()
+        .schema_kind = SharedStoreSchemaKind::JsonSchemaVersion;
+    assert!(matches!(
+        manifest.validate(),
+        Err(ContractError::InvalidStore { .. })
+    ));
+
+    let mut manifest = SharedStoreManifest::native_fixture().unwrap();
+    manifest
+        .stores
+        .iter_mut()
+        .find(|store| store.store_id == SharedStoreId::McpSocket)
+        .unwrap()
+        .schema_kind = SharedStoreSchemaKind::JsonUnversioned;
+    assert!(matches!(
+        manifest.validate(),
+        Err(ContractError::InvalidStore { .. })
+    ));
 }
 
 #[cfg(unix)]
