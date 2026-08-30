@@ -10,6 +10,10 @@ mod native_app;
 mod state;
 mod tray;
 
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 use state::AppState;
@@ -27,6 +31,9 @@ pub fn run_mcp_stdio() -> i32 {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let tray_available = Arc::new(AtomicBool::new(false));
+    let close_tray_available = Arc::clone(&tray_available);
+    let setup_tray_available = Arc::clone(&tray_available);
     let app = tauri::Builder::default()
         // A second launch focuses the running window instead of starting a
         // rival tray icon and refresh loop against the same data root.
@@ -40,8 +47,8 @@ pub fn run() {
         // Closing the one user-facing window leaves the tray refresh loop
         // alive. Explicit tray Quit still calls `app.exit(0)` and terminates
         // the process rather than requesting this window close.
-        .on_window_event(|window, event| {
-            if window.label() == "main" {
+        .on_window_event(move |window, event| {
+            if window.label() == "main" && close_tray_available.load(Ordering::Acquire) {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
@@ -63,12 +70,13 @@ pub fn run() {
             commands::app_info,
             commands::skills_inventory,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let state = AppState::new();
             mini_window::install(app.handle(), state.data_root().clone())?;
             // Tray failure deliberately does not abort setup: without a tray,
             // hiding the only window would leave the user no way back in.
             let tray_installed = tray::install(app.handle(), &state).is_ok();
+            setup_tray_available.store(tray_installed, Ordering::Release);
             let store = ClientStore::new(state.data_root().clone());
             let action = startup_action(
                 state.data_root().is_demo(),
