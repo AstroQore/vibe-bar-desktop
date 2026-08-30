@@ -166,9 +166,9 @@ impl SessionsService {
                     IndexState::Unusable(note) => Some(note),
                     _ => None,
                 };
-                let mut listing = self.scan(SCAN_LIMIT, note);
+                let mut rows = self.scanned_rows(SCAN_LIMIT);
                 let lowered = needle.to_lowercase();
-                listing.rows.retain(|row| {
+                rows.retain(|row| {
                     row.title
                         .as_deref()
                         .is_some_and(|t| t.to_lowercase().contains(&lowered))
@@ -178,8 +178,17 @@ impl SessionsService {
                             .as_deref()
                             .is_some_and(|p| p.to_lowercase().contains(&lowered))
                 });
-                listing.rows.truncate(limit);
-                listing
+                rows.truncate(limit);
+                // Capabilities are issued only for rows this search returns.
+                // Authorizing the wider scan first lets stale overlapping
+                // searches evict references still visible in the UI.
+                self.authorize_rows(&mut rows);
+                SessionListing {
+                    source: SessionSource::Scanned,
+                    rows,
+                    indexed_total: None,
+                    index_note: note,
+                }
             }
         }
     }
@@ -234,11 +243,7 @@ impl SessionsService {
     }
 
     fn scan(&self, limit: usize, note: Option<String>) -> SessionListing {
-        let mut discovered = discovery::discover_codex(&self.home, SCAN_LIMIT);
-        discovered.extend(discovery::discover_claude(&self.home, SCAN_LIMIT));
-        discovered.sort_by_key(|s| std::cmp::Reverse(s.modified_at));
-        discovered.truncate(limit);
-        let mut rows: Vec<_> = discovered.into_iter().map(scanned_row).collect();
+        let mut rows = self.scanned_rows(limit);
         self.authorize_rows(&mut rows);
         SessionListing {
             source: SessionSource::Scanned,
@@ -246,6 +251,14 @@ impl SessionsService {
             indexed_total: None,
             index_note: note,
         }
+    }
+
+    fn scanned_rows(&self, limit: usize) -> Vec<SessionRow> {
+        let mut discovered = discovery::discover_codex(&self.home, SCAN_LIMIT);
+        discovered.extend(discovery::discover_claude(&self.home, SCAN_LIMIT));
+        discovered.sort_by_key(|s| std::cmp::Reverse(s.modified_at));
+        discovered.truncate(limit);
+        discovered.into_iter().map(scanned_row).collect()
     }
 
     fn authorize_rows(&self, rows: &mut [SessionRow]) {
@@ -477,9 +490,13 @@ mod tests {
     }
 
     fn write_codex_session(home: &Path) -> (PathBuf, &'static str) {
+        let id = "0199aaaa-1111-2222-3333-444455556666";
+        (write_codex_session_named(home, id, "first message"), id)
+    }
+
+    fn write_codex_session_named(home: &Path, id: &str, first_message: &str) -> PathBuf {
         use std::io::Write;
 
-        let id = "0199aaaa-1111-2222-3333-444455556666";
         let sessions = home.join(".codex/sessions/2026/08/30");
         std::fs::create_dir_all(&sessions).unwrap();
         let path = sessions.join(format!("rollout-2026-08-30T04-55-08-{id}.jsonl"));
@@ -493,7 +510,7 @@ mod tests {
         writeln!(
             file,
             "{}",
-            serde_json::json!({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": "first message"}]}})
+            serde_json::json!({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": first_message}]}})
         )
         .unwrap();
         writeln!(
@@ -502,7 +519,7 @@ mod tests {
             serde_json::json!({"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"text": "second message"}]}})
         )
         .unwrap();
-        (path, id)
+        path
     }
 
     #[test]
@@ -564,6 +581,36 @@ mod tests {
         // Title/id search works without a body index.
         assert_eq!(service.search("0199aaaa", 20).rows.len(), 1);
         assert_eq!(service.search("nothing-matches-this", 20).rows.len(), 0);
+    }
+
+    #[test]
+    fn scanned_search_authorizes_only_returned_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        write_codex_session_named(
+            home,
+            "0199aaaa-1111-2222-3333-444455556601",
+            "the only needle",
+        );
+        write_codex_session_named(
+            home,
+            "0199aaaa-1111-2222-3333-444455556602",
+            "unrelated alpha",
+        );
+        write_codex_session_named(
+            home,
+            "0199aaaa-1111-2222-3333-444455556603",
+            "unrelated beta",
+        );
+
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+        let listing = service.search("needle", 1);
+        assert_eq!(listing.rows.len(), 1);
+        assert_eq!(listing.rows[0].title.as_deref(), Some("the only needle"));
+        assert_eq!(service.references.lock().unwrap().len(), 1);
+        assert!(service
+            .transcript(&listing.rows[0].session_ref, 0, 1)
+            .is_ok());
     }
 
     #[test]
