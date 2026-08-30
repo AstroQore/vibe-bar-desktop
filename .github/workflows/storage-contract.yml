@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: AstroQore/vibe-bar
-          ref: c4addf558bd213c6dddb7a7f53020df0ac9812b4
+          ref: 2e2e651c097551ced918c5e7105d33ee80f944ac
           path: native-vibe-bar
       - name: Verify settings fixtures are byte-identical
         run: |
