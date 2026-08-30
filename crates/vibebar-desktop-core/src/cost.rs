@@ -9,6 +9,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions as CapOpenOptions};
@@ -165,6 +166,7 @@ fn empty_view(scanned_at: f64) -> CostView {
 struct SourceFile {
     tool: ToolType,
     path: PathBuf,
+    mtime: SystemTime,
 }
 
 #[derive(Debug, Clone)]
@@ -209,15 +211,16 @@ fn collect_provider_files(
     let mut files = Vec::new();
     let mut budget = DiscoveryBudget::default();
     for root in roots {
-        collect_jsonl(&home.join(root), tool, &mut files, 0, &mut budget);
+        collect_jsonl(&home.join(root), tool, &mut files, 0, true, &mut budget);
         if budget.truncated {
             break;
         }
     }
     let discovery_truncated = budget.truncated;
     files.sort_by(|left, right| {
-        source_mtime(&right.path)
-            .cmp(&source_mtime(&left.path))
+        right
+            .mtime
+            .cmp(&left.mtime)
             .then_with(|| left.path.cmp(&right.path))
     });
     let truncated = discovery_truncated || files.len() > limit;
@@ -340,20 +343,12 @@ struct DiscoveryBudget {
     truncated: bool,
 }
 
-fn source_mtime(path: &Path) -> u128 {
-    fs::symlink_metadata(path)
-        .ok()
-        .and_then(|metadata| metadata.modified().ok())
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0)
-}
-
 fn collect_jsonl(
     root: &Path,
     tool: ToolType,
     out: &mut Vec<SourceFile>,
     depth: usize,
+    optional_root: bool,
     budget: &mut DiscoveryBudget,
 ) {
     if depth > MAX_DISCOVERY_DEPTH
@@ -366,7 +361,7 @@ fn collect_jsonl(
     let root_metadata = match fs::symlink_metadata(root) {
         Ok(metadata) => metadata,
         Err(error) => {
-            mark_discovery_error(&error, budget);
+            mark_discovery_error(&error, optional_root, budget);
             return;
         }
     };
@@ -377,7 +372,7 @@ fn collect_jsonl(
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) => {
-            mark_discovery_error(&error, budget);
+            mark_discovery_error(&error, false, budget);
             return;
         }
     };
@@ -385,7 +380,7 @@ fn collect_jsonl(
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                mark_discovery_error(&error, budget);
+                mark_discovery_error(&error, false, budget);
                 if budget.truncated {
                     return;
                 }
@@ -401,7 +396,7 @@ fn collect_jsonl(
         let file_type = match entry.file_type() {
             Ok(file_type) => file_type,
             Err(error) => {
-                mark_discovery_error(&error, budget);
+                mark_discovery_error(&error, false, budget);
                 if budget.truncated {
                     return;
                 }
@@ -413,20 +408,39 @@ fn collect_jsonl(
             return;
         }
         if file_type.is_dir() {
-            collect_jsonl(&path, tool, out, depth + 1, budget);
+            collect_jsonl(&path, tool, out, depth + 1, false, budget);
             if budget.truncated {
                 return;
             }
         } else if file_type.is_file()
             && path.extension().and_then(|extension| extension.to_str()) == Some("jsonl")
         {
-            out.push(SourceFile { tool, path });
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    mark_discovery_error(&error, false, budget);
+                    return;
+                }
+            };
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                budget.truncated = true;
+                return;
+            }
+            out.push(SourceFile {
+                tool,
+                path,
+                mtime: metadata.modified().unwrap_or(UNIX_EPOCH),
+            });
         }
     }
 }
 
-fn mark_discovery_error(error: &std::io::Error, budget: &mut DiscoveryBudget) {
-    if error.kind() != std::io::ErrorKind::NotFound {
+fn mark_discovery_error(
+    error: &std::io::Error,
+    optional_root: bool,
+    budget: &mut DiscoveryBudget,
+) {
+    if error.kind() != std::io::ErrorKind::NotFound || !optional_root {
         budget.truncated = true;
     }
 }
@@ -1639,6 +1653,7 @@ mod tests {
         let source = |tool, name| SourceFile {
             tool,
             path: PathBuf::from(name),
+            mtime: UNIX_EPOCH,
         };
         let groups = [
             vec![
@@ -1695,10 +1710,12 @@ mod tests {
                 vec![SourceFile {
                     tool: ToolType::Codex,
                     path: codex,
+                    mtime: UNIX_EPOCH,
                 }],
                 vec![SourceFile {
                     tool: ToolType::Claude,
                     path: claude,
+                    mtime: UNIX_EPOCH,
                 }],
             ],
             4,
@@ -1740,10 +1757,12 @@ mod tests {
                 SourceFile {
                     tool: ToolType::Claude,
                     path: first,
+                    mtime: UNIX_EPOCH,
                 },
                 SourceFile {
                     tool: ToolType::Claude,
                     path: second,
+                    mtime: UNIX_EPOCH,
                 },
             ]],
             10,
@@ -1777,6 +1796,18 @@ mod tests {
             collect_provider_files(home.path(), ToolType::Codex, &[".codex/missing"], 1);
         assert!(files.is_empty());
         assert!(!truncated);
+
+        let mut files = Vec::new();
+        let mut budget = DiscoveryBudget::default();
+        collect_jsonl(
+            &home.path().join(".codex/missing"),
+            ToolType::Codex,
+            &mut files,
+            1,
+            false,
+            &mut budget,
+        );
+        assert!(budget.truncated);
 
         fs::write(home.path().join(".codex"), "not a directory").unwrap();
         let (files, truncated) =
@@ -1861,6 +1892,7 @@ mod tests {
             &SourceFile {
                 tool: ToolType::Claude,
                 path,
+                mtime: UNIX_EPOCH,
             },
             &mut events,
             &mut malformed_lines,
@@ -1896,6 +1928,7 @@ mod tests {
             &SourceFile {
                 tool: ToolType::Claude,
                 path,
+                mtime: UNIX_EPOCH,
             },
             &mut events,
             &mut malformed_lines,
