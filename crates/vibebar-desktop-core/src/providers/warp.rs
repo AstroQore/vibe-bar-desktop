@@ -128,7 +128,7 @@ struct ParsedBuckets {
     plan: Option<String>,
 }
 
-fn parse(body: &[u8], _now: f64) -> Result<Snapshot, QuotaError> {
+fn parse(body: &[u8], now: f64) -> Result<Snapshot, QuotaError> {
     let root: Value = serde_json::from_slice(body)
         .map_err(|_| QuotaError::ParseFailure("Warp root JSON is not an object".into()))?;
     let root = root
@@ -176,7 +176,7 @@ fn parse(body: &[u8], _now: f64) -> Result<Snapshot, QuotaError> {
         .get("requestLimitInfo")
         .and_then(Value::as_object)
         .ok_or_else(|| QuotaError::ParseFailure("Warp missing requestLimitInfo".into()))?;
-    let bonus = bonus_summary(user);
+    let bonus = bonus_summary(user, now);
     Ok(Snapshot {
         request_limit: int_value(limit.get("requestLimit")),
         requests_used: int_value(limit.get("requestsUsedSinceLastRefresh")),
@@ -265,7 +265,7 @@ struct BonusSummary {
     next_expiration_remaining: i64,
 }
 
-fn bonus_summary(user: &serde_json::Map<String, Value>) -> BonusSummary {
+fn bonus_summary(user: &serde_json::Map<String, Value>, now: f64) -> BonusSummary {
     let mut grants = Vec::new();
     if let Some(values) = user.get("bonusGrants").and_then(Value::as_array) {
         grants.extend(values.iter().filter_map(grant));
@@ -281,6 +281,11 @@ fn bonus_summary(user: &serde_json::Map<String, Value>) -> BonusSummary {
             }
         }
     }
+    grants.retain(|grant| {
+        grant
+            .expiration
+            .is_none_or(|expiration| expiration > now)
+    });
     let remaining = grants.iter().map(|grant| grant.remaining).sum();
     let total = grants.iter().map(|grant| grant.granted).sum();
     let next_expiration = grants
@@ -430,6 +435,52 @@ mod tests {
         assert_eq!(parsed.buckets[0].used_percent, 0.0);
         assert_eq!(parsed.buckets[0].reset_at, None);
         assert_eq!(parsed.plan.as_deref(), Some("Unlimited"));
+    }
+
+    #[test]
+    fn expired_bonus_grants_do_not_count_as_available() {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "data": {"user": {
+                "__typename": "UserOutput",
+                "user": {
+                    "requestLimitInfo": {
+                        "isUnlimited": false,
+                        "nextRefreshTime": "2026-09-01T00:00:00Z",
+                        "requestLimit": 100,
+                        "requestsUsedSinceLastRefresh": 25
+                    },
+                    "bonusGrants": [
+                        {
+                            "requestCreditsGranted": 20,
+                            "requestCreditsRemaining": 7,
+                            "expiration": "2026-08-30T00:00:00Z"
+                        },
+                        {
+                            "requestCreditsGranted": 10,
+                            "requestCreditsRemaining": 3,
+                            "expiration": "2026-09-02T00:00:00Z"
+                        }
+                    ],
+                    "workspaces": [{"bonusGrantsInfo":{"grants":[{
+                        "requestCreditsGranted": 50,
+                        "requestCreditsRemaining": 0,
+                        "expiration": "2026-08-29T00:00:00Z"
+                    }]}}]
+                }
+            }}
+        }))
+        .unwrap();
+        let now = parse_date("2026-08-31T00:00:00Z").unwrap();
+
+        let snapshot = parse(&body, now).unwrap();
+
+        assert_eq!(snapshot.bonus_total, 10);
+        assert_eq!(snapshot.bonus_remaining, 3);
+        assert_eq!(
+            snapshot.bonus_next_expiration,
+            parse_date("2026-09-02T00:00:00Z")
+        );
+        assert_eq!(snapshot.bonus_next_expiration_remaining, 3);
     }
 
     #[test]
