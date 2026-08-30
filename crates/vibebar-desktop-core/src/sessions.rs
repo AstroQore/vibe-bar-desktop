@@ -12,17 +12,26 @@
 //! Desktop never builds or repairs the index. The fallback is deliberately
 //! narrower than the index rather than a second, competing indexer.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use agent_session_core::discovery::{self, DiscoveredSession};
 use agent_session_core::index::{SessionIndexReader, SessionListFilter};
 use agent_session_core::{resume, SessionProvider};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::fs::OpenOptions;
 use serde::Serialize;
 
 use crate::error::CoreError;
 use crate::paths::DataRoot;
 
 const SCAN_LIMIT: usize = 400;
+const SESSION_REFERENCE_TTL: Duration = Duration::from_secs(15 * 60);
+const MAX_SESSION_REFERENCES: usize = 4_096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +52,15 @@ pub struct SessionRow {
     pub project_dir: Option<String>,
     /// Unix epoch seconds.
     pub last_active_at: Option<i64>,
-    pub source_path: String,
+    /// CSPRNG-backed in-memory capability issued with this listing. It expires
+    /// after 15 minutes and intentionally contains neither a path nor a
+    /// provider selected by the web UI. References from overlapping listings
+    /// coexist so a slower stale request cannot revoke the visible result.
+    pub session_ref: String,
+    /// Never serialize local paths into the webview. The backend associates
+    /// this with `session_ref` before returning a listing.
+    #[serde(skip_serializing)]
+    source_path: String,
     pub message_count: Option<i64>,
     /// Ready-to-paste resume line, when the provider has one.
     pub resume_command: Option<String>,
@@ -65,18 +82,30 @@ pub struct SessionListing {
 pub struct SessionsService {
     root: DataRoot,
     home: std::path::PathBuf,
+    references: Mutex<HashMap<String, ResolvedSession>>,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedSession {
+    provider: SessionProvider,
+    source_path: PathBuf,
+    expires_at: Instant,
 }
 
 impl SessionsService {
     pub fn new(root: DataRoot) -> Self {
         let home = crate::paths::home_directory();
-        Self { root, home }
+        Self {
+            root,
+            home,
+            references: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn list(&self, limit: usize) -> SessionListing {
         match self.open_index() {
             IndexState::Ready(reader) => {
-                let rows = reader
+                let mut rows: Vec<_> = reader
                     .list(&SessionListFilter {
                         limit,
                         ..Default::default()
@@ -85,11 +114,13 @@ impl SessionsService {
                     .into_iter()
                     .map(indexed_row)
                     .collect();
+                self.authorize_rows(&mut rows);
+                let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
                     source: SessionSource::Indexed,
                     rows,
-                    indexed_total: reader.session_count().ok(),
-                    index_note: None,
+                    indexed_total,
+                    index_note,
                 }
             }
             IndexState::Unusable(note) => self.scan(limit, Some(note)),
@@ -104,7 +135,7 @@ impl SessionsService {
         }
         match self.open_index() {
             IndexState::Ready(reader) => {
-                let rows = reader
+                let mut rows: Vec<_> = reader
                     .search(
                         needle,
                         &SessionListFilter {
@@ -120,11 +151,13 @@ impl SessionsService {
                         row
                     })
                     .collect();
+                self.authorize_rows(&mut rows);
+                let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
                     source: SessionSource::Indexed,
                     rows,
-                    indexed_total: reader.session_count().ok(),
-                    index_note: None,
+                    indexed_total,
+                    index_note,
                 }
             }
             state => {
@@ -133,9 +166,9 @@ impl SessionsService {
                     IndexState::Unusable(note) => Some(note),
                     _ => None,
                 };
-                let mut listing = self.scan(SCAN_LIMIT, note);
+                let mut rows = self.scanned_rows(SCAN_LIMIT);
                 let lowered = needle.to_lowercase();
-                listing.rows.retain(|row| {
+                rows.retain(|row| {
                     row.title
                         .as_deref()
                         .is_some_and(|t| t.to_lowercase().contains(&lowered))
@@ -145,27 +178,48 @@ impl SessionsService {
                             .as_deref()
                             .is_some_and(|p| p.to_lowercase().contains(&lowered))
                 });
-                listing.rows.truncate(limit);
-                listing
+                rows.truncate(limit);
+                // Capabilities are issued only for rows this search returns.
+                // Authorizing the wider scan first lets stale overlapping
+                // searches evict references still visible in the UI.
+                self.authorize_rows(&mut rows);
+                SessionListing {
+                    source: SessionSource::Scanned,
+                    rows,
+                    indexed_total: None,
+                    index_note: note,
+                }
             }
         }
     }
 
-    /// Transcript page for one session log.
+    /// Transcript page for a session capability issued by `list` or `search`.
+    ///
+    /// The capability is only an in-memory lookup key. It is not a path (or a
+    /// path encoding), expires after 15 minutes, and a stale process cannot be
+    /// used to read a newly supplied file.
     pub fn transcript(
         &self,
-        provider: &str,
-        source_path: &str,
+        session_ref: &str,
         offset: usize,
         limit: usize,
     ) -> Result<agent_session_core::transcript::TranscriptPage, CoreError> {
-        let provider = SessionProvider::from_raw(provider).unwrap_or(SessionProvider::Codex);
-        Ok(agent_session_core::transcript::read_page(
-            provider,
-            Path::new(source_path),
-            offset,
-            limit,
-        )?)
+        let resolved = self
+            .references
+            .lock()
+            .ok()
+            .and_then(|references| references.get(session_ref).cloned())
+            .filter(|resolved| resolved.expires_at > Instant::now())
+            .ok_or(CoreError::SessionReferenceInvalid)?;
+        let file = self
+            .open_approved_session_file(resolved.provider, &resolved.source_path)
+            .ok_or(CoreError::TranscriptUnavailable)?;
+
+        // Do not pass through filesystem errors: those can contain local
+        // path details and are irrelevant to a UI that can simply reload its
+        // session listing.
+        agent_session_core::transcript::read_page_from_file(resolved.provider, file, offset, limit)
+            .map_err(|_| CoreError::TranscriptUnavailable)
     }
 
     fn open_index(&self) -> IndexState {
@@ -182,21 +236,148 @@ impl SessionsService {
                 "The shared session index is at schema v{found} and this build reads v{expected}. \
                  Showing locally scanned sessions instead."
             )),
-            Err(error) => IndexState::Unusable(format!("The shared session index is unreadable: {error}")),
+            Err(error) => {
+                IndexState::Unusable(format!("The shared session index is unreadable: {error}"))
+            }
         }
     }
 
     fn scan(&self, limit: usize, note: Option<String>) -> SessionListing {
+        let mut rows = self.scanned_rows(limit);
+        self.authorize_rows(&mut rows);
+        SessionListing {
+            source: SessionSource::Scanned,
+            rows,
+            indexed_total: None,
+            index_note: note,
+        }
+    }
+
+    fn scanned_rows(&self, limit: usize) -> Vec<SessionRow> {
         let mut discovered = discovery::discover_codex(&self.home, SCAN_LIMIT);
         discovered.extend(discovery::discover_claude(&self.home, SCAN_LIMIT));
         discovered.sort_by_key(|s| std::cmp::Reverse(s.modified_at));
         discovered.truncate(limit);
-        SessionListing {
-            source: SessionSource::Scanned,
-            rows: discovered.into_iter().map(scanned_row).collect(),
-            indexed_total: None,
-            index_note: note,
+        discovered.into_iter().map(scanned_row).collect()
+    }
+
+    fn authorize_rows(&self, rows: &mut [SessionRow]) {
+        let Ok(mut references) = self.references.lock() else {
+            // A poisoned cache is safer treated as empty. Returning blank
+            // references makes every transcript request fail closed.
+            for row in rows {
+                row.session_ref.clear();
+            }
+            return;
+        };
+        let now = Instant::now();
+        references.retain(|_, resolved| resolved.expires_at > now);
+        for row in rows {
+            let Some(provider) = SessionProvider::from_raw(&row.provider) else {
+                row.session_ref.clear();
+                continue;
+            };
+            let source_path = PathBuf::from(&row.source_path);
+            // Reuse one unexpired capability per resolved session. Repeated
+            // listings therefore do not grow the cache, and a stale request
+            // cannot evict the capability held by the currently visible row.
+            let existing = references.iter().find_map(|(session_ref, resolved)| {
+                (resolved.provider == provider && resolved.source_path == source_path)
+                    .then(|| session_ref.clone())
+            });
+            if let Some(session_ref) = existing {
+                if let Some(resolved) = references.get_mut(&session_ref) {
+                    resolved.expires_at = now + SESSION_REFERENCE_TTL;
+                }
+                row.session_ref = session_ref;
+                continue;
+            }
+            // Never evict an unexpired capability to make space for a newer
+            // listing: the backend cannot know whether that listing was later
+            // discarded by the frontend's cancellation guard. Fail closed for
+            // new rows until an old reference expires instead.
+            if references.len() >= MAX_SESSION_REFERENCES {
+                row.session_ref.clear();
+                continue;
+            }
+            let Some(session_ref) = opaque_reference(&references) else {
+                row.session_ref.clear();
+                continue;
+            };
+            references.insert(
+                session_ref.clone(),
+                ResolvedSession {
+                    provider,
+                    source_path,
+                    expires_at: now + SESSION_REFERENCE_TTL,
+                },
+            );
+            row.session_ref = session_ref;
         }
+    }
+
+    fn open_approved_session_file(
+        &self,
+        provider: SessionProvider,
+        source_path: &Path,
+    ) -> Option<std::fs::File> {
+        // Transcript parsing understands only these two on-disk formats. In
+        // particular, never fall back from an unknown provider to Codex.
+        let roots: &[&str] = match provider {
+            SessionProvider::Codex => &[".codex/sessions", ".codex/archived_sessions"],
+            SessionProvider::Claude => &[".claude/projects", ".config/claude/projects"],
+            _ => return None,
+        };
+        let home = crate::paths::open_ambient_dir(&self.home).ok()?;
+
+        for root_relative in roots {
+            let root_path = self.home.join(root_relative);
+            let Ok(relative) = source_path.strip_prefix(&root_path) else {
+                continue;
+            };
+            let Ok(mut components) = crate::paths::normal_components(relative) else {
+                continue;
+            };
+            let Some(leaf) = components.pop() else {
+                continue;
+            };
+
+            // Each provider root and intermediate directory is opened through
+            // the original home handle without following symlinks. The leaf
+            // itself is then opened exactly once with `follow(No)`.
+            let Ok(mut directory) =
+                crate::paths::open_dir_nofollow(&home, Path::new(root_relative))
+            else {
+                continue;
+            };
+            let mut valid = true;
+            for component in components {
+                match cap_fs_ext::DirExt::open_dir_nofollow(&directory, component) {
+                    Ok(next) => directory = next,
+                    Err(_) => {
+                        valid = false;
+                        break;
+                    }
+                }
+            }
+            if !valid {
+                continue;
+            }
+            let mut options = OpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            let Ok(file) = directory.open_with(Path::new(leaf), &options) else {
+                continue;
+            };
+            if !file
+                .metadata()
+                .ok()
+                .is_some_and(|metadata| metadata.is_file())
+            {
+                continue;
+            }
+            return Some(file.into_std());
+        }
+        None
     }
 }
 
@@ -206,6 +387,26 @@ enum IndexState {
     Absent,
 }
 
+fn indexed_summary(reader: &SessionIndexReader) -> (Option<i64>, Option<String>) {
+    let known = reader.session_count().ok();
+    let Ok(compatibility) = reader.provider_compatibility() else {
+        return (known, None);
+    };
+    let total = known.and_then(|known| known.checked_add(compatibility.unknown_session_count));
+    let note = (compatibility.unknown_session_count > 0).then(|| {
+        let (subject, verb) = if compatibility.unknown_session_count == 1 {
+            ("session uses", "is")
+        } else {
+            ("sessions use", "are")
+        };
+        format!(
+            "{} {subject} provider keys this Desktop build does not understand and {verb} omitted until it is updated.",
+            compatibility.unknown_session_count,
+        )
+    });
+    (total, note)
+}
+
 fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow {
     let resume_command = resume::command(
         session.provider,
@@ -213,7 +414,7 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
         session.provider_variant.as_deref(),
     )
     .ok()
-    .map(|command| resume::shell_line(session.project_dir.as_deref(), &command));
+    .map(|command| resume_line(session.project_dir.as_deref(), &command));
     SessionRow {
         row_id: Some(session.row_id),
         provider: session.provider.raw_value().to_string(),
@@ -225,6 +426,7 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
         title: session.title,
         project_dir: session.project_dir,
         last_active_at: session.last_active_at.or(session.created_at),
+        session_ref: String::new(),
         source_path: session.source_path,
         message_count: session.message_count,
         resume_command,
@@ -235,7 +437,7 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
 fn scanned_row(session: DiscoveredSession) -> SessionRow {
     let resume_command = resume::command(session.provider, &session.session_id, None)
         .ok()
-        .map(|command| resume::shell_line(session.project_dir.as_deref(), &command));
+        .map(|command| resume_line(session.project_dir.as_deref(), &command));
     SessionRow {
         row_id: None,
         provider: session.provider.raw_value().to_string(),
@@ -244,6 +446,7 @@ fn scanned_row(session: DiscoveredSession) -> SessionRow {
         title: session.title,
         project_dir: session.project_dir,
         last_active_at: Some(session.modified_at),
+        session_ref: String::new(),
         source_path: session.source_path,
         message_count: None,
         resume_command,
@@ -251,17 +454,82 @@ fn scanned_row(session: DiscoveredSession) -> SessionRow {
     }
 }
 
+fn resume_line(project_dir: Option<&str>, command: &str) -> String {
+    #[cfg(unix)]
+    {
+        resume::posix_shell_line(project_dir, command)
+    }
+    #[cfg(not(unix))]
+    {
+        // The kit deliberately exposes no shell quoting for Windows. Copy the
+        // provider command rather than emitting a POSIX `cd` line that would
+        // fail in PowerShell or cmd.exe.
+        let _ = project_dir;
+        command.to_string()
+    }
+}
+
+fn opaque_reference(references: &HashMap<String, ResolvedSession>) -> Option<String> {
+    for _ in 0..4 {
+        let mut random = [0u8; 24];
+        getrandom::fill(&mut random).ok()?;
+        let candidate = format!("session_v1_{}", URL_SAFE_NO_PAD.encode(random));
+        if !references.contains_key(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn service(root: DataRoot, home: &Path) -> SessionsService {
+        SessionsService {
+            root,
+            home: home.to_path_buf(),
+            references: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn write_codex_session(home: &Path) -> (PathBuf, &'static str) {
+        let id = "0199aaaa-1111-2222-3333-444455556666";
+        (write_codex_session_named(home, id, "first message"), id)
+    }
+
+    fn write_codex_session_named(home: &Path, id: &str, first_message: &str) -> PathBuf {
+        use std::io::Write;
+
+        let sessions = home.join(".codex/sessions/2026/08/30");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let path = sessions.join(format!("rollout-2026-08-30T04-55-08-{id}.jsonl"));
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"type": "session_meta", "payload": {"id": id, "cwd": "/Users/example/proj"}})
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": first_message}]}})
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"text": "second message"}]}})
+        )
+        .unwrap();
+        path
+    }
+
     #[test]
     fn falls_back_to_scanning_when_no_index_exists() {
         let dir = tempfile::tempdir().unwrap();
-        let service = SessionsService {
-            root: DataRoot::at(dir.path().join(".vibebar")),
-            home: dir.path().to_path_buf(),
-        };
+        let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
         let listing = service.list(20);
         assert_eq!(listing.source, SessionSource::Scanned);
         assert!(listing.rows.is_empty());
@@ -281,10 +549,7 @@ mod tests {
         drop(conn);
         let before = std::fs::read(&index).unwrap();
 
-        let service = SessionsService {
-            root,
-            home: dir.path().to_path_buf(),
-        };
+        let service = service(root, dir.path());
         let listing = service.list(20);
         assert_eq!(listing.source, SessionSource::Scanned);
         let note = listing.index_note.expect("a note explaining the fallback");
@@ -298,39 +563,278 @@ mod tests {
 
     #[test]
     fn scans_codex_logs_and_builds_a_resume_line() {
-        use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let sessions = home.join(".codex/sessions/2026/08/30");
-        std::fs::create_dir_all(&sessions).unwrap();
-        let mut f = std::fs::File::create(
-            sessions.join("rollout-2026-08-30T04-55-08-0199aaaa-1111-2222-3333-444455556666.jsonl"),
-        )
-        .unwrap();
-        writeln!(
-            f,
-            "{}",
-            serde_json::json!({"type": "session_meta",
-                               "payload": {"id": "0199aaaa-1111-2222-3333-444455556666",
-                                           "cwd": "/Users/example/proj"}})
-        )
-        .unwrap();
-        drop(f);
+        write_codex_session(home);
 
-        let service = SessionsService {
-            root: DataRoot::at(home.join(".vibebar")),
-            home: home.to_path_buf(),
-        };
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
         let listing = service.list(20);
         assert_eq!(listing.rows.len(), 1);
         assert_eq!(listing.rows[0].harness, "Codex");
+        #[cfg(unix)]
         assert_eq!(
             listing.rows[0].resume_command.as_deref(),
             Some("cd '/Users/example/proj' && codex resume 0199aaaa-1111-2222-3333-444455556666")
+        );
+        #[cfg(not(unix))]
+        assert_eq!(
+            listing.rows[0].resume_command.as_deref(),
+            Some("codex resume 0199aaaa-1111-2222-3333-444455556666")
         );
 
         // Title/id search works without a body index.
         assert_eq!(service.search("0199aaaa", 20).rows.len(), 1);
         assert_eq!(service.search("nothing-matches-this", 20).rows.len(), 0);
+    }
+
+    #[test]
+    fn scanned_search_authorizes_only_returned_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        write_codex_session_named(
+            home,
+            "0199aaaa-1111-2222-3333-444455556601",
+            "the only needle",
+        );
+        write_codex_session_named(
+            home,
+            "0199aaaa-1111-2222-3333-444455556602",
+            "unrelated alpha",
+        );
+        write_codex_session_named(
+            home,
+            "0199aaaa-1111-2222-3333-444455556603",
+            "unrelated beta",
+        );
+
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+        let listing = service.search("needle", 1);
+        assert_eq!(listing.rows.len(), 1);
+        assert_eq!(listing.rows[0].title.as_deref(), Some("the only needle"));
+        assert_eq!(service.references.lock().unwrap().len(), 1);
+        assert!(service
+            .transcript(&listing.rows[0].session_ref, 0, 1)
+            .is_ok());
+    }
+
+    #[test]
+    fn scanned_transcript_references_are_opaque_and_fail_closed_when_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let (path, _) = write_codex_session(home);
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+
+        let listing = service.list(20);
+        assert_eq!(listing.source, SessionSource::Scanned);
+        let session_ref = listing.rows[0].session_ref.clone();
+        assert!(session_ref.starts_with("session_v1_"));
+        assert_eq!(session_ref.trim_start_matches("session_v1_").len(), 32);
+        assert!(!session_ref.contains(&path.display().to_string()));
+        assert!(serde_json::to_value(&listing.rows[0])
+            .unwrap()
+            .get("sourcePath")
+            .is_none());
+
+        let first = service.transcript(&session_ref, 0, 1).unwrap();
+        assert_eq!(first.total_messages, Some(2));
+        assert_eq!(first.messages[0].text, "first message");
+        let second = service.transcript(&session_ref, 1, 1).unwrap();
+        assert_eq!(second.messages[0].text, "second message");
+        assert!(matches!(
+            service.transcript("/Users/example/secret.jsonl", 0, 1),
+            Err(CoreError::SessionReferenceInvalid)
+        ));
+        service.references.lock().unwrap().insert(
+            "expired".to_string(),
+            ResolvedSession {
+                provider: SessionProvider::Codex,
+                source_path: path.clone(),
+                expires_at: Instant::now().checked_sub(Duration::from_secs(1)).unwrap(),
+            },
+        );
+        assert!(matches!(
+            service.transcript("expired", 0, 1),
+            Err(CoreError::SessionReferenceInvalid)
+        ));
+
+        // A newer listing reuses the unexpired capability for the same
+        // resolved session, so repeated or overlapping requests do not grow
+        // the bounded cache.
+        let refreshed_ref = service.list(20).rows[0].session_ref.clone();
+        assert_eq!(refreshed_ref, session_ref);
+        assert_eq!(
+            service.transcript(&session_ref, 0, 1).unwrap().messages[0].text,
+            "first message"
+        );
+    }
+
+    #[test]
+    fn session_reference_cache_is_bounded_without_evicting_visible_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
+        let expires_at = Instant::now() + SESSION_REFERENCE_TTL;
+        let mut references = service.references.lock().unwrap();
+        for index in 0..MAX_SESSION_REFERENCES {
+            references.insert(
+                format!("reference-{index}"),
+                ResolvedSession {
+                    provider: SessionProvider::Codex,
+                    source_path: PathBuf::from("/synthetic"),
+                    expires_at,
+                },
+            );
+        }
+        drop(references);
+
+        let mut incoming = vec![SessionRow {
+            row_id: None,
+            provider: SessionProvider::Codex.raw_value().to_string(),
+            harness: "Codex".to_string(),
+            session_id: "new-session".to_string(),
+            title: None,
+            project_dir: None,
+            last_active_at: None,
+            session_ref: String::new(),
+            source_path: "/synthetic/new".to_string(),
+            message_count: None,
+            resume_command: None,
+            excerpt: None,
+        }];
+        service.authorize_rows(&mut incoming);
+        let references = service.references.lock().unwrap();
+        assert_eq!(references.len(), MAX_SESSION_REFERENCES);
+        assert!(references.contains_key("reference-0"));
+        assert!(incoming[0].session_ref.is_empty());
+    }
+
+    #[test]
+    fn repeated_listing_reuses_the_same_session_reference() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        write_codex_session(home);
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+
+        let first = service.list(20).rows[0].session_ref.clone();
+        let second = service.list(20).rows[0].session_ref.clone();
+        assert_eq!(second, first);
+        assert_eq!(service.references.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn indexed_transcript_reference_resolves_only_the_indexed_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let (path, id) = write_codex_session(home);
+        let root = DataRoot::at(home.join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+        let index = root.session_index_file();
+        let conn = rusqlite::Connection::open(&index).unwrap();
+        conn.execute_batch(
+            "PRAGMA user_version = 5;\
+             CREATE TABLE sessions(\
+               id INTEGER PRIMARY KEY, provider TEXT NOT NULL, session_id TEXT NOT NULL,\
+               provider_variant TEXT, harness TEXT, model TEXT, title TEXT, summary TEXT,\
+               project_dir TEXT, created_at INTEGER, last_active_at INTEGER, source_path TEXT NOT NULL,\
+               size_bytes INTEGER, message_count INTEGER\
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sessions(id, provider, session_id, harness, source_path) VALUES
+             (1, 'codex', ?1, 'Codex', ?2),
+             (2, 'future-provider', 'future-session', 'Future', '/Users/example/future.jsonl')",
+            rusqlite::params![id, path.display().to_string()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let service = service(root, home);
+        let listing = service.list(20);
+        assert_eq!(listing.source, SessionSource::Indexed);
+        assert_eq!(listing.indexed_total, Some(2));
+        assert!(listing
+            .index_note
+            .as_deref()
+            .is_some_and(|note| note.contains("1 session uses provider keys")));
+        assert_eq!(listing.rows.len(), 1);
+        let session_ref = listing.rows[0].session_ref.clone();
+        assert_eq!(
+            service
+                .transcript(&session_ref, 0, 1)
+                .unwrap()
+                .total_messages,
+            Some(2)
+        );
+
+        // A known session file is still not readable under a different
+        // provider. This guards against the old Codex-default behavior.
+        service.references.lock().unwrap().insert(
+            "wrong-provider".to_string(),
+            ResolvedSession {
+                provider: SessionProvider::Grok,
+                source_path: path,
+                expires_at: Instant::now() + SESSION_REFERENCE_TTL,
+            },
+        );
+        assert!(matches!(
+            service.transcript("wrong-provider", 0, 1),
+            Err(CoreError::TranscriptUnavailable)
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn transcript_opener_rejects_root_middle_leaf_and_out_of_root_paths() {
+        use std::io::Read;
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let (good_path, _) = write_codex_session(home);
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+        let mut good = service
+            .open_approved_session_file(SessionProvider::Codex, &good_path)
+            .expect("a regular session under the provider root");
+        let mut content = String::new();
+        good.read_to_string(&mut content).unwrap();
+        assert!(content.contains("first message"));
+
+        let outside = home.join("outside.jsonl");
+        std::fs::write(&outside, "outside").unwrap();
+        assert!(service
+            .open_approved_session_file(SessionProvider::Codex, &outside)
+            .is_none());
+
+        // A leaf link may point at a readable JSONL but must never be opened.
+        let leaf = home.join(".codex/sessions/2026/08/30/leaf.jsonl");
+        symlink(&outside, &leaf).unwrap();
+        assert!(service
+            .open_approved_session_file(SessionProvider::Codex, &leaf)
+            .is_none());
+
+        // A symlinked intermediate component is rejected before the leaf is
+        // considered.
+        let middle_target = home.join("middle-target");
+        std::fs::create_dir_all(middle_target.join("08/30")).unwrap();
+        let middle_leaf = middle_target.join("08/30/middle.jsonl");
+        std::fs::write(&middle_leaf, "middle").unwrap();
+        let middle = home.join(".codex/sessions/2026");
+        std::fs::remove_dir_all(&middle).unwrap();
+        symlink(&middle_target, &middle).unwrap();
+        let apparent_middle = home.join(".codex/sessions/2026/08/30/middle.jsonl");
+        assert!(service
+            .open_approved_session_file(SessionProvider::Codex, &apparent_middle)
+            .is_none());
+
+        // The provider root itself is opened component-by-component from the
+        // home anchor, so a `.codex` replacement is rejected too.
+        std::fs::remove_file(&middle).unwrap();
+        let codex = home.join(".codex");
+        std::fs::rename(&codex, home.join("codex-real")).unwrap();
+        symlink(home.join("codex-real"), &codex).unwrap();
+        let apparent_root = home.join(".codex/sessions/2026/08/30/leaf.jsonl");
+        assert!(service
+            .open_approved_session_file(SessionProvider::Codex, &apparent_root)
+            .is_none());
     }
 }

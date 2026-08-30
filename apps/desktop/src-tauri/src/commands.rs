@@ -50,16 +50,14 @@ pub fn session_search(
 #[tauri::command]
 pub fn session_transcript(
     state: State<'_, AppState>,
-    provider: String,
-    source_path: String,
+    session_ref: String,
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> Result<serde_json::Value, String> {
     let page = state
         .sessions()
         .transcript(
-            &provider,
-            &source_path,
+            &session_ref,
             offset.unwrap_or(0),
             limit.unwrap_or(50).clamp(1, 200),
         )

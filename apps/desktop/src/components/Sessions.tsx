@@ -67,10 +67,16 @@ export function Sessions() {
           {query ? "No sessions match that search." : "No sessions found yet."}
         </p>
       ) : (
-        listing?.rows.map((row) => (
+        listing?.rows.map((row, index) => (
           <button
             className="session-row"
-            key={`${row.provider}:${row.sessionId}:${row.sourcePath}`}
+            key={`${row.provider}:${row.rowId ?? row.sessionId}:${index}`}
+            disabled={!row.sessionRef}
+            title={
+              row.sessionRef
+                ? undefined
+                : "Transcript temporarily unavailable; reload after older references expire."
+            }
             onClick={() => setSelected(row)}
           >
             <span className="session-title">
@@ -110,7 +116,7 @@ function Transcript({
     let cancelled = false;
     setError(null);
     api
-      .sessionTranscript(session.provider, session.sourcePath, offset, PAGE_SIZE)
+      .sessionTranscript(session.sessionRef, offset, PAGE_SIZE)
       .then((result) => {
         if (!cancelled) setPage(result);
       })
@@ -120,10 +126,15 @@ function Transcript({
     return () => {
       cancelled = true;
     };
-  }, [session.provider, session.sourcePath, offset]);
+  }, [session.sessionRef, offset]);
 
-  const total = page?.totalMessages ?? 0;
+  const total = page?.totalMessages;
   const shown = page?.messages.length ?? 0;
+  const hasMore = page
+    ? page.truncated
+      ? shown === PAGE_SIZE
+      : total !== undefined && offset + shown < total
+    : false;
 
   return (
     <>
@@ -143,36 +154,38 @@ function Transcript({
           </button>
         ) : null}
         <span className="status-line" style={{ marginLeft: "auto" }}>
-          {total > 0
+          {total !== undefined && total > 0
             ? `Messages ${offset + 1}–${offset + shown} of ${total}`
-            : ""}
+            : page?.truncated
+              ? shown > 0
+                ? `Messages ${offset + 1}–${offset + shown} (scan limit reached)`
+                : "Scan limit reached before this page."
+              : ""}
         </span>
       </div>
-
-      <p className="mono" style={{ marginTop: 0 }}>
-        {session.sourcePath}
-      </p>
 
       {error ? (
         <p className="empty">Could not read this transcript: {error}</p>
       ) : !page ? (
         <p className="empty">Loading transcript…</p>
-      ) : page.messages.length === 0 ? (
-        <p className="empty">
-          No readable messages. {session.harness} may store this conversation in
-          a format this build cannot render yet.
-        </p>
       ) : (
         <>
-          {page.messages.map((message, index) => (
-            <div
-              className={`transcript-message ${message.role}`}
-              key={`${offset}-${index}`}
-            >
-              <div className="transcript-role">{message.role}</div>
-              <div className="transcript-text">{message.text}</div>
-            </div>
-          ))}
+          {page.messages.length === 0 ? (
+            <p className="empty">
+              No readable messages. {session.harness} may store this conversation in
+              a format this build cannot render yet.
+            </p>
+          ) : (
+            page.messages.map((message, index) => (
+              <div
+                className={`transcript-message ${message.role}`}
+                key={`${offset}-${index}`}
+              >
+                <div className="transcript-role">{message.role}</div>
+                <div className="transcript-text">{message.text}</div>
+              </div>
+            ))
+          )}
           <div className="toolbar" style={{ marginTop: 12 }}>
             <button
               disabled={offset === 0}
@@ -181,7 +194,7 @@ function Transcript({
               Previous
             </button>
             <button
-              disabled={offset + shown >= total}
+              disabled={!hasMore}
               onClick={() => setOffset(offset + PAGE_SIZE)}
             >
               Next

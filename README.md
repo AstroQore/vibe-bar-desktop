@@ -83,7 +83,7 @@ Verification:
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cd apps/desktop && pnpm typecheck
+cd apps/desktop && pnpm typecheck && pnpm build
 ```
 
 Point the app at a synthetic data root with `VIBEBAR_DEMO_HOME=<dir>` — the
