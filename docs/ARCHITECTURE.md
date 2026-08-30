@@ -42,12 +42,16 @@ one sitting.
 | Finding credentials the CLIs wrote | `credentials/` |
 | One provider's endpoint and wire shape | `providers/<name>.rs` |
 | Merging live and cached into what the UI shows | `refresh.rs` |
+| Read-only presentation preferences | `shared/settings.rs` → `presentation_settings` IPC |
+| Public OpenAI-wide/Claude/Google AI/Cursor service status | `status.rs` → in-memory cache → status IPC |
+| Local Codex/Claude usage and priced portion | `cost.rs` → in-memory cache → cost IPC |
 | Indexed vs scanned sessions | `sessions.rs` |
 
 ## Data flow for a refresh
 
 1. `QuotaEngine::refresh` fetches every provider with a live adapter
-   (Codex, Claude today), in sequence, each with a 30-second ceiling.
+   (Codex, Claude, Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter,
+   and Warp today), in sequence, each with a 30-second ceiling.
 2. Each success is persisted to `client/desktop/quotas/` and kept in hand —
    a failed write must not lose an observation already obtained.
 3. The shared cache is read, with account ids claimed from both the native
@@ -63,7 +67,7 @@ one sitting.
 
 ## Two sources, one list, honestly labeled
 
-Desktop fetches two providers and reads twenty-five. A number it fetched and
+Desktop fetches ten providers and reads twenty-five. A number it fetched and
 a number the native app left in the cache are different claims about
 freshness, so `QuotaOrigin` travels with every account and the UI marks cached
 ones `shared data`. The alternative — showing them identically — would make
@@ -76,6 +80,15 @@ Desktop queries it: every harness the index covers, trigram full-text search.
 Otherwise it scans Codex and Claude Code logs directly and says so. The
 fallback is deliberately narrower rather than a second, competing indexer —
 one index, one writer, and Desktop is not that writer yet.
+
+Session paths stay inside the Rust process. List and search results expose an
+opaque, CSPRNG-backed `sessionRef` that expires after 15 minutes; overlapping
+list/search requests retain each other's unexpired references. Transcript IPC
+resolves that capability back to the currently
+authorized index/discovery result and rejects stale,
+unknown, symlinked, or out-of-root files. A webview-supplied path is never an
+authorization decision. The parser receives an already-open, no-follow file
+handle rather than reopening a checked pathname.
 
 ## What is deliberately absent
 

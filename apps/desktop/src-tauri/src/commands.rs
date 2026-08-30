@@ -1,9 +1,13 @@
 //! IPC surface for the web UI.
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
+use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::refresh::QuotaView;
-use vibebar_desktop_core::sessions::SessionListing;
+use vibebar_desktop_core::sessions::{SessionListing, TranscriptCursor};
+use vibebar_desktop_core::skills::SkillsInventoryView;
+use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
+use vibebar_desktop_core::status::ServiceStatusView;
 
 use crate::native_app::{self, NativeAppPresence};
 use crate::state::AppState;
@@ -24,11 +28,54 @@ pub fn quota_view(state: State<'_, AppState>) -> QuotaView {
     state.engine().cached_view()
 }
 
+/// The current presentation projection from the shared settings file. This is
+/// deliberately a fresh read on every IPC call: Desktop neither caches nor
+/// writes the shared settings document.
+#[tauri::command]
+pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings {
+    SharedSettings::load(state.data_root()).presentation()
+}
+
+#[tauri::command]
+pub fn status_snapshot(state: State<'_, AppState>) -> ServiceStatusView {
+    state.status().cached()
+}
+
+#[tauri::command]
+pub fn cost_view(state: State<'_, AppState>) -> CostView {
+    state.cost().cached()
+}
+
+#[tauri::command]
+pub async fn refresh_cost(state: State<'_, AppState>) -> Result<CostView, String> {
+    let engine = state.cost().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.refresh())
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn refresh_status(state: State<'_, AppState>) -> Result<ServiceStatusView, String> {
+    state
+        .status()
+        .refresh()
+        .await
+        .map_err(|error| error.to_string())
+}
+
 /// Fetch live quota for every provider with an adapter, then return the
 /// merged view.
 #[tauri::command]
 pub async fn refresh_quota(state: State<'_, AppState>) -> Result<QuotaView, String> {
     Ok(state.engine().refresh().await)
+}
+
+/// Hide the borderless Mini through the same state/persistence path as the
+/// tray toggle. The Mini's own close button is the user-reachable close path.
+#[tauri::command]
+pub fn hide_mini(app: AppHandle) {
+    crate::mini_window::hide(&app);
 }
 
 #[tauri::command]
@@ -50,18 +97,18 @@ pub fn session_search(
 #[tauri::command]
 pub fn session_transcript(
     state: State<'_, AppState>,
-    provider: String,
-    source_path: String,
+    session_ref: String,
     offset: Option<usize>,
     limit: Option<usize>,
+    cursor: Option<TranscriptCursor>,
 ) -> Result<serde_json::Value, String> {
     let page = state
         .sessions()
-        .transcript(
-            &provider,
-            &source_path,
+        .transcript_with_cursor(
+            &session_ref,
             offset.unwrap_or(0),
             limit.unwrap_or(50).clamp(1, 200),
+            cursor,
         )
         .map_err(|e| e.to_string())?;
     serde_json::to_value(page).map_err(|e| e.to_string())
@@ -76,4 +123,9 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         is_demo: root.is_demo(),
         native_app: native_app::detect(root),
     }
+}
+
+#[tauri::command]
+pub fn skills_inventory(state: State<'_, AppState>) -> SkillsInventoryView {
+    vibebar_desktop_core::skills::scan(state.data_root())
 }

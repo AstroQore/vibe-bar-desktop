@@ -15,6 +15,12 @@ The boundary is enforced in code, not by convention:
 `ClientStore::write_json` refuses any path outside the client namespace
 (`crates/vibebar-desktop-core/src/client_store.rs`), and there is a test that
 a write to each shared store is rejected *and* creates nothing.
+The writer accepts only fixed client destinations, rejects `..` path
+components, and refuses symlinks in the private directory chain so a lexical
+`client/desktop/` prefix cannot escape back into shared state. It anchors the
+shared root once and performs creation, temporary-file allocation, and rename
+through capability directory handles, so a concurrent pathname replacement
+cannot redirect the final write.
 
 | Path | Desktop |
 | --- | --- |
@@ -66,6 +72,30 @@ Before either client may write shared state:
 - Migrations under an exclusive lock, with a backup and a recoverable marker.
 - `flushPendingWrites` on exit for every coalesced store (the native app
   currently flushes only settings).
+
+## Settings v1 patch foundation (not a product writer)
+
+`shared::settings_document` now supplies a pure, product-disabled v1 document
+parser and top-level three-way patch engine for the native expected
+`settings.json` location. It has no file-write or lease acquisition API. The
+manifest remains `json_unversioned` and `legacy_unsafe`; production
+`SharedStoreLeaseBatch::acquire_writer` continues to reject Settings.
+
+The diagnostic-only transaction foundation fingerprints the exact settings
+source it read (existence, length, SHA-256) and re-reads it through the same
+directory capability immediately before rename. A cooperative writer that
+changes the file in that window receives `SourceChangedBeforeCommit`; Desktop
+cleans its temp sibling and never reports success. No user-space check can
+close a hostile, non-cooperating replacement between that final check and the
+OS rename; the future enabled protocol therefore still requires the shared
+lease and joint interop testing before this path becomes product authority.
+
+The prospective v1 envelope is `schemaVersion: 1` plus an unsigned `revision`.
+Legacy objects with neither key read as v0 / revision 0. A patch preserves raw
+unknown values, changes only the documented Desktop first-batch whitelist, and
+fails without partial changes on an unknown version or a per-key conflict. See
+[settings-document-v1.md](contracts/settings-document-v1.md) for the synthetic
+fixture, conflict table, and enablement boundary.
 
 ## Reading the session index safely
 

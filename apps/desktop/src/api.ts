@@ -12,7 +12,7 @@ export interface QuotaBucket {
   groupTitle?: string;
 }
 
-export type QuotaOrigin = "live" | "sharedCache";
+export type QuotaOrigin = "live" | "desktopCache" | "sharedCache" | "mixed";
 
 export interface QuotaErrorPayload {
   kind: string;
@@ -44,10 +44,12 @@ export interface SessionRow {
   provider: string;
   harness: string;
   sessionId: string;
+  providerVariant?: string;
   title?: string;
   projectDir?: string;
   lastActiveAt?: number;
-  sourcePath: string;
+  /** Opaque backend-issued reference; never a filesystem path. */
+  sessionRef: string;
   messageCount?: number;
   resumeCommand?: string;
   excerpt?: string;
@@ -61,15 +63,24 @@ export interface SessionListing {
 }
 
 export interface TranscriptMessage {
-  role: "user" | "assistant" | "system" | "tool" | "note";
+  role: "user" | "assistant" | "system" | "tool" | "other";
   text: string;
   timestamp?: string;
 }
 
+export interface TranscriptCursor {
+  byteOffset: number;
+  messageOffset: number;
+  skipToNewline?: boolean;
+}
+
 export interface TranscriptPage {
   messages: TranscriptMessage[];
-  totalMessages: number;
+  /** Omitted when a safety limit truncates a very large transcript scan. */
+  totalMessages?: number;
   offset: number;
+  truncated: boolean;
+  nextCursor?: TranscriptCursor;
 }
 
 export interface NativeAppPresence {
@@ -85,29 +96,118 @@ export interface AppInfo {
   nativeApp: NativeAppPresence;
 }
 
+export interface SkillInventoryRow {
+  name: string;
+  directory: string;
+  description?: string;
+  targets: string[];
+  health: string;
+  source: string;
+}
+export interface SkillsInventoryView {
+  skills: SkillInventoryRow[];
+  warnings: string[];
+  scannedAt: number;
+}
+
+/** Read-only presentation preferences from the shared native settings file. */
+export interface PresentationSettings {
+  displayMode: string;
+  refreshIntervalSeconds: number;
+  menuBarColorBasis: string;
+  selectedFieldIds: string[];
+  customLabels: Record<string, string>;
+  visibleCoreProviders?: string[];
+  coreProviderOrder: string[];
+  visibleMiscProviders?: string[];
+  providerPlanLabels: Record<string, string>;
+}
+
+export interface StatusIncident {
+  id: string;
+  name: string;
+  status: string;
+  impact: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface ProviderStatus {
+  tool: string;
+  indicator: string;
+  description: string;
+  updatedAt?: number;
+  incidents: StatusIncident[];
+}
+
+export interface ServiceStatusView {
+  providers: ProviderStatus[];
+  updatedAt?: number;
+}
+
+export interface CostTotals {
+  pricedCostMicros: number;
+  tokens: number;
+  requests: number;
+}
+
+export interface DailyCost extends CostTotals {
+  day: string;
+}
+
+export interface ModelCost extends CostTotals {
+  harness: string;
+  model: string;
+  unpricedEvents: number;
+}
+
+export interface CostView {
+  today: CostTotals;
+  last7Days: CostTotals;
+  last30Days: CostTotals;
+  allTime: CostTotals;
+  daily: DailyCost[];
+  models: ModelCost[];
+  unpricedEvents: number;
+  scannedFiles: number;
+  malformedLines: number;
+  truncated: boolean;
+  scannedAt: number;
+  pricingVersion: string;
+}
+
 export const QUOTA_EVENT = "vibebar://quota-updated";
+export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 
 export const api = {
   quotaView: () => invoke<QuotaView>("quota_view"),
   refreshQuota: () => invoke<QuotaView>("refresh_quota"),
+  hideMini: () => invoke<void>("hide_mini"),
   appInfo: () => invoke<AppInfo>("app_info"),
+  skillsInventory: () => invoke<SkillsInventoryView>("skills_inventory"),
+  presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
+  statusSnapshot: () => invoke<ServiceStatusView>("status_snapshot"),
+  refreshStatus: () => invoke<ServiceStatusView>("refresh_status"),
+  costView: () => invoke<CostView>("cost_view"),
+  refreshCost: () => invoke<CostView>("refresh_cost"),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),
   sessionTranscript: (
-    provider: string,
-    sourcePath: string,
+    sessionRef: string,
     offset = 0,
     limit = 50,
+    cursor?: TranscriptCursor,
   ) =>
     invoke<TranscriptPage>("session_transcript", {
-      provider,
-      sourcePath,
+      sessionRef,
       offset,
       limit,
+      cursor,
     }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
+  onMiniShown: (handler: () => void) => listen<void>(MINI_SHOWN_EVENT, handler),
 };
 
 /** L1 company → L2 SubProvider naming, mirrored from the core crate so the
@@ -174,11 +274,21 @@ export function formatCountdown(resetAt?: number): string {
   return `resets in ${minutes}m`;
 }
 
-export function describeError(error: QuotaErrorPayload): string {
+const API_KEY_ENV: Record<string, string> = {
+  zai: "Z_AI_API_KEY",
+  minimax: "MINIMAX_CODING_API_KEY or MINIMAX_API_KEY",
+  openRouter: "OPENROUTER_API_KEY",
+  warp: "WARP_API_KEY or WARP_TOKEN",
+};
+
+export function describeError(error: QuotaErrorPayload, tool?: string): string {
+  const apiKey = tool ? API_KEY_ENV[tool] : undefined;
   switch (error.kind) {
     case "noCredential":
+      if (apiKey) return `Set ${apiKey} and refresh.`;
       return "Not signed in — run the provider's CLI login.";
     case "needsLogin":
+      if (apiKey) return `The configured ${apiKey} was rejected. Update it and refresh.`;
       return "Credential rejected — sign in again with the provider's CLI.";
     case "rateLimited":
       return "Rate limited by the provider. Try again shortly.";

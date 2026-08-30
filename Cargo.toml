@@ -9,11 +9,13 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/AstroQore/vibe-bar-desktop"
 
 [workspace.dependencies]
-# The Rust lane of agent-session-kit. Pinned to its branch until
-# AstroQore/agent-session-kit#12 merges, then this moves to a tag.
+# The Rust lane of agent-session-kit. Pinned to the reviewed PR revision until
+# AstroQore/agent-session-kit#12 merges and publishes a tag. Never depend on a
+# mutable branch here: this workspace contains a shipped application and two
+# builds of the same commit must resolve the same session implementation.
 # To develop against a local checkout, add a `[patch]` section to
 # `.cargo/config.toml` rather than editing this file.
-agent-session-core = { git = "https://github.com/AstroQore/agent-session-kit", branch = "feat/rust-session-core" }
+agent-session-core = { git = "https://github.com/AstroQore/agent-session-kit", rev = "1959fbea750337e2c1ebf9ad6065d71d834861f2" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["arbitrary_precision", "raw_value"] }
 thiserror = "2"

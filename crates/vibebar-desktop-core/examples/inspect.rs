@@ -4,7 +4,8 @@
 //! `cargo run --example inspect` (add `--` `<root>` to point elsewhere).
 //! Prints no credentials, tokens, emails, or account identifiers.
 
-use vibebar_desktop_core::paths::DataRoot;
+use vibebar_desktop_core::cost::CostEngine;
+use vibebar_desktop_core::paths::{home_directory, DataRoot};
 use vibebar_desktop_core::refresh::QuotaEngine;
 use vibebar_desktop_core::sessions::{SessionSource, SessionsService};
 use vibebar_desktop_core::shared::{service_status, settings::SharedSettings};
@@ -64,6 +65,28 @@ fn main() {
         "\nservice status: {} providers cached, degraded: {}",
         status.len(),
         if degraded.is_empty() { "none".to_string() } else { degraded.join(", ") }
+    );
+
+    let scan_home = if root.is_demo() {
+        root.shared()
+            .parent()
+            .unwrap_or(root.shared())
+            .to_path_buf()
+    } else {
+        home_directory()
+    };
+    // Keep this diagnostic read-only even on a real root. Re-wrapping the
+    // exact path as demo suppresses only Desktop snapshot persistence.
+    let cost = CostEngine::new(DataRoot::at(root.shared()), scan_home)
+        .refresh()
+        .unwrap_or_default();
+    println!(
+        "\nlocal usage: {} files, {} requests, {} tokens, {} unpriced, truncated={}",
+        cost.scanned_files,
+        cost.all_time.requests,
+        cost.all_time.tokens,
+        cost.unpriced_events,
+        cost.truncated
     );
 
     let sessions = SessionsService::new(root);

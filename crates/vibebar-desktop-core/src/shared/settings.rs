@@ -42,6 +42,20 @@ pub struct SharedSettings {
     pub unknown: BTreeMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PresentationSettings {
+    pub display_mode: String,
+    pub refresh_interval_seconds: u64,
+    pub menu_bar_color_basis: String,
+    pub selected_field_ids: Vec<String>,
+    pub custom_labels: BTreeMap<String, String>,
+    pub visible_core_providers: Option<Vec<String>>,
+    pub core_provider_order: Vec<String>,
+    pub visible_misc_providers: Option<Vec<String>>,
+    pub provider_plan_labels: BTreeMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MenuBarItem {
@@ -69,6 +83,8 @@ pub struct MiscProviderInstance {
     pub tool: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_visible: Option<bool>,
     #[serde(flatten)]
     pub unknown: BTreeMap<String, serde_json::Value>,
 }
@@ -108,6 +124,56 @@ impl SharedSettings {
             item.selected_field_ids.clone().unwrap_or_default(),
             item.custom_labels.clone().unwrap_or_default(),
         )
+    }
+
+    pub fn presentation(&self) -> PresentationSettings {
+        let (selected_field_ids, custom_labels) = self.menu_bar_fields();
+        let refresh = self.refresh_interval_seconds.unwrap_or(600.0);
+        let refresh_interval_seconds = if refresh.is_finite() {
+            refresh.max(60.0).round() as u64
+        } else {
+            600
+        };
+        let visible_misc_providers = self
+            .misc_provider_instances
+            .as_ref()
+            .map(|instances| {
+                instances
+                    .iter()
+                    .filter(|instance| instance.is_visible != Some(false))
+                    .filter_map(|instance| {
+                        instance.tool.clone().or_else(|| {
+                            crate::model::ToolType::from_raw(&instance.id)
+                                .map(|tool| tool.raw_value().to_string())
+                        })
+                    })
+                    .collect()
+            })
+            .or_else(|| self.visible_misc_providers.clone());
+        PresentationSettings {
+            display_mode: if self.display_mode.as_deref() == Some("used") {
+                "used".into()
+            } else {
+                "remaining".into()
+            },
+            refresh_interval_seconds,
+            menu_bar_color_basis: if self.menu_bar_color_basis.as_deref() == Some("actual") {
+                "actual".into()
+            } else {
+                "forecast".into()
+            },
+            selected_field_ids,
+            custom_labels,
+            visible_core_providers: self.visible_core_providers.clone(),
+            core_provider_order: self.core_provider_order.clone().unwrap_or_else(|| {
+                ["codex", "claude", "gemini", "grok"]
+                    .into_iter()
+                    .map(String::from)
+                    .collect()
+            }),
+            visible_misc_providers,
+            provider_plan_labels: self.provider_plan_labels.clone().unwrap_or_default(),
+        }
     }
 
     /// Candidate account ids for the shared quota cache. The cache is keyed
@@ -208,5 +274,50 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(settings.refresh_interval().as_secs(), 60);
+    }
+
+    #[test]
+    fn presentation_uses_effective_values_and_instance_visibility() {
+        let settings = SharedSettings {
+            display_mode: Some("used".into()),
+            refresh_interval_seconds: Some(5.2),
+            menu_bar_color_basis: Some("actual".into()),
+            menu_bar_items: Some(vec![MenuBarItem {
+                selected_field_ids: Some(vec!["codex.weekly".into()]),
+                custom_labels: Some(BTreeMap::from([("codex.weekly".into(), "ChatGPT".into())])),
+                ..Default::default()
+            }]),
+            visible_core_providers: Some(vec!["codex".into()]),
+            misc_provider_instances: Some(vec![
+                MiscProviderInstance {
+                    id: "kilo".into(),
+                    tool: None,
+                    name: None,
+                    is_visible: Some(true),
+                    unknown: BTreeMap::new(),
+                },
+                MiscProviderInstance {
+                    id: "two".into(),
+                    tool: Some("zai".into()),
+                    name: None,
+                    is_visible: Some(false),
+                    unknown: BTreeMap::new(),
+                },
+            ]),
+            visible_misc_providers: Some(vec!["legacy".into()]),
+            provider_plan_labels: Some(BTreeMap::from([("kilo".into(), "Pro".into())])),
+            ..Default::default()
+        };
+        let view = settings.presentation();
+        assert_eq!(view.display_mode, "used");
+        assert_eq!(view.refresh_interval_seconds, 60);
+        assert_eq!(view.menu_bar_color_basis, "actual");
+        assert_eq!(view.selected_field_ids, vec!["codex.weekly"]);
+        assert_eq!(view.visible_misc_providers, Some(vec!["kilo".into()]));
+        assert_eq!(
+            view.core_provider_order,
+            vec!["codex", "claude", "gemini", "grok"]
+        );
+        assert_eq!(view.provider_plan_labels["kilo"], "Pro");
     }
 }

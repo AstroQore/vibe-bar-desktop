@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { SessionListing, SessionRow, TranscriptPage } from "../api";
+import type {
+  SessionListing,
+  SessionRow,
+  TranscriptCursor,
+  TranscriptPage,
+} from "../api";
 import { api, formatRelative } from "../api";
 
 const PAGE_SIZE = 40;
@@ -67,10 +72,16 @@ export function Sessions() {
           {query ? "No sessions match that search." : "No sessions found yet."}
         </p>
       ) : (
-        listing?.rows.map((row) => (
+        listing?.rows.map((row, index) => (
           <button
             className="session-row"
-            key={`${row.provider}:${row.sessionId}:${row.sourcePath}`}
+            key={`${row.provider}:${row.rowId ?? row.sessionId}:${index}`}
+            disabled={!row.sessionRef}
+            title={
+              row.sessionRef
+                ? undefined
+                : "Transcript temporarily unavailable; reload after older references expire."
+            }
             onClick={() => setSelected(row)}
           >
             <span className="session-title">
@@ -103,16 +114,38 @@ function Transcript({
 }) {
   const [page, setPage] = useState<TranscriptPage | null>(null);
   const [offset, setOffset] = useState(0);
+  const [offsetHistory, setOffsetHistory] = useState<number[]>([]);
+  const [cursors, setCursors] = useState<Record<string, TranscriptCursor>>({});
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
+  const messageRefs = useRef(new Map<number, HTMLDivElement>());
+  const cursor = Object.values(cursors).reduce<TranscriptCursor | undefined>(
+    (best, candidate) =>
+      candidate.messageOffset <= offset &&
+      (!best || candidate.messageOffset > best.messageOffset)
+        ? candidate
+        : best,
+    undefined,
+  );
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
     api
-      .sessionTranscript(session.provider, session.sourcePath, offset, PAGE_SIZE)
+      .sessionTranscript(session.sessionRef, offset, PAGE_SIZE, cursor)
       .then((result) => {
-        if (!cancelled) setPage(result);
+        if (!cancelled) {
+          setPage(result);
+          const nextCursor = result.nextCursor;
+          if (nextCursor) {
+            setCursors((current) => ({
+              ...current,
+              [String(nextCursor.messageOffset)]: nextCursor,
+            }));
+          }
+        }
       })
       .catch((cause) => {
         if (!cancelled) setError(String(cause));
@@ -120,10 +153,50 @@ function Transcript({
     return () => {
       cancelled = true;
     };
-  }, [session.provider, session.sourcePath, offset]);
+  }, [session.sessionRef, offset]);
 
-  const total = page?.totalMessages ?? 0;
+  const matches = useMemo(() => {
+    const needle = findQuery.trim().toLocaleLowerCase();
+    if (!needle || !page) return [];
+    return page.messages.flatMap((message, index) =>
+      message.text.toLocaleLowerCase().includes(needle) ? [index] : [],
+    );
+  }, [findQuery, page]);
+
+  // A changed page or session is a new bounded document. Start the find
+  // cursor over rather than carrying an index into unrelated messages.
+  useEffect(() => {
+    setMatchIndex(0);
+  }, [findQuery, offset, session.sessionRef]);
+
+  useEffect(() => {
+    if (matches.length === 0) {
+      if (matchIndex !== 0) setMatchIndex(0);
+      return;
+    }
+    if (matchIndex >= matches.length) {
+      setMatchIndex(0);
+    }
+  }, [matchIndex, matches]);
+
+  useEffect(() => {
+    const messageIndex = matches[matchIndex];
+    if (messageIndex === undefined) return;
+    messageRefs.current.get(messageIndex)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [matchIndex, matches]);
+
+  const total = page?.totalMessages;
   const shown = page?.messages.length ?? 0;
+  const hasMore = page
+    ? page.truncated
+      ? page.nextCursor !== undefined
+      : total !== undefined && offset + shown < total
+    : false;
+  const nextOffset = shown > 0 ? offset + shown : page?.nextCursor?.messageOffset ?? offset;
+  const previousOffset = offsetHistory[offsetHistory.length - 1];
 
   return (
     <>
@@ -143,46 +216,103 @@ function Transcript({
           </button>
         ) : null}
         <span className="status-line" style={{ marginLeft: "auto" }}>
-          {total > 0
+          {total !== undefined && total > 0
             ? `Messages ${offset + 1}–${offset + shown} of ${total}`
-            : ""}
+            : page?.truncated
+              ? shown > 0
+                ? `Messages ${offset + 1}–${offset + shown} (scan limit reached)`
+                : "Scan limit reached before this page."
+              : ""}
         </span>
       </div>
 
-      <p className="mono" style={{ marginTop: 0 }}>
-        {session.sourcePath}
-      </p>
+      <div className="transcript-find" role="search">
+        <input
+          type="search"
+          value={findQuery}
+          onChange={(event) => setFindQuery(event.target.value)}
+          placeholder="Find in this page…"
+          aria-label="Find in this transcript page"
+        />
+        {findQuery.trim() ? (
+          <span className="transcript-find-count" aria-live="polite">
+            {matches.length === 0 ? "No matches" : `${matchIndex + 1}/${matches.length}`}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          disabled={matches.length === 0}
+          onClick={() =>
+            setMatchIndex((current) =>
+              matches.length === 0 ? 0 : (current - 1 + matches.length) % matches.length,
+            )
+          }
+        >
+          Previous match
+        </button>
+        <button
+          type="button"
+          disabled={matches.length === 0}
+          onClick={() =>
+            setMatchIndex((current) =>
+              matches.length === 0 ? 0 : (current + 1) % matches.length,
+            )
+          }
+        >
+          Next match
+        </button>
+        {findQuery ? (
+          <button type="button" onClick={() => setFindQuery("")}>
+            Clear
+          </button>
+        ) : null}
+      </div>
 
       {error ? (
         <p className="empty">Could not read this transcript: {error}</p>
       ) : !page ? (
         <p className="empty">Loading transcript…</p>
-      ) : page.messages.length === 0 ? (
-        <p className="empty">
-          No readable messages. {session.harness} may store this conversation in
-          a format this build cannot render yet.
-        </p>
       ) : (
         <>
-          {page.messages.map((message, index) => (
-            <div
-              className={`transcript-message ${message.role}`}
-              key={`${offset}-${index}`}
-            >
-              <div className="transcript-role">{message.role}</div>
-              <div className="transcript-text">{message.text}</div>
-            </div>
-          ))}
+          {page.messages.length === 0 ? (
+            <p className="empty">
+              No readable messages. {session.harness} may store this conversation in
+              a format this build cannot render yet.
+            </p>
+          ) : (
+            page.messages.map((message, index) => (
+              <div
+                className={`transcript-message ${message.role}${
+                  matches[matchIndex] === index ? " transcript-match-current" : ""
+                }`}
+                key={`${offset}-${index}`}
+                ref={(element) => {
+                  if (element) messageRefs.current.set(index, element);
+                  else messageRefs.current.delete(index);
+                }}
+              >
+                <div className="transcript-role">{message.role}</div>
+                <div className="transcript-text">{message.text}</div>
+              </div>
+            ))
+          )}
           <div className="toolbar" style={{ marginTop: 12 }}>
             <button
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              disabled={previousOffset === undefined}
+              onClick={() => {
+                if (previousOffset === undefined) return;
+                setOffsetHistory((current) => current.slice(0, -1));
+                setOffset(previousOffset);
+              }}
             >
               Previous
             </button>
             <button
-              disabled={offset + shown >= total}
-              onClick={() => setOffset(offset + PAGE_SIZE)}
+              disabled={!hasMore || nextOffset <= offset}
+              onClick={() => {
+                setOffsetHistory((current) => [...current, offset]);
+                setOffset(nextOffset);
+              }}
             >
               Next
             </button>

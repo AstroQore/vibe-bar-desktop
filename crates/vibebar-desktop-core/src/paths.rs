@@ -7,6 +7,10 @@
 
 use std::path::{Path, PathBuf};
 
+use cap_fs_ext::DirExt;
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
+
 /// Environment override, byte-compatible with the native app's demo mode.
 pub const DEMO_HOME_ENV: &str = "VIBEBAR_DEMO_HOME";
 
@@ -46,6 +50,14 @@ impl DataRoot {
         Self {
             root: root.into(),
             demo: true,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn at_non_demo(root: impl Into<PathBuf>) -> Self {
+        Self {
+            root: root.into(),
+            demo: false,
         }
     }
 
@@ -103,14 +115,34 @@ impl DataRoot {
     pub fn client_quotas_dir(&self) -> PathBuf {
         self.client_dir().join("quotas")
     }
+    pub fn client_mini_window_file(&self) -> PathBuf {
+        self.client_dir().join("mini-window.json")
+    }
+
+    pub fn client_launch_state_file(&self) -> PathBuf {
+        self.client_dir().join("launch-state.json")
+    }
+
+    pub fn client_cost_snapshot_file(&self) -> PathBuf {
+        self.client_dir().join("cost-snapshot.json")
+    }
 
     /// Guard used by every write path in this crate.
     pub fn is_within_client_namespace(&self, path: &Path) -> bool {
         let client = self.client_dir();
-        // Lexical containment on normalized paths, deliberately without
-        // resolving symlinks — same rule the native app's skills write
-        // allowlist uses.
-        path.starts_with(&client)
+        let Ok(relative) = path.strip_prefix(client) else {
+            return false;
+        };
+
+        // `Path::starts_with` alone is not a containment check: a path such
+        // as `client/desktop/../../settings.json` still has that lexical
+        // prefix. All writes must name a non-empty sequence of ordinary child
+        // components. Symlink containment is checked by `ClientStore` at the
+        // filesystem boundary immediately before creating or renaming files.
+        !relative.as_os_str().is_empty()
+            && relative
+                .components()
+                .all(|component| matches!(component, std::path::Component::Normal(_)))
     }
 }
 
@@ -134,6 +166,91 @@ pub fn home_directory() -> PathBuf {
         return PathBuf::from(profile);
     }
     PathBuf::from(".")
+}
+
+/// Open one intentionally ambient filesystem anchor. Every subsequent
+/// operation must be relative to the returned directory capability.
+pub(crate) fn open_ambient_dir(path: &Path) -> std::io::Result<Dir> {
+    Dir::open_ambient_dir(path, ambient_authority())
+}
+
+/// Open an application data-root anchor, creating its final component when it
+/// is absent. Creation is still relative to an open parent directory; an
+/// existing root symlink is rejected rather than followed.
+pub(crate) fn open_or_create_ambient_dir(path: &Path) -> std::io::Result<Dir> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "data root has no parent directory",
+        )
+    })?;
+    let name = path
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "data root has no final path component",
+            )
+        })?;
+    let parent = open_ambient_dir(parent)?;
+    open_or_create_dir_nofollow(&parent, Path::new(name))
+}
+
+/// Open each component beneath an existing directory without following a
+/// symlink. `cap_std` keeps all resolution beneath `anchor`; `DirExt` adds the
+/// final-component no-follow rule required for directories.
+pub(crate) fn open_dir_nofollow(anchor: &Dir, relative: &Path) -> std::io::Result<Dir> {
+    let mut current = anchor.try_clone()?;
+    for component in normal_components(relative)? {
+        current = current.open_dir_nofollow(component)?;
+    }
+    Ok(current)
+}
+
+/// Like [`open_dir_nofollow`], creating missing components one at a time. A
+/// concurrent symlink replacement is rejected by the no-follow open that
+/// immediately follows creation, while the original anchor remains stable.
+pub(crate) fn open_or_create_dir_nofollow(anchor: &Dir, relative: &Path) -> std::io::Result<Dir> {
+    let mut current = anchor.try_clone()?;
+    for component in normal_components(relative)? {
+        match current.open_dir_nofollow(component) {
+            Ok(directory) => current = directory,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                match current.create_dir(component) {
+                    Ok(()) => {}
+                    Err(create_error)
+                        if create_error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                    Err(create_error) => return Err(create_error),
+                }
+                current = current.open_dir_nofollow(component)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(current)
+}
+
+/// Reject absolute, empty, dot, and parent components before using an
+/// untrusted path as a capability-relative name.
+pub(crate) fn normal_components(path: &Path) -> std::io::Result<Vec<&std::ffi::OsStr>> {
+    let mut components = Vec::new();
+    for component in path.components() {
+        let std::path::Component::Normal(component) = component else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "path contains a non-normal component",
+            ));
+        };
+        components.push(component);
+    }
+    if components.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "path has no components",
+        ));
+    }
+    Ok(components)
 }
 
 #[cfg(unix)]
@@ -177,6 +294,13 @@ mod tests {
         let root = DataRoot::at("/tmp/vb-test/.vibebar");
         assert!(root.is_within_client_namespace(&root.client_settings_file()));
         assert!(root.is_within_client_namespace(&root.client_quotas_dir().join("x.json")));
+        assert!(!root.is_within_client_namespace(
+            &root
+                .client_dir()
+                .join("..")
+                .join("..")
+                .join("settings.json")
+        ));
         // Every shared store is outside the writable namespace.
         assert!(!root.is_within_client_namespace(&root.settings_file()));
         assert!(!root.is_within_client_namespace(&root.quotas_dir().join("q.json")));
@@ -187,5 +311,28 @@ mod tests {
     fn home_directory_is_absolute_and_real() {
         let home = home_directory();
         assert!(home.is_absolute(), "home should be absolute: {home:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_handle_stays_anchored_after_its_name_is_replaced() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().join("root");
+        let shared = temp.path().join("shared");
+        std::fs::create_dir_all(&root_path).unwrap();
+        std::fs::create_dir_all(&shared).unwrap();
+        let root = open_ambient_dir(&root_path).unwrap();
+        let client = open_or_create_dir_nofollow(&root, Path::new("client")).unwrap();
+
+        std::fs::rename(root_path.join("client"), root_path.join("client-moved")).unwrap();
+        symlink(&shared, root_path.join("client")).unwrap();
+
+        // The operation uses the open `client` handle, not its now-symlinked
+        // pathname, so it stays in the directory that was originally opened.
+        open_or_create_dir_nofollow(&client, Path::new("desktop")).unwrap();
+        assert!(root_path.join("client-moved/desktop").is_dir());
+        assert!(!shared.join("desktop").exists());
     }
 }

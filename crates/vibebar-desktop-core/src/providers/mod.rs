@@ -5,19 +5,28 @@
 //! kept in free functions taking bytes so the wire shapes are unit-tested
 //! against synthetic fixtures without a network.
 //!
-//! This preview slice ships Codex and Claude. Every other provider renders
-//! from the shared cache, attributed as such, until its adapter lands.
+//! This preview slice ships ten live adapters. The remaining providers render
+//! from the shared cache, attributed as such, until their adapters land.
 
+pub mod alibaba;
 pub mod claude;
 pub mod codex;
+pub mod copilot;
+pub mod kilo;
+pub mod kiro;
+pub mod minimax;
+pub mod openrouter;
+pub mod warp;
+pub mod zai;
 
 use std::path::Path;
 use std::time::Duration;
+use std::{collections::HashMap, env};
 
 use crate::error::QuotaError;
 use crate::model::{AccountQuota, ToolType};
 
-/// Per-request ceiling. The native app quarantines an adapter that blows this
+/// Per-adapter ceiling. The native app quarantines an adapter that blows this
 /// budget; here it simply becomes [`QuotaError::TimedOut`], and the previous
 /// observation stays on screen.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -30,11 +39,51 @@ pub async fn fetch(
     home: &Path,
     client: &reqwest::Client,
 ) -> Result<AccountQuota, QuotaError> {
-    match tool {
-        ToolType::Codex => codex::fetch(home, client).await,
-        ToolType::Claude => claude::fetch(home, client).await,
-        _ => Err(QuotaError::NotImplemented),
+    let result = tokio::time::timeout(REQUEST_TIMEOUT, async {
+        match tool {
+            ToolType::Codex => codex::fetch(home, client).await,
+            ToolType::Claude => claude::fetch(home, client).await,
+            ToolType::Alibaba => alibaba::fetch(home, client).await,
+            ToolType::Copilot => copilot::fetch(home, client).await,
+            ToolType::Zai => zai::fetch(home, client).await,
+            ToolType::Minimax => minimax::fetch(client).await,
+            ToolType::Kilo => kilo::fetch(client, home).await,
+            ToolType::Kiro => {
+                let environment: Vec<(String, String)> = std::env::vars().collect();
+                kiro::fetch(home, &environment).await
+            }
+            ToolType::OpenRouter => openrouter::fetch(client).await,
+            ToolType::Warp => warp::fetch(client).await,
+            _ => Err(QuotaError::NotImplemented),
+        }
+    })
+    .await;
+    match result {
+        Ok(result) => result,
+        Err(_) => Err(QuotaError::TimedOut),
     }
+}
+
+pub(crate) fn trusted_https_url(raw: &str, allowed_domains: &[&str]) -> Option<reqwest::Url> {
+    let url = reqwest::Url::parse(raw.trim()).ok()?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return None;
+    }
+    let host = url.host_str()?.to_ascii_lowercase();
+    allowed_domains
+        .iter()
+        .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
+        .then_some(url)
+}
+
+/// Read only the named environment variables, ignoring non-Unicode values.
+///
+/// `std::env::vars` panics when any unrelated variable is not valid Unicode,
+/// so provider adapters must use an explicit allowlist instead.
+pub(crate) fn read_env(keys: &[&str]) -> HashMap<String, String> {
+    keys.iter()
+        .filter_map(|key| env::var(key).ok().map(|value| ((*key).to_string(), value)))
+        .collect()
 }
 
 /// Map a transport failure onto the shared error taxonomy.
@@ -87,5 +136,19 @@ mod tests {
             classify_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
             Some(QuotaError::Unknown("HTTP 500".into()))
         );
+    }
+
+    #[test]
+    fn credentialed_overrides_require_https_provider_hosts() {
+        assert!(
+            trusted_https_url("https://proxy.openrouter.ai/api/v1", &["openrouter.ai"]).is_some()
+        );
+        assert!(trusted_https_url("http://openrouter.ai/api/v1", &["openrouter.ai"]).is_none());
+        assert!(trusted_https_url("https://example.test/api/v1", &["openrouter.ai"]).is_none());
+        assert!(trusted_https_url(
+            "https://openrouter.ai@example.test/api/v1",
+            &["openrouter.ai"]
+        )
+        .is_none());
     }
 }

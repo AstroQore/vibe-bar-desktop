@@ -2,7 +2,7 @@
 
 Written for the agent taking `vibe-bar-desktop` from its 0.1 preview to full
 parity with the macOS native app. Baseline: `AstroQore/vibe-bar` `main` at
-`fbd5371` (dev channel `v1.4.1-dev.50`).
+`83391a5` (dev channel `v1.4.1-dev.52`).
 
 Read [AGENTS.md](AGENTS.md) first — the rules there prevent data loss.
 This document is the map: what exists, what the native app does that Desktop
@@ -16,8 +16,15 @@ turned out to be wrong.
 | Area | State |
 | --- | --- |
 | Quota — Codex, Claude | Live fetch from the provider's own API using CLI credentials |
-| Quota — the other 23 providers | Read from the shared cache, labeled `shared data` |
+| Quota — Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, Warp | Live fetch using explicit credentials or official CLI |
+| Quota — the other 15 providers | Read from the shared cache, labeled `shared data` |
 | Tray | One line, fields and labels from the shared settings, remaining/used honoured |
+| Presentation settings | Read-only page; Overview honours display mode, provider visibility/order, and plan labels |
+| Service status | Shared-cache seed plus public live status for OpenAI-wide, Claude, Google AI, and Cursor; Desktop last-good state persists only under `client/desktop/` |
+| Usage / cost | Read-only local Codex + Claude + Gemini CLI scan with a Desktop-private aggregate snapshot; no shared ledger writes |
+| Resets | Upcoming provider-declared reset times from current quota data; no forecast or history |
+| Mini window | One Desktop-owned regular quota layout; tray toggle and client-private geometry |
+| Skills | Read-only inventory from fixed local SSOT/harness roots; no install, delete, or sync |
 | Sessions | Shared index when present (all harnesses, FTS); otherwise Codex + Claude log scan |
 | Transcripts | Codex and Claude Code JSONL, paged, tolerant of unknown lines |
 | Resume | Command built by the kit's shared builder, copied to the clipboard |
@@ -53,6 +60,12 @@ subscription cycle inference.
 (seven layouts), the layout editor, the full settings tree, service status
 polling, the MCP server (12 tools), remote probe sync.
 
+Desktop has a deliberately smaller read-only MCP stdio entry point:
+`quota.get`, `sessions.list`, `sessions.search`, `status.get`, and
+`pricing.effective`. Status reads only Desktop's fresh private last-good
+snapshot; pricing exposes the static table the scanner actually uses. Neither
+tool refreshes a feed, scans usage, or writes shared state from a stdio process.
+
 **Platform.** Sparkle updates, launch at login, the Control Center menu-bar
 watchdog, AppleScript terminal handoff, Liquid Glass.
 
@@ -74,12 +87,14 @@ repo as much as here:
    readers already.
 3. Replace destructive schema handling with fail-closed everywhere:
    `session_index` (drop + rebuild), `usage_events` (reset), `scan_cache` and
-   `cost_snapshots` (delete file), `settings.json` (overwrite with defaults on
-   a parse failure).
+   `cost_snapshots` (delete file), the fill and forecast timelines (delete the
+   database and sidecars), `layout.json` (overwrite), and `settings.json`
+   (overwrite with defaults on a parse failure).
 4. Move the shared mutable JSON stores (`cost_history`, `subscription_history`,
-   `service_status`) to SQLite. This continues the direction the native app
-   already took with the timeline stores in PR #243, and it is far cheaper
-   than making cross-language byte-identical JSON CAS work.
+   `service_status`, and the quota field registry) to SQLite. This continues
+   the direction the native app already took with the timeline stores in PR
+   #243, and it is far cheaper than making cross-language byte-identical JSON
+   CAS work.
 5. `settings.json` stays JSON but gains a revision and lossless patch
    semantics: re-read, preserve unknown fields, write back.
 6. Flush every coalesced store on exit, not only settings.
@@ -207,12 +222,17 @@ four were found by running against a real data root, not by tests.
   it is familiar: show on first run, stay in the tray afterwards. That needs a
   persisted first-run flag, so it is a deliberate open decision rather than an
   oversight.
-- **The app icon is a placeholder.** `apps/desktop/src-tauri/icons/icon.png`
-  is a flat 32×32 square. Real icons (including the `.icns` and `.ico` sets a
-  full bundle wants) are outstanding.
+- **Desktop bundles use the native Vibe Bar icon.** The standard PNG, `.icns`,
+  and `.ico` set in `apps/desktop/src-tauri/icons/` is mechanically generated
+  from the native app's `Resources/AppIcon.png`.
 
 ## 7. Ecosystem notes
 
+- Native `v1.4.1-dev.51` added bounded session indexing and a compactor for
+  the accumulated 2.5 GB index; `dev.52` refined the menu-bar, Mini, and Resets
+  surfaces. The compactor correctly refuses an unknown session-index schema,
+  but the raw schema-init/rebuild path still belongs to `agent-session-kit`
+  and remains part of the P1 fail-closed audit.
 - `agent-session-core` lives in `AstroQore/agent-session-kit` alongside the
   Swift implementation, added by PR #12. Desktop depends on it by git
   reference; once that PR merges, switch the dependency to a tag.

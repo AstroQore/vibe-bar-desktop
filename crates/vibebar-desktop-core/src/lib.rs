@@ -14,14 +14,19 @@
 //! yet on either side. See `docs/SHARED-STORAGE.md`.
 
 pub mod client_store;
+pub mod cost;
 pub mod credentials;
 pub mod error;
 pub mod model;
+pub mod mcp;
 pub mod paths;
 pub mod providers;
 pub mod refresh;
 pub mod sessions;
+pub mod skills;
 pub mod shared;
+pub mod status;
+pub mod storage_contract;
 
 pub use error::{CoreError, QuotaError};
 pub use model::{AccountQuota, QuotaBucket, ToolType};

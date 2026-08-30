@@ -21,17 +21,22 @@ const TRAY_ID: &str = "vibebar-desktop-tray";
 pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Open Vibe Bar Desktop", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
+    let mini = MenuItem::with_id(app, "mini", "Toggle Mini", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &refresh, &separator, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &refresh, &mini, &separator, &quit])?;
 
-    TrayIconBuilder::with_id(TRAY_ID)
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .title(initial_title(state))
         .tooltip("Vibe Bar Desktop")
         // Left-click opens the window; the menu stays on right-click, so the
         // tray behaves the way the native item does.
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false);
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
             "refresh" => {
@@ -43,7 +48,11 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Resul
                     let _ = app.emit(crate::QUOTA_EVENT, &view);
                 });
             }
-            "quit" => app.exit(0),
+            "mini" => crate::toggle_mini(app),
+            "quit" => {
+                crate::persist_mini(app);
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -91,17 +100,30 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
 
     let selected: Vec<String> = if field_ids.is_empty() {
         // No shared configuration: show what this build can actually fetch.
-        vec![
+        let mut defaults = vec![
             "codex.weekly".to_string(),
             "claude.weekly".to_string(),
             "claude.five_hour".to_string(),
-        ]
+        ];
+        for account in &view.accounts {
+            let Some(bucket) = account.buckets.first() else {
+                continue;
+            };
+            let field = format!("{}.{}", account.tool.raw_value(), bucket.id);
+            if !defaults.contains(&field) {
+                defaults.push(field);
+            }
+        }
+        defaults
     } else {
         field_ids
     };
 
     let mut parts: Vec<String> = Vec::new();
-    for field_id in selected.iter().take(6) {
+    for field_id in &selected {
+        if parts.len() >= 6 {
+            break;
+        }
         let Some((tool_raw, bucket_id)) = field_id.split_once('.') else {
             continue;
         };
@@ -114,7 +136,7 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
         let Some(bucket) = view
             .accounts
             .iter()
-            .filter(|account| account.tool.raw_value() == tool_raw && account.error.is_none())
+            .filter(|account| account.tool.raw_value() == tool_raw)
             .filter(|account| account.has_plausible_timestamp(now))
             .filter_map(|account| {
                 account
@@ -305,5 +327,39 @@ mod tests {
             ..account("x", ToolType::Claude, NOW - 1.0, 0.0)
         };
         assert_eq!(render_title_at(&settings, &view(vec![failed]), NOW), "Vibe Bar · sign in");
+    }
+
+    #[test]
+    fn fallback_uses_available_adapter_buckets_and_keeps_cached_auth_values() {
+        let mut zai = account("zai", ToolType::Zai, NOW - 10.0, 31.0);
+        zai.buckets[0].id = "zai.tokens".to_string();
+        assert_eq!(
+            render_title_at(&SharedSettings::default(), &view(vec![zai]), NOW),
+            "GLM 69%"
+        );
+
+        let mut cached = account("codex", ToolType::Codex, NOW - 10.0, 24.0);
+        cached.origin = QuotaOrigin::DesktopCache;
+        cached.error = Some(vibebar_desktop_core::error::QuotaError::NeedsLogin);
+        assert_eq!(
+            render_title_at(&SharedSettings::default(), &view(vec![cached]), NOW),
+            "ChatGPT Agentic 76%"
+        );
+
+        let accounts = [
+            (ToolType::Zai, "zai.tokens"),
+            (ToolType::Minimax, "minimax.coding"),
+            (ToolType::OpenRouter, "openrouter.credits"),
+            (ToolType::Warp, "warp.credits"),
+        ]
+        .into_iter()
+        .map(|(tool, bucket_id)| {
+            let mut account = account(tool.raw_value(), tool, NOW - 10.0, 25.0);
+            account.buckets[0].id = bucket_id.to_string();
+            account
+        })
+        .collect();
+        let title = render_title_at(&SharedSettings::default(), &view(accounts), NOW);
+        assert_eq!(title.split(" · ").count(), 4, "{title}");
     }
 }

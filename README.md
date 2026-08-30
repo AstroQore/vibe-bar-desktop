@@ -13,16 +13,42 @@ window, on macOS, Windows, and Linux.
 
 ## What it does today
 
-- **Quota.** Fetches Codex and Claude usage directly from their own APIs,
-  using the credentials the Codex and Claude CLIs already wrote. Every other
-  provider Vibe Bar tracks is read from the shared data root and labeled
-  `shared data`, so the UI never overstates how fresh a number is.
+- **Quota.** Fetches Codex and Claude with their CLI credentials, plus Alibaba
+  Coding Plan, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, and Warp with
+  explicit credentials or their official CLI. The other 15 providers are read
+  from the shared data root and labeled `shared data`, so the UI never
+  overstates how fresh a number is.
+- **Upcoming resets.** Sorts provider-declared reset times from the current
+  quota view, while keeping expired or future-dated observations visibly
+  separate. It does not manufacture history or a forecast.
 - **Tray.** One line of the fields you picked, with your labels and your
   remaining-vs-used preference — read from the same settings the macOS menu
   bar uses.
 - **Sessions.** Search and read local agent sessions. Uses the shared session
   index when one exists (every harness it covers, full-text search), and falls
   back to scanning Codex and Claude Code logs directly when it does not.
+- **Presentation settings.** Applies the shared used/remaining mode, provider
+  visibility/order, plan labels, and menu-bar field labels. A read-only
+  Settings page shows the effective values; Desktop does not save them yet.
+- **Service status.** Reads cached native status immediately, then refreshes
+  OpenAI-wide, Claude, Google AI, and Cursor status from public feeds without credentials.
+  A fresh Desktop last-good snapshot is private to `client/desktop/`; shared
+  `service_status.json` remains read-only.
+- **Local usage and cost.** Scans bounded Codex, Claude, and Gemini CLI session JSONL files
+  into a priced-usage view. A completed aggregate snapshot persists only under
+  `client/desktop/`; unknown models stay visibly unpriced and no shared ledger
+  or history is written.
+- **Skills inventory.** Lists skills from the fixed local SSOT and harness
+  roots, with verified projections and health warnings. It never installs,
+  deletes, syncs, or executes skill content.
+
+API-key adapters read credentials from the process environment and never
+persist them: `DASHSCOPE_API_KEY` (or `ALIBABA_API_KEY`), `Z_AI_API_KEY`,
+`COPILOT_TOKEN`, `MINIMAX_CODING_API_KEY` (or `MINIMAX_API_KEY`),
+`KILO_API_KEY`, `OPENROUTER_API_KEY`, and `WARP_API_KEY` (or `WARP_TOKEN`).
+Kilo can also read its CLI login file; Kiro runs `kiro-cli` non-interactively.
+Endpoint/region overrides retain each provider's standard env names; see the
+corresponding module in `providers/`.
 
 ## One product, two clients
 
@@ -78,12 +104,23 @@ pnpm tauri dev      # run
 pnpm tauri build    # package
 ```
 
+### Read-only MCP stdio
+
+Run the Desktop binary with `--mcp-stdio` to serve cached `quota.get`,
+`sessions.list`, `sessions.search`, `status.get`, and `pricing.effective` over
+JSON-RPC stdin/stdout. This mode never refreshes providers, scans usage, writes
+configuration, or connects to the native app. `status.get` returns only
+Desktop's fresh private last-good snapshot; `pricing.effective` returns the
+static Codex, Claude, and Gemini table used by the local cost scanner.
+Session calls accept the native provider and harness filters; listing also
+supports RFC3339 `since`, `offset`, and bounded `limit` pagination.
+
 Verification:
 
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cd apps/desktop && pnpm typecheck
+cd apps/desktop && pnpm typecheck && pnpm build
 ```
 
 Point the app at a synthetic data root with `VIBEBAR_DEMO_HOME=<dir>` — the

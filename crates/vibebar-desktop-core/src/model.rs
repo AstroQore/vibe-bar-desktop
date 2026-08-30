@@ -184,7 +184,19 @@ impl ToolType {
     /// Providers this build can fetch live. Everything else is rendered from
     /// the shared cache the native app wrote, clearly attributed as such.
     pub fn has_live_adapter(self) -> bool {
-        matches!(self, ToolType::Codex | ToolType::Claude)
+        matches!(
+            self,
+            ToolType::Codex
+                | ToolType::Claude
+                | ToolType::Alibaba
+                | ToolType::Copilot
+                | ToolType::Zai
+                | ToolType::Minimax
+                | ToolType::Kilo
+                | ToolType::Kiro
+                | ToolType::OpenRouter
+                | ToolType::Warp
+        )
     }
 }
 
@@ -270,8 +282,12 @@ fn expanded_window_label(label: &str, bucket_id: &str) -> String {
 pub enum QuotaOrigin {
     /// Fetched by this client in this session.
     Live,
+    /// Restored from this client's private last-successful snapshot.
+    DesktopCache,
     /// Read from the shared cache under `~/.vibebar/quotas/`.
     SharedCache,
+    /// Consolidated windows came from more than one of the above sources.
+    Mixed,
 }
 
 /// Tolerance for clock skew between whatever wrote an observation and this
