@@ -11,6 +11,19 @@ fn native_contract_fixture_decodes_and_is_hashed_exactly() {
 }
 
 #[test]
+fn checksum_sidecars_accept_windows_crlf() {
+    let hash = sha256_hex(b"fixture");
+    let sidecar = format!("{hash}  fixture.json\r\n");
+    verify_fixture_sha256("fixture.json", b"fixture", &sidecar).unwrap();
+    assert!(verify_fixture_sha256(
+        "fixture.json",
+        b"fixture",
+        &format!("{hash}  fixture.json\r\n\r\n")
+    )
+    .is_err());
+}
+
+#[test]
 fn endpoint_and_legacy_contracts_are_classified_fail_closed() {
     let manifest = SharedStoreManifest::native_fixture().unwrap();
     assert_eq!(

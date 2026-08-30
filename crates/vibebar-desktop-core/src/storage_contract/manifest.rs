@@ -334,7 +334,13 @@ pub fn verify_fixture_sha256(
     bytes: &[u8],
     sidecar: &str,
 ) -> Result<(), ContractError> {
-    let line = sidecar.trim_end_matches('\n');
+    // `include_str!` sees the checkout's line endings. Accept one canonical
+    // checksum line under both LF and CRLF so Windows does not reject the
+    // same fixture solely because Git materialized `\r\n`.
+    let line = sidecar
+        .strip_suffix("\r\n")
+        .or_else(|| sidecar.strip_suffix('\n'))
+        .unwrap_or(sidecar);
     let Some((expected, name)) = line.split_once("  ") else {
         return Err(ContractError::FixtureChecksumFormat(filename));
     };
