@@ -336,7 +336,7 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
             let total = number(service.get("limit").or_else(|| service.get("total")));
             let used = number(service.get("usage").or_else(|| service.get("used"))).unwrap_or(0.0);
             let percent = number(service.get("percent"));
-            if total.is_none() && percent.is_none() {
+            if total.filter(|total| *total > 0.0).is_none() && percent.is_none() {
                 return None;
             }
             let used_percent = percent.map_or_else(
@@ -599,6 +599,14 @@ mod tests {
         let (buckets, _) = parse(monthly, 1_700_000_000.0).unwrap();
         assert_eq!(buckets[0].used_percent, 25.0);
         assert_eq!(buckets[0].reset_at, Some(1_702_592_000.0));
+    }
+    #[test]
+    fn zero_limit_service_placeholders_do_not_hide_model_rows() {
+        let body = br#"{"data":{"services":[{"service_type":"coding","limit":0}],"model_remains":[{"model_name":"MiniMax-M2","current_interval_total_count":100,"current_interval_usage_count":25}]}}"#;
+        let (buckets, _) = parse(body, 1_700_000_000.0).unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].id, "minimax.coding.0.minimax-m2");
+        assert_eq!(buckets[0].used_percent, 25.0);
     }
     #[test]
     fn dashboard_model_names_are_stable_english_labels() {

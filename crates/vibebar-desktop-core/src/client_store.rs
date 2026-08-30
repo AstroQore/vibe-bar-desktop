@@ -64,8 +64,9 @@ impl ClientStore {
             else {
                 continue;
             };
-            // A restored observation is cache, not a live reading.
-            quota.origin = QuotaOrigin::SharedCache;
+            // A restored observation is Desktop's cache, not a live reading
+            // and not data supplied by the native app's shared store.
+            quota.origin = QuotaOrigin::DesktopCache;
             out.push(quota);
         }
         out
@@ -171,7 +172,7 @@ impl StoredClientQuota {
             buckets: self.buckets,
             plan: self.plan,
             queried_at: self.queried_at,
-            origin: QuotaOrigin::SharedCache,
+            origin: QuotaOrigin::DesktopCache,
             error: None,
         })
     }
@@ -285,7 +286,7 @@ mod tests {
         assert_eq!(restored[0].account_id, "oauth-codex");
         assert_eq!(restored[0].buckets[0].used_percent, 42.0);
         // Restored data is never claimed as live.
-        assert_eq!(restored[0].origin, QuotaOrigin::SharedCache);
+        assert_eq!(restored[0].origin, QuotaOrigin::DesktopCache);
     }
 
     #[test]

@@ -12,7 +12,7 @@ export interface QuotaBucket {
   groupTitle?: string;
 }
 
-export type QuotaOrigin = "live" | "sharedCache";
+export type QuotaOrigin = "live" | "desktopCache" | "sharedCache";
 
 export interface QuotaErrorPayload {
   kind: string;
