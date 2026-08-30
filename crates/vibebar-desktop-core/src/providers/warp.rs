@@ -198,7 +198,7 @@ fn parse(body: &[u8], now: f64) -> Result<Snapshot, QuotaError> {
             ));
         }
     };
-    let bonus = bonus_summary(user, now);
+    let bonus = bonus_summary(user, now)?;
     Ok(Snapshot {
         request_limit,
         requests_used,
@@ -287,10 +287,15 @@ struct BonusSummary {
     next_expiration_remaining: i64,
 }
 
-fn bonus_summary(user: &serde_json::Map<String, Value>, now: f64) -> BonusSummary {
+fn bonus_summary(
+    user: &serde_json::Map<String, Value>,
+    now: f64,
+) -> Result<BonusSummary, QuotaError> {
     let mut grants = Vec::new();
     if let Some(values) = user.get("bonusGrants").and_then(Value::as_array) {
-        grants.extend(values.iter().filter_map(grant));
+        for value in values {
+            grants.push(grant(value)?);
+        }
     }
     if let Some(workspaces) = user.get("workspaces").and_then(Value::as_array) {
         for workspace in workspaces {
@@ -299,7 +304,9 @@ fn bonus_summary(user: &serde_json::Map<String, Value>, now: f64) -> BonusSummar
                 .and_then(|value| value.get("grants"))
                 .and_then(Value::as_array)
             {
-                grants.extend(values.iter().filter_map(grant));
+                for value in values {
+                    grants.push(grant(value)?);
+                }
             }
         }
     }
@@ -325,12 +332,12 @@ fn bonus_summary(user: &serde_json::Map<String, Value>, now: f64) -> BonusSummar
             .map(|grant| grant.remaining)
             .sum()
     });
-    BonusSummary {
+    Ok(BonusSummary {
         remaining,
         total,
         next_expiration,
         next_expiration_remaining,
-    }
+    })
 }
 
 struct BonusGrant {
@@ -339,20 +346,24 @@ struct BonusGrant {
     expiration: Option<f64>,
 }
 
-fn grant(value: &Value) -> Option<BonusGrant> {
-    let object = value.as_object()?;
-    Some(BonusGrant {
-        granted: int_value(object.get("requestCreditsGranted")),
-        remaining: int_value(object.get("requestCreditsRemaining")),
+fn grant(value: &Value) -> Result<BonusGrant, QuotaError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant is not an object".into()))?;
+    let granted = optional_int(object.get("requestCreditsGranted"))
+        .filter(|value| *value >= 0)
+        .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant has invalid counters".into()))?;
+    let remaining = optional_int(object.get("requestCreditsRemaining"))
+        .filter(|value| *value >= 0 && *value <= granted)
+        .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant has invalid counters".into()))?;
+    Ok(BonusGrant {
+        granted,
+        remaining,
         expiration: object
             .get("expiration")
             .and_then(Value::as_str)
             .and_then(parse_date),
     })
-}
-
-fn int_value(value: Option<&Value>) -> i64 {
-    optional_int(value).unwrap_or(0)
 }
 
 fn optional_int(value: Option<&Value>) -> Option<i64> {
@@ -361,7 +372,15 @@ fn optional_int(value: Option<&Value>) -> Option<i64> {
             value
                 .as_i64()
                 .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
-                .or_else(|| value.as_f64().map(|number| number as i64))
+                .or_else(|| {
+                    value.as_f64().and_then(|number| {
+                        (number.is_finite()
+                            && number.fract() == 0.0
+                            && number >= i64::MIN as f64
+                            && number <= i64::MAX as f64)
+                            .then_some(number as i64)
+                    })
+                })
                 .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
         })
 }
@@ -512,6 +531,21 @@ mod tests {
             parse_date("2026-09-02T00:00:00Z")
         );
         assert_eq!(snapshot.bonus_next_expiration_remaining, 3);
+    }
+
+    #[test]
+    fn invalid_bonus_grant_counters_fail_the_snapshot_closed() {
+        for grant in [
+            serde_json::json!({"requestCreditsGranted":20}),
+            serde_json::json!({"requestCreditsGranted":20,"requestCreditsRemaining":-5}),
+            serde_json::json!({"requestCreditsGranted":20,"requestCreditsRemaining":30}),
+            serde_json::json!({"requestCreditsGranted":20.5,"requestCreditsRemaining":10}),
+        ] {
+            let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
+            root["data"]["user"]["user"]["bonusGrants"] = Value::Array(vec![grant]);
+            let body = serde_json::to_vec(&root).unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
     }
 
     #[test]
