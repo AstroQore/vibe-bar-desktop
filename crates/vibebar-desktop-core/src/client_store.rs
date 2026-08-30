@@ -223,8 +223,10 @@ fn valid_cost_view(view: &crate::cost::CostView, generated_at: f64) -> bool {
     view.scanned_at.is_finite()
         && view.scanned_at > 0.0
         && view.scanned_at <= now + FUTURE_SKEW_SECONDS
+        && crate::cost::is_same_local_day(view.scanned_at, now)
         && generated_at == view.scanned_at
         && view.pricing_version == crate::cost::PRICING_VERSION
+        && !view.truncated
         && [
             &view.today,
             &view.last_7_days,
@@ -555,8 +557,12 @@ mod tests {
     }
 
     fn completed_cost_view() -> CostView {
+        let scanned_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
         CostView {
-            scanned_at: 1_788_038_405.0,
+            scanned_at,
             pricing_version: crate::cost::PRICING_VERSION.into(),
             ..Default::default()
         }
@@ -616,6 +622,20 @@ mod tests {
         .unwrap();
         assert_eq!(store.load_cost_snapshot(), None);
 
+        let mut prior_day = completed_cost_view();
+        prior_day.scanned_at -= 2.0 * 86_400.0;
+        std::fs::write(
+            root.client_cost_snapshot_file(),
+            serde_json::to_vec(&CostSnapshotFile {
+                schema: COST_SNAPSHOT_SCHEMA,
+                generated_at: prior_day.scanned_at,
+                view: prior_day,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(store.load_cost_snapshot(), None);
+
         let mut negative = completed_cost_view();
         negative.daily.push(crate::cost::DailyCost {
             day: "2026-08-30".into(),
@@ -624,6 +644,10 @@ mod tests {
             requests: 1,
         });
         assert!(store.save_cost_snapshot(&negative).is_err());
+
+        let mut truncated = completed_cost_view();
+        truncated.truncated = true;
+        assert!(store.save_cost_snapshot(&truncated).is_err());
     }
 
     #[test]

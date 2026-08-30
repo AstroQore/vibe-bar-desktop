@@ -152,7 +152,7 @@ impl CostEngine {
         if let Ok(mut cached) = self.cached.write() {
             *cached = view.clone();
         }
-        if !self.is_demo {
+        if !self.is_demo && !view.truncated {
             // The snapshot is only a restart cache. A completed local scan
             // remains useful even when the private namespace is unwritable.
             let _ = self.store.save_cost_snapshot(&view);
@@ -997,6 +997,12 @@ fn aggregate(
 fn local_day(timestamp: f64) -> Option<chrono::NaiveDate> {
     DateTime::<Utc>::from_timestamp_millis((timestamp * 1_000.0).round() as i64)
         .map(|date| date.with_timezone(&Local).date_naive())
+}
+
+pub(crate) fn is_same_local_day(left: f64, right: f64) -> bool {
+    local_day(left)
+        .zip(local_day(right))
+        .is_some_and(|(left, right)| left == right)
 }
 
 fn add_totals(totals: &mut CostTotals, tokens: u64, cost: Option<i64>) {
