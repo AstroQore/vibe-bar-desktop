@@ -13,7 +13,7 @@ mod tray;
 use std::time::Duration;
 
 use state::AppState;
-use tauri::{Emitter, Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 /// Emitted whenever a refresh completes, carrying the full `QuotaView`.
 pub const QUOTA_EVENT: &str = "vibebar://quota-updated";
@@ -31,6 +31,14 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::quota_view,
             commands::presentation_settings,

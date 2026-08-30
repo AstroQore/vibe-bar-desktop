@@ -34,6 +34,7 @@ export function MiniQuota() {
         <button
           className="mini-close"
           aria-label="Hide Mini"
+          data-tauri-drag-region="false"
           onClick={() => void api.hideMini().catch(() => undefined)}
         >
           ×
