@@ -1,7 +1,7 @@
 import type { ProviderStatus, ServiceStatusView, StatusIncident } from "../api";
 import { formatRelative } from "../api";
 
-const WATCHED_TOOLS = ["claude", "cursor"] as const;
+const WATCHED_TOOLS = ["claude", "gemini", "cursor"] as const;
 
 export function ServiceStatus({
   status,
@@ -45,7 +45,7 @@ export function ServiceStatus({
 }
 
 function ProviderPill({ tool, provider }: { tool: string; provider?: ProviderStatus }) {
-  const label = tool === "claude" ? "Claude" : "Cursor";
+  const label = tool === "claude" ? "Claude" : tool === "gemini" ? "Google AI" : "Cursor";
   if (!provider) {
     return <span className="status-pill unavailable">{label} unavailable</span>;
   }
@@ -67,9 +67,10 @@ function ProviderPill({ tool, provider }: { tool: string; provider?: ProviderSta
 }
 
 function Incident({ incident }: { incident: StatusIncident }) {
+  const resolved = ["resolved", "postmortem", "completed"].includes(incident.status.trim().toLowerCase());
   return (
     <p className="service-incident" title={incident.impact}>
-      {incident.name}: {incident.impact || incident.status}
+      {resolved ? "Resolved" : incident.impact || incident.status} · {incident.name}
     </p>
   );
 }
