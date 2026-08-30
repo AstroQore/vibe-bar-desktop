@@ -237,7 +237,7 @@ impl SessionsService {
                     source: SessionSource::Scanned,
                     rows,
                     indexed_total: None,
-                    index_note: note,
+                    index_note: Some(scanned_limit_note(note)),
                 }
             }
         }
@@ -328,7 +328,7 @@ impl SessionsService {
             source: SessionSource::Scanned,
             rows,
             indexed_total: None,
-            index_note: note,
+            index_note: Some(scanned_limit_note(note)),
         }
     }
 
@@ -545,6 +545,17 @@ fn indexed_summary(reader: &SessionIndexReader) -> (Option<i64>, Option<String>)
     (total, note)
 }
 
+fn scanned_limit_note(reason: Option<String>) -> String {
+    let limit = format!(
+        "Filesystem fallback is limited to the newest {SCAN_LIMIT} sessions per provider; \
+         older sessions and filter matches beyond that bound are omitted."
+    );
+    match reason {
+        Some(reason) => format!("{reason} {limit}"),
+        None => limit,
+    }
+}
+
 fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow {
     let resume_command = resume::command(
         session.provider,
@@ -644,6 +655,12 @@ mod tests {
         }
     }
 
+    fn assert_scanned_limit_note(note: Option<&str>) {
+        let note = note.expect("scanned listings must disclose their bound");
+        assert!(note.contains("newest 400 sessions per provider"));
+        assert!(note.contains("filter matches beyond that bound are omitted"));
+    }
+
     fn write_codex_session(home: &Path) -> (PathBuf, &'static str) {
         let id = "0199aaaa-1111-2222-3333-444455556666";
         (write_codex_session_named(home, id, "first message"), id)
@@ -721,7 +738,7 @@ mod tests {
         let listing = service.list(20);
         assert_eq!(listing.source, SessionSource::Scanned);
         assert!(listing.rows.is_empty());
-        assert!(listing.index_note.is_none());
+        assert_scanned_limit_note(listing.index_note.as_deref());
         assert!(listing.indexed_total.is_none());
     }
 
@@ -742,6 +759,7 @@ mod tests {
         assert_eq!(listing.source, SessionSource::Scanned);
         let note = listing.index_note.expect("a note explaining the fallback");
         assert!(note.contains("v99"), "note should name the schema: {note}");
+        assert_scanned_limit_note(Some(&note));
         assert_eq!(
             std::fs::read(&index).unwrap(),
             before,
@@ -795,6 +813,7 @@ mod tests {
         let listing = service.list_filtered(None, Some(&work), None, 0, 10);
         assert_eq!(listing.rows.len(), 1);
         assert_eq!(listing.rows[0].harness, "ChatGPT Work");
+        assert_scanned_limit_note(listing.index_note.as_deref());
         let codex = ["codex".to_string()];
         assert!(service
             .list_filtered(None, Some(&codex), None, 0, 10)
@@ -849,6 +868,7 @@ mod tests {
         let listing = service.search("needle", 1);
         assert_eq!(listing.rows.len(), 1);
         assert_eq!(listing.rows[0].title.as_deref(), Some("the only needle"));
+        assert_scanned_limit_note(listing.index_note.as_deref());
         assert_eq!(service.references.lock().unwrap().len(), 1);
         assert!(service
             .transcript(&listing.rows[0].session_ref, 0, 1)
