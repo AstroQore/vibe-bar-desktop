@@ -166,11 +166,20 @@ impl SettingsDocument {
             .revision
             .checked_add(1)
             .ok_or(SettingsPatchError::RevisionOverflow)?;
-        Ok(Self {
+        let document = Self {
             version: SettingsDocumentVersion::V1,
             revision,
             fields,
-        })
+        };
+        let encoded =
+            serde_json::to_vec(&document.to_value()).map_err(SettingsPatchError::InvalidJson)?;
+        if encoded.len() > MAX_SETTINGS_DOCUMENT_BYTES {
+            return Err(SettingsPatchError::SizeLimit {
+                actual: encoded.len(),
+                max: MAX_SETTINGS_DOCUMENT_BYTES,
+            });
+        }
+        Ok(document)
     }
 
     pub fn legacy_v0_fixture() -> Result<Self, SettingsPatchError> {
@@ -615,6 +624,18 @@ mod tests {
         let bytes = vec![b'x'; MAX_SETTINGS_DOCUMENT_BYTES + 1];
         assert!(matches!(
             SettingsDocument::parse_bytes(&bytes),
+            Err(SettingsPatchError::SizeLimit { .. })
+        ));
+
+        let base = v0(json!({"providerPlanLabels":{}}));
+        let mut desired = base.fields().clone();
+        desired.insert(
+            "providerPlanLabels".to_string(),
+            json!({"synthetic": "x".repeat(MAX_SETTINGS_DOCUMENT_BYTES)}),
+        );
+        let patch = SettingsThreeWayPatch::from_document_and_desired(&base, desired).unwrap();
+        assert!(matches!(
+            patch.apply(&base),
             Err(SettingsPatchError::SizeLimit { .. })
         ));
     }
