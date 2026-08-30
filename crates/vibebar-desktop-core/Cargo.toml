@@ -29,6 +29,7 @@ tokio = { version = "1", features = ["rt", "time", "sync", "macros", "process", 
 base64 = "0.22"
 sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+iana-time-zone = "0.1"
 # Capability-scoped filesystem handles. Keep these exact: older releases have
 # had symlink-resolution advisories and are not suitable for this boundary.
 cap-std = "=4.0.2"
