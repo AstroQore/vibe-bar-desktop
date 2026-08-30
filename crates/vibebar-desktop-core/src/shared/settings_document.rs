@@ -656,4 +656,22 @@ mod tests {
         assert!(encoded.contains(&format!("\"unknownPreciseInteger\":{INTEGER}")));
         assert!(encoded.contains(&format!("\"unknownPreciseDecimal\":{DECIMAL}")));
     }
+
+    #[test]
+    fn tiny_exponent_and_zero_are_not_equal_during_merge() {
+        let base = SettingsDocument::parse_bytes(
+            br#"{"providerPlanLabels":{"x":1e-400},"revision":1,"schemaVersion":1}"#,
+        )
+        .unwrap();
+        let current = SettingsDocument::parse_bytes(
+            br#"{"providerPlanLabels":{"x":0},"revision":2,"schemaVersion":1}"#,
+        )
+        .unwrap();
+        let desired = fields(json!({"providerPlanLabels":{"x":1}}));
+        let patch = SettingsThreeWayPatch::from_document_and_desired(&base, desired).unwrap();
+        assert!(matches!(
+            patch.apply(&current),
+            Err(SettingsPatchError::Conflict(_))
+        ));
+    }
 }
