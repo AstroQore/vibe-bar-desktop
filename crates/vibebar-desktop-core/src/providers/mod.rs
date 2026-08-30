@@ -21,6 +21,7 @@ pub mod zai;
 
 use std::path::Path;
 use std::time::Duration;
+use std::{collections::HashMap, env};
 
 use crate::error::QuotaError;
 use crate::model::{AccountQuota, ToolType};
@@ -73,6 +74,16 @@ pub(crate) fn trusted_https_url(raw: &str, allowed_domains: &[&str]) -> Option<r
         .iter()
         .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
         .then_some(url)
+}
+
+/// Read only the named environment variables, ignoring non-Unicode values.
+///
+/// `std::env::vars` panics when any unrelated variable is not valid Unicode,
+/// so provider adapters must use an explicit allowlist instead.
+pub(crate) fn read_env(keys: &[&str]) -> HashMap<String, String> {
+    keys.iter()
+        .filter_map(|key| env::var(key).ok().map(|value| ((*key).to_string(), value)))
+        .collect()
 }
 
 /// Map a transport failure onto the shared error taxonomy.

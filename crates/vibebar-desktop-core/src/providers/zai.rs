@@ -20,7 +20,7 @@ const ACCOUNT_ID: &str = "misc-zai";
 /// Fetch the current Z.ai Coding Plan quota with the explicitly supplied
 /// environment credential. No credential is persisted or logged.
 pub async fn fetch(_home: &Path, client: &reqwest::Client) -> Result<AccountQuota, QuotaError> {
-    let environment: HashMap<String, String> = std::env::vars().collect();
+    let environment = super::read_env(&["Z_AI_API_KEY", "Z_AI_QUOTA_URL", "Z_AI_API_HOST"]);
     let api_key = api_key(&environment).ok_or(QuotaError::NoCredential)?;
     let endpoint = endpoint(&environment);
 
@@ -120,10 +120,14 @@ fn parse_snapshot(body: &[u8]) -> Result<Snapshot, QuotaError> {
     let response: Response = serde_json::from_slice(body)
         .map_err(|_| QuotaError::ParseFailure("invalid Z.ai response".into()))?;
     if !response.success || response.code != 200 {
-        return Err(QuotaError::Network(format!(
-            "Z.ai API error: {}",
-            response.message.trim()
-        )));
+        return Err(match response.code {
+            401 | 403 => QuotaError::NeedsLogin,
+            429 => QuotaError::RateLimited,
+            code => QuotaError::Network(format!(
+                "Z.ai API error {code}: {}",
+                response.message.trim()
+            )),
+        });
     }
     let data = response
         .data
@@ -343,12 +347,21 @@ mod tests {
     }
 
     #[test]
-    fn rejects_auth_envelopes_and_invalid_shapes() {
-        let denied =
-            serde_json::json!({"success": false, "code": 401, "msg": "denied"}).to_string();
+    fn classifies_error_envelopes_and_rejects_invalid_shapes() {
+        for code in [401, 403] {
+            let denied =
+                serde_json::json!({"success": false, "code": code, "msg": "denied"}).to_string();
+            assert_eq!(parse(denied.as_bytes()), Err(QuotaError::NeedsLogin));
+        }
+        let limited =
+            serde_json::json!({"success": false, "code": 429, "msg": "slow down"}).to_string();
+        assert_eq!(parse(limited.as_bytes()), Err(QuotaError::RateLimited));
+        let provider_error =
+            serde_json::json!({"success": false, "code": 500, "msg": "unavailable"}).to_string();
         assert!(matches!(
-            parse(denied.as_bytes()),
-            Err(QuotaError::Network(_))
+            parse(provider_error.as_bytes()),
+            Err(QuotaError::Network(message))
+                if message == "Z.ai API error 500: unavailable"
         ));
         assert!(matches!(
             parse(b"not json"),

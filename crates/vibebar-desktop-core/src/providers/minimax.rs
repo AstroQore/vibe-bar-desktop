@@ -70,7 +70,14 @@ pub fn request_headers(api_key: &str) -> [(&'static str, String); 5] {
 }
 
 pub async fn fetch(client: &reqwest::Client) -> Result<AccountQuota, QuotaError> {
-    let env: HashMap<String, String> = std::env::vars().collect();
+    let env = super::read_env(&[
+        "MINIMAX_CODING_API_KEY",
+        "MINIMAX_API_KEY",
+        "MINIMAX_REMAINS_URL",
+        "MINIMAX_CODING_PLAN_URL",
+        "MINIMAX_HOST",
+        "MINIMAX_REGION",
+    ]);
     let key = resolve_api_key(&env).ok_or(QuotaError::NoCredential)?;
     let mainland_first = env.get("MINIMAX_REGION").is_some_and(|value| {
         matches!(
