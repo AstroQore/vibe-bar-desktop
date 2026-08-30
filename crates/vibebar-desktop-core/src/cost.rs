@@ -22,6 +22,7 @@ use crate::model::ToolType;
 const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_TOTAL_READ_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 1024 * 1024;
+const MAX_RETAINED_MODEL_BYTES: usize = 256;
 const MAX_RAW_EVENTS: usize = 400_000;
 const MAX_FILES: usize = 20_000;
 const MAX_FILES_PER_PROVIDER: usize = MAX_FILES / 3;
@@ -828,10 +829,15 @@ fn parse_codex(
                 .and_then(Value::as_str)
         })
         .or_else(|| value.get("model").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
     {
-        *current_model = model.to_string();
+        let model = model.trim();
+        if !model.is_empty() {
+            *current_model = if model.len() <= MAX_RETAINED_MODEL_BYTES {
+                model.to_string()
+            } else {
+                "codex-unknown".to_string()
+            };
+        }
     }
 
     if value.get("type").and_then(Value::as_str) != Some("event_msg") {
@@ -1655,6 +1661,29 @@ mod tests {
         assert_eq!(view.unpriced_events, 1);
         assert_eq!(view.models[0].model, "codex-unknown");
         assert_eq!(view.models[0].priced_cost_micros, 0);
+    }
+
+    #[test]
+    fn oversized_codex_model_is_not_retained_for_each_event() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        let oversized_model = "x".repeat(MAX_LINE_BYTES - 1_024);
+        write_jsonl(
+            &home.path().join(".codex/sessions/session.jsonl"),
+            &[
+                serde_json::json!({"type":"turn_context","payload":{"model":oversized_model}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-3.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-2.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-1.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}),
+            ],
+        );
+
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert_eq!(view.all_time.requests, 3);
+        assert_eq!(view.unpriced_events, 3);
+        assert_eq!(view.models.len(), 1);
+        assert_eq!(view.models[0].model, "codex-unknown");
+        assert!(view.models[0].model.len() <= MAX_RETAINED_MODEL_BYTES);
     }
 
     #[test]
