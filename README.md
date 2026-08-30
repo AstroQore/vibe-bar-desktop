@@ -46,6 +46,10 @@ Kilo can also read its CLI login file; Kiro runs `kiro-cli` non-interactively.
 Endpoint/region overrides retain each provider's standard env names; see the
 corresponding module in `providers/`.
 
+- **Skills inventory.** Lists skills from the fixed local SSOT and harness
+  roots, with verified projections and health warnings. It never installs,
+  deletes, syncs, or executes skill content.
+
 ## One product, two clients
 
 Desktop **depends on no part of the native app**: not its process, not its
