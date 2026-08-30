@@ -298,7 +298,7 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
             }
         }
         SharedStoreLocatorKind::Endpoint => {
-            if !store.relative_locator.is_empty()
+            if !safe_relative(&store.relative_locator)
                 || store
                     .endpoint_protocol
                     .as_deref()

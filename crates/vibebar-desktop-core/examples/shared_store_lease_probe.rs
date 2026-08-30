@@ -1,11 +1,12 @@
 //! Synthetic-root interoperability probe for the native Swift test suite.
 //!
 //! Example (two processes):
-//! `cargo run -p vibebar-desktop-core --example shared_store_lease_probe -- --root "$TMPDIR/vibebar-lease" --store quota_cache --mode hold --milliseconds 5000`
-//! `cargo run -p vibebar-desktop-core --example shared_store_lease_probe -- --root "$TMPDIR/vibebar-lease" --store quota_cache --mode try`
+//! `cargo run -p vibebar-desktop-core --example shared_store_lease_probe -- --root "/tmp/VibeBarLease-fixture" --store quota_cache --mode hold --milliseconds 5000`
+//! `cargo run -p vibebar-desktop-core --example shared_store_lease_probe -- --root "/tmp/VibeBarLease-fixture" --store quota_cache --mode try`
 //!
-//! `--root` must already exist below the system temporary directory. This is
-//! intentionally incapable of targeting a user's real Vibe Bar data root.
+//! `--root` must already exist, carry the `VibeBarLease-` prefix, and live
+//! below a fixed OS temporary anchor. This is intentionally incapable of
+//! targeting a user's real Vibe Bar data root, even if `TMPDIR` is overridden.
 
 use std::str::FromStr;
 use std::time::Duration;

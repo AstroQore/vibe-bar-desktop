@@ -59,9 +59,10 @@ impl SharedStoreLeaseBatch {
         Err(LeaseError::NotEligible(store))
     }
 
-    /// Public diagnostic seam for cross-client tests. The root must already
-    /// exist and canonicalize to a strict child of this process's system temp
-    /// directory; this preserves Desktop's shared-store write boundary.
+    /// Public diagnostic seam for cross-client tests. On Unix the root must
+    /// already exist, have the `VibeBarLease-` scratch prefix, and canonicalize
+    /// below a fixed OS temporary anchor. Environment variables such as
+    /// `TMPDIR` are never authority for this boundary.
     #[cfg(any(test, feature = "contract-probe"))]
     pub fn acquire_synthetic_probe(
         root: &Path,
@@ -145,18 +146,42 @@ impl SharedStoreLeaseBatch {
     }
 }
 
-#[cfg(any(test, feature = "contract-probe"))]
+#[cfg(all(any(test, feature = "contract-probe"), unix))]
 fn canonical_synthetic_child(root: &Path) -> Result<PathBuf, LeaseError> {
     let root = root
         .canonicalize()
         .map_err(|_| LeaseError::InvalidSyntheticRoot)?;
-    let temp = std::env::temp_dir()
-        .canonicalize()
-        .map_err(|_| LeaseError::InvalidSyntheticRoot)?;
-    if root == temp || !root.starts_with(&temp) {
+    if !is_trusted_synthetic_path(&root, &trusted_temp_roots()) {
         return Err(LeaseError::InvalidSyntheticRoot);
     }
     Ok(root)
+}
+
+#[cfg(all(any(test, feature = "contract-probe"), unix))]
+pub(super) fn is_trusted_synthetic_path(root: &Path, trusted_roots: &[PathBuf]) -> bool {
+    let has_probe_name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("VibeBarLease-") && name.len() > 13);
+    has_probe_name && trusted_roots.iter().any(|temp| root.starts_with(temp))
+}
+
+#[cfg(all(any(test, feature = "contract-probe"), unix))]
+fn trusted_temp_roots() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    const CANDIDATES: &[&str] = &["/private/tmp", "/private/var/folders"];
+    #[cfg(not(target_os = "macos"))]
+    const CANDIDATES: &[&str] = &["/tmp", "/var/tmp"];
+
+    CANDIDATES
+        .iter()
+        .filter_map(|candidate| Path::new(candidate).canonicalize().ok())
+        .collect()
+}
+
+#[cfg(all(any(test, feature = "contract-probe"), not(unix)))]
+fn canonical_synthetic_child(_root: &Path) -> Result<PathBuf, LeaseError> {
+    Err(LeaseError::UnsupportedPlatform)
 }
 impl Drop for SharedStoreLeaseBatch {
     fn drop(&mut self) {

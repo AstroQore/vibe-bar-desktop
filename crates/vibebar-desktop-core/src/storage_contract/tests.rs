@@ -1,5 +1,7 @@
 use super::*;
 use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 
 #[test]
 fn native_contract_fixture_decodes_and_is_hashed_exactly() {
@@ -47,6 +49,13 @@ fn endpoint_and_legacy_contracts_are_classified_fail_closed() {
             .endpoint_version
             .as_deref(),
         Some("2025-06-18")
+    );
+    assert_eq!(
+        manifest
+            .contract(SharedStoreId::McpSocket)
+            .unwrap()
+            .relative_locator,
+        "mcp.sock"
     );
     assert!(manifest
         .stores
@@ -100,7 +109,10 @@ fn malformed_manifest_is_rejected() {
 
 #[cfg(unix)]
 fn temp_root() -> tempfile::TempDir {
-    tempfile::tempdir().unwrap()
+    tempfile::Builder::new()
+        .prefix("VibeBarLease-")
+        .tempdir()
+        .unwrap()
 }
 
 #[cfg(unix)]
@@ -184,6 +196,14 @@ fn public_synthetic_probe_allows_only_a_real_temp_child() {
         !run.exists(),
         "rejected non-temp root must remain untouched"
     );
+
+    // A caller-controlled TMPDIR must not make a home path trusted. The
+    // decision helper receives only fixed anchors; even the required basename
+    // prefix is insufficient outside them.
+    assert!(!super::lease::is_trusted_synthetic_path(
+        Path::new("/Users/example/VibeBarLease-env-override"),
+        &[PathBuf::from("/private/tmp")]
+    ));
 }
 
 #[cfg(unix)]
