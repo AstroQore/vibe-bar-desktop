@@ -55,61 +55,64 @@ fn scan_home(home: &Path) -> SkillsInventoryView {
     let mut row_by_directory = std::collections::BTreeMap::<String, usize>::new();
 
     if safe_root(&ssot, "ssot", &mut warnings) {
-        if let Ok(entries) = fs::read_dir(&ssot) {
-            let mut entries = entries.flatten();
-            for entry in entries.by_ref().take(MAX_ENTRIES) {
-                let Ok(directory) = entry.file_name().into_string() else {
-                    warnings.push("ignored non-UTF-8 skill directory".into());
-                    continue;
-                };
-                if !valid_directory_name(&directory) {
-                    warnings.push(format!("ignored invalid skill directory: {directory}"));
-                    continue;
-                }
-                let path = entry.path();
-                let Ok(metadata) = fs::symlink_metadata(&path) else {
-                    warnings.push(format!("unreadable skill entry: {directory}"));
-                    continue;
-                };
-                if metadata.file_type().is_symlink() {
-                    warnings.push(format!("ignored symlink skill entry: {directory}"));
-                    continue;
-                }
-                if !metadata.is_dir() {
-                    continue;
-                }
-
-                let skill_md = path.join("SKILL.md");
-                let (name, description, health) = match read_skill_md(&skill_md) {
-                    SkillDocument::Missing => (directory.clone(), None, "missing_skill_md"),
-                    SkillDocument::Symlink => (directory.clone(), None, "symlink_ignored"),
-                    SkillDocument::Oversize => (directory.clone(), None, "oversize"),
-                    SkillDocument::Unreadable => (directory.clone(), None, "unreadable"),
-                    SkillDocument::Text(text) => {
-                        let (name, description, valid) = frontmatter(&directory, &text);
-                        (
-                            name,
-                            description,
-                            if valid { "healthy" } else { "unreadable" },
-                        )
+        match fs::read_dir(&ssot) {
+            Ok(entries) => {
+                let mut entries = entries.flatten();
+                for entry in entries.by_ref().take(MAX_ENTRIES) {
+                    let Ok(directory) = entry.file_name().into_string() else {
+                        warnings.push("ignored non-UTF-8 skill directory".into());
+                        continue;
+                    };
+                    if !valid_directory_name(&directory) {
+                        warnings.push(format!("ignored invalid skill directory: {directory}"));
+                        continue;
                     }
-                };
-                let index = rows.len();
-                rows.push(SkillInventoryRow {
-                    name,
-                    directory: directory.clone(),
-                    description,
-                    targets: Vec::new(),
-                    health: health.into(),
-                    source: "local".into(),
-                });
-                if health == "healthy" {
-                    row_by_directory.insert(directory, index);
+                    let path = entry.path();
+                    let Ok(metadata) = fs::symlink_metadata(&path) else {
+                        warnings.push(format!("unreadable skill entry: {directory}"));
+                        continue;
+                    };
+                    if metadata.file_type().is_symlink() {
+                        warnings.push(format!("ignored symlink skill entry: {directory}"));
+                        continue;
+                    }
+                    if !metadata.is_dir() {
+                        continue;
+                    }
+
+                    let skill_md = path.join("SKILL.md");
+                    let (name, description, health) = match read_skill_md(&skill_md) {
+                        SkillDocument::Missing => (directory.clone(), None, "missing_skill_md"),
+                        SkillDocument::Symlink => (directory.clone(), None, "symlink_ignored"),
+                        SkillDocument::Oversize => (directory.clone(), None, "oversize"),
+                        SkillDocument::Unreadable => (directory.clone(), None, "unreadable"),
+                        SkillDocument::Text(text) => {
+                            let (name, description, valid) = frontmatter(&directory, &text);
+                            (
+                                name,
+                                description,
+                                if valid { "healthy" } else { "unreadable" },
+                            )
+                        }
+                    };
+                    let index = rows.len();
+                    rows.push(SkillInventoryRow {
+                        name,
+                        directory: directory.clone(),
+                        description,
+                        targets: Vec::new(),
+                        health: health.into(),
+                        source: "local".into(),
+                    });
+                    if health == "healthy" {
+                        row_by_directory.insert(directory, index);
+                    }
+                }
+                if entries.next().is_some() {
+                    warnings.push("skill entry limit exceeded".into());
                 }
             }
-            if entries.next().is_some() {
-                warnings.push("skill entry limit exceeded".into());
-            }
+            Err(_) => warnings.push("unable to enumerate skill root: ssot".into()),
         }
     }
 
@@ -119,8 +122,12 @@ fn scan_home(home: &Path) -> SkillsInventoryView {
         if !safe_root(&directory, target, &mut warnings) {
             continue;
         }
-        let Ok(entries) = fs::read_dir(&directory) else {
-            continue;
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(_) => {
+                warnings.push(format!("unable to enumerate skill root: {target}"));
+                continue;
+            }
         };
         for entry in entries.flatten() {
             if projection_entries >= MAX_ENTRIES {
@@ -144,6 +151,8 @@ fn scan_home(home: &Path) -> SkillsInventoryView {
                 if expected.is_some() && resolved == expected {
                     if let Some(index) = row_by_directory.get(&name) {
                         rows[*index].targets.push(target.into());
+                    } else {
+                        warnings.push(format!("ignored foreign or dangling link: {target}/{name}"));
                     }
                 } else {
                     warnings.push(format!("ignored foreign or dangling link: {target}/{name}"));
@@ -350,12 +359,17 @@ mod tests {
         fs::create_dir_all(&codex).unwrap();
         symlink("../../.agents/skills/demo", codex.join("demo")).unwrap();
         symlink("../../outside", codex.join("foreign")).unwrap();
+        symlink("../../.agents/skills/missing", codex.join("missing")).unwrap();
         let view = scan(&root);
         assert_eq!(view.skills[0].targets, vec!["codex"]);
         assert!(view
             .warnings
             .iter()
             .any(|warning| warning.contains("foreign or dangling")));
+        assert!(view
+            .warnings
+            .iter()
+            .any(|warning| warning.ends_with("codex/missing")));
     }
 
     #[cfg(unix)]
@@ -413,5 +427,24 @@ mod tests {
         assert_eq!(name, "Demo");
         assert_eq!(description, None);
         assert!(valid);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_existing_root_is_not_reported_as_empty() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = root_at(&directory);
+        let ssot = directory.path().join(".agents/skills");
+        fs::create_dir_all(&ssot).unwrap();
+        fs::set_permissions(&ssot, fs::Permissions::from_mode(0o000)).unwrap();
+        let view = scan(&root);
+        fs::set_permissions(&ssot, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(view.skills.is_empty());
+        assert!(view
+            .warnings
+            .iter()
+            .any(|warning| warning == "unable to enumerate skill root: ssot"));
     }
 }
