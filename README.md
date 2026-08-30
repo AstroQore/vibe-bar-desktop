@@ -34,10 +34,13 @@ window, on macOS, Windows, and Linux.
   OpenAI-wide, Claude, Google AI, and Cursor status from public feeds without credentials.
   A fresh Desktop last-good snapshot is private to `client/desktop/`; shared
   `service_status.json` remains read-only.
-- **Local usage and cost.** Scans bounded Codex and Claude session JSONL files
+- **Local usage and cost.** Scans bounded Codex, Claude, and Gemini CLI session JSONL files
   into a priced-usage view. A completed aggregate snapshot persists only under
   `client/desktop/`; unknown models stay visibly unpriced and no shared ledger
   or history is written.
+- **Skills inventory.** Lists skills from the fixed local SSOT and harness
+  roots, with verified projections and health warnings. It never installs,
+  deletes, syncs, or executes skill content.
 
 API-key adapters read credentials from the process environment and never
 persist them: `DASHSCOPE_API_KEY` (or `ALIBABA_API_KEY`), `Z_AI_API_KEY`,
@@ -46,10 +49,6 @@ persist them: `DASHSCOPE_API_KEY` (or `ALIBABA_API_KEY`), `Z_AI_API_KEY`,
 Kilo can also read its CLI login file; Kiro runs `kiro-cli` non-interactively.
 Endpoint/region overrides retain each provider's standard env names; see the
 corresponding module in `providers/`.
-
-- **Skills inventory.** Lists skills from the fixed local SSOT and harness
-  roots, with verified projections and health warnings. It never installs,
-  deletes, syncs, or executes skill content.
 
 ## One product, two clients
 

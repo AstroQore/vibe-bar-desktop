@@ -20,7 +20,7 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
         </div>
         <p className="cost-note">No local usage in the last 30 days.</p>
         {cost.truncated ? (
-          <p className="cost-note">Scan limited to the newest 10,000 files per provider.</p>
+          <p className="cost-note">Scan reached its local file budget.</p>
         ) : null}
       </section>
     );
@@ -56,7 +56,7 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
         </p>
       ) : null}
       {cost.truncated ? (
-        <p className="cost-note">Scan limited to the newest 10,000 files per provider.</p>
+        <p className="cost-note">Scan reached its local file budget.</p>
       ) : null}
     </section>
   );
