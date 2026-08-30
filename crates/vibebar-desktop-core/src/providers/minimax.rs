@@ -465,10 +465,21 @@ fn number(value: Option<&Value>) -> Option<f64> {
 }
 
 fn int(value: Option<&Value>) -> Option<i64> {
-    number(value).and_then(|value| {
-        (value.fract() == 0.0 && value >= i64::MIN as f64 && value <= i64::MAX as f64)
-            .then_some(value as i64)
-    })
+    match value? {
+        Value::Number(number) if number.is_i64() => number.as_i64(),
+        Value::Number(number) if number.is_u64() => {
+            number.as_u64().and_then(|value| i64::try_from(value).ok())
+        }
+        Value::Number(number) => number.as_f64().and_then(|value| {
+            (value.is_finite()
+                && value.fract() == 0.0
+                && value >= i64::MIN as f64
+                && value <= i64::MAX as f64)
+                .then_some(value as i64)
+        }),
+        Value::String(value) => value.trim().parse().ok(),
+        _ => None,
+    }
 }
 
 fn text(value: Option<&Value>) -> Option<String> {
@@ -714,6 +725,22 @@ mod tests {
                     "current_interval_total_count": 100,
                     "current_interval_usage_count": usage
                 }]}
+            }))
+            .unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
+        for key in [
+            "current_interval_total_count",
+            "current_interval_usage_count",
+        ] {
+            let mut row = serde_json::json!({
+                "model_name": "out-of-range",
+                "current_interval_total_count": 100,
+                "current_interval_usage_count": 1
+            });
+            row[key] = Value::from(i64::MAX as u64 + 1);
+            let body = serde_json::to_vec(&serde_json::json!({
+                "data": {"model_remains": [row]}
             }))
             .unwrap();
             assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
