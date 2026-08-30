@@ -27,7 +27,7 @@ use crate::model::{AccountQuota, QuotaOrigin};
 use crate::paths::DataRoot;
 
 const MAX_COST_SNAPSHOT_BYTES: u64 = 4 * 1024 * 1024;
-const COST_SNAPSHOT_SCHEMA: u8 = 2;
+const COST_SNAPSHOT_SCHEMA: u8 = 3;
 
 #[derive(Clone)]
 pub struct ClientStore {
@@ -39,6 +39,7 @@ pub struct ClientStore {
 struct CostSnapshotFile {
     schema: u8,
     generated_at: f64,
+    generated_utc_offset_seconds: i32,
     view: crate::cost::CostView,
 }
 
@@ -110,6 +111,7 @@ impl ClientStore {
         let snapshot = serde_json::from_slice::<CostSnapshotFile>(&bytes).ok()?;
         if snapshot.schema != COST_SNAPSHOT_SCHEMA
             || !snapshot.generated_at.is_finite()
+            || snapshot.generated_utc_offset_seconds != current_utc_offset_seconds()
             || !valid_cost_view(&snapshot.view, snapshot.generated_at)
         {
             return None;
@@ -126,6 +128,7 @@ impl ClientStore {
         let snapshot = CostSnapshotFile {
             schema: COST_SNAPSHOT_SCHEMA,
             generated_at: view.scanned_at,
+            generated_utc_offset_seconds: current_utc_offset_seconds(),
             view: view.clone(),
         };
         let encoded = serde_json::to_vec_pretty(&snapshot)?;
@@ -212,6 +215,10 @@ impl ClientStore {
         sync_directory(&directory)?;
         Ok(())
     }
+}
+
+fn current_utc_offset_seconds() -> i32 {
+    chrono::Local::now().offset().local_minus_utc()
 }
 
 fn valid_cost_view(view: &crate::cost::CostView, generated_at: f64) -> bool {
@@ -581,6 +588,41 @@ mod tests {
     }
 
     #[test]
+    fn cost_snapshot_rejects_changed_utc_offset_and_old_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let store = ClientStore::new(root.clone());
+        let view = completed_cost_view();
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+
+        std::fs::write(
+            root.client_cost_snapshot_file(),
+            serde_json::to_vec(&CostSnapshotFile {
+                schema: COST_SNAPSHOT_SCHEMA,
+                generated_at: view.scanned_at,
+                generated_utc_offset_seconds: current_utc_offset_seconds().saturating_add(1),
+                view: view.clone(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(store.load_cost_snapshot(), None);
+
+        std::fs::write(
+            root.client_cost_snapshot_file(),
+            serde_json::to_vec(&serde_json::json!({
+                "schema": COST_SNAPSHOT_SCHEMA - 1,
+                "generatedAt": view.scanned_at,
+                "generatedUtcOffsetSeconds": current_utc_offset_seconds(),
+                "view": view,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(store.load_cost_snapshot(), None);
+    }
+
+    #[test]
     fn invalid_or_unknown_cost_snapshot_fails_closed_without_overwriting() {
         let dir = tempfile::tempdir().unwrap();
         let root = DataRoot::at(dir.path().join(".vibebar"));
@@ -615,6 +657,7 @@ mod tests {
             serde_json::to_vec(&CostSnapshotFile {
                 schema: COST_SNAPSHOT_SCHEMA,
                 generated_at: stale.scanned_at,
+                generated_utc_offset_seconds: current_utc_offset_seconds(),
                 view: stale,
             })
             .unwrap(),
@@ -629,6 +672,7 @@ mod tests {
             serde_json::to_vec(&CostSnapshotFile {
                 schema: COST_SNAPSHOT_SCHEMA,
                 generated_at: prior_day.scanned_at,
+                generated_utc_offset_seconds: current_utc_offset_seconds(),
                 view: prior_day,
             })
             .unwrap(),
@@ -689,6 +733,7 @@ mod tests {
             serde_json::to_vec(&CostSnapshotFile {
                 schema: COST_SNAPSHOT_SCHEMA,
                 generated_at: view.scanned_at,
+                generated_utc_offset_seconds: current_utc_offset_seconds(),
                 view,
             })
             .unwrap(),

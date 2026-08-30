@@ -1294,7 +1294,9 @@ mod tests {
             ],
         );
 
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.all_time.requests, 3);
         assert_eq!(view.unpriced_events, 3);
         assert_eq!(view.models.len(), 1);
