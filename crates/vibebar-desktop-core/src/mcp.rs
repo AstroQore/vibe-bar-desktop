@@ -522,6 +522,10 @@ mod tests {
         );
         assert_eq!(codex["rows"].as_array().unwrap().len(), 1);
         assert!(codex["rows"][0].get("sourcePath").is_none());
+        assert!(codex["indexNote"]
+            .as_str()
+            .unwrap()
+            .contains("newest 400 sessions per provider"));
         assert_eq!(
             codex["rows"][0]["providerVariant"],
             "auto-review:0299aaaa-1111-2222-3333-444455556666"
@@ -532,12 +536,12 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        assert!(
-            tool_payload(&server, "sessions.list", json!({"offset": 1_000_001}))["rows"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
+        let deep_page = tool_payload(&server, "sessions.list", json!({"offset": 1_000_001}));
+        assert!(deep_page["rows"].as_array().unwrap().is_empty());
+        assert!(deep_page["indexNote"]
+            .as_str()
+            .unwrap()
+            .contains("filter matches beyond that bound are omitted"));
         assert!(tool_payload(
             &server,
             "sessions.list",
@@ -553,6 +557,10 @@ mod tests {
             json!({"query": "0199aaaa", "providers": ["codex"], "harnesses": ["codex"]}),
         );
         assert_eq!(search["rows"].as_array().unwrap().len(), 1);
+        assert!(search["indexNote"]
+            .as_str()
+            .unwrap()
+            .contains("newest 400 sessions per provider"));
         assert!(tool_payload(
             &server,
             "sessions.search",
