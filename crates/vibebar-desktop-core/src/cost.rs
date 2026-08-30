@@ -1626,7 +1626,9 @@ mod tests {
                 serde_json::json!({"type":"gemini","model":"unknown-gemini","timestamp":rfc3339(ts),"tokens":{"input":2,"output":3}}),
             ],
         );
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.scanned_files, 1);
         assert_eq!(view.all_time.requests, 2);
         assert_eq!(view.all_time.tokens, 145);
@@ -1671,7 +1673,9 @@ mod tests {
             serde_json::json!({"type":"gemini","tokens":{"input":999,"output":999}}).to_string(),
         )
         .unwrap();
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.scanned_files, 1);
         assert_eq!(view.all_time.requests, 1);
     }
@@ -1695,7 +1699,9 @@ mod tests {
         let (files, truncated) = collect_gemini_chat_files(home.path());
         assert_eq!(files.len(), 1);
         assert!(!truncated);
-        let view = CostEngine::new(home.path()).refresh().unwrap();
+        let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
+            .refresh()
+            .unwrap();
         assert_eq!(view.all_time.requests, 0);
     }
 
