@@ -5,6 +5,7 @@ use std::path::Path;
 
 use serde_json::{json, Map, Value};
 
+use crate::client_store::ClientStore;
 use crate::model::ToolType;
 use crate::paths::{home_directory, DataRoot};
 use crate::refresh::QuotaEngine;
@@ -17,7 +18,7 @@ static EMPTY_PARAMS: std::sync::LazyLock<Map<String, Value>> = std::sync::LazyLo
 pub struct ReadonlyMcp {
     quota: QuotaEngine,
     sessions: SessionsService,
-    status: Option<StoredStatusSnapshot>,
+    status_store: ClientStore,
 }
 
 impl ReadonlyMcp {
@@ -36,12 +37,10 @@ impl ReadonlyMcp {
 
     pub fn with_home(root: DataRoot, home: impl Into<std::path::PathBuf>) -> Self {
         let home = home.into();
-        let status =
-            crate::client_store::ClientStore::new(root.clone()).load_status_snapshot(now_unix());
         Self {
             quota: QuotaEngine::new(root.clone()),
             sessions: SessionsService::with_home(root.clone(), home.clone()),
-            status,
+            status_store: ClientStore::new(root),
         }
     }
 
@@ -144,7 +143,8 @@ impl ReadonlyMcp {
             "status.get" => {
                 let arguments = object_params(arguments, &["tools"])?;
                 let tools = parse_tools(arguments.get("tools"))?;
-                serde_json::to_value(status_response(self.status.as_ref(), tools.as_deref()))
+                let status = self.status_store.load_status_snapshot(now_unix());
+                serde_json::to_value(status_response(status.as_ref(), tools.as_deref()))
                     .map_err(|_| Problem::internal())?
             }
             _ => return Err(Problem::invalid_params()),
@@ -586,14 +586,30 @@ mod tests {
     }
 
     #[test]
-    fn status_get_rechecks_freshness_for_a_long_running_stdio_server() {
-        let stale = crate::status::StoredStatusSnapshot {
-            schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
-            saved_at: 1.0,
-            providers: vec![],
-        };
-        let response = status_response(Some(&stale), None);
-        assert_eq!(response.last_fetched, None);
-        assert!(response.companies.is_empty());
+    fn status_get_reloads_a_snapshot_created_after_the_stdio_server_started() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(temp.path().join(".vibebar"));
+        let server = ReadonlyMcp::with_home(root.clone(), temp.path());
+        let now = now_unix();
+        crate::client_store::ClientStore::new(root)
+            .save_status_snapshot(&crate::status::StoredStatusSnapshot {
+                schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
+                saved_at: now,
+                providers: vec![crate::status::StoredProviderStatus {
+                    tool: ToolType::Claude,
+                    indicator: "none".into(),
+                    description: "Synthetic recovery".into(),
+                    updated_at: Some(now),
+                    incidents: vec![],
+                }],
+            })
+            .unwrap();
+
+        let reply = server.handle_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status.get","arguments":{}}}"#).unwrap();
+        let response: Value = serde_json::from_str(&reply).unwrap();
+        let value: Value =
+            serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(value["companies"][0]["tool"], "claude");
     }
 }
