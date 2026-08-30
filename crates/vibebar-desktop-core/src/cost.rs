@@ -25,7 +25,6 @@ const MAX_FILES_PER_PROVIDER: usize = MAX_FILES / 2;
 const MAX_DISCOVERED_PER_PROVIDER: usize = MAX_FILES_PER_PROVIDER * 10;
 const MAX_DISCOVERY_ENTRIES: usize = 200_000;
 const MAX_DISCOVERY_DEPTH: usize = 32;
-const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 const PRICING_VERSION: &str = "native-2026-06-08-v5";
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -48,7 +47,7 @@ pub struct DailyCost {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCost {
-    pub tool: ToolType,
+    pub harness: String,
     pub model: String,
     pub priced_cost_micros: i64,
     pub tokens: u64,
@@ -117,26 +116,23 @@ impl CostEngine {
         );
         codex_files.extend(claude_files);
         let files = codex_files;
-        let truncated = codex_truncated || claude_truncated;
-        let codex_tier = codex_service_tier(&home);
+        let mut truncated = codex_truncated || claude_truncated;
 
         let mut events = Vec::new();
         let mut malformed_lines = 0;
+        let mut scanned_files = 0;
         for source in &files {
-            scan_file(
-                &home,
-                &self.home,
-                source,
-                codex_tier.as_deref(),
-                &mut events,
-                &mut malformed_lines,
-            );
+            match scan_file(&home, &self.home, source, &mut events, &mut malformed_lines) {
+                ScanFileResult::Scanned => scanned_files += 1,
+                ScanFileResult::TooLarge => truncated = true,
+                ScanFileResult::Skipped => {}
+            }
         }
         let events = deduplicate_claude_events(events);
 
         let view = aggregate(
             &events,
-            files.len() as u64,
+            scanned_files,
             malformed_lines,
             truncated,
             now_unix(),
@@ -233,41 +229,6 @@ fn source_mtime(path: &Path) -> u128 {
         .unwrap_or(0)
 }
 
-fn codex_service_tier(home: &Dir) -> Option<String> {
-    let directory = crate::paths::open_dir_nofollow(home, Path::new(".codex")).ok()?;
-    let mut options = CapOpenOptions::new();
-    options.read(true).follow(FollowSymlinks::No);
-    let file = directory
-        .open_with(Path::new("config.toml"), &options)
-        .ok()?;
-    let metadata = file.metadata().ok()?;
-    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
-        return None;
-    }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    file.take(MAX_CONFIG_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() as u64 > MAX_CONFIG_BYTES {
-        return None;
-    }
-    let text = String::from_utf8(bytes).ok()?;
-    for raw_line in text.lines() {
-        let setting = raw_line.split('#').next().unwrap_or("");
-        let Some((key, value)) = setting.split_once('=') else {
-            continue;
-        };
-        if key.trim() != "service_tier" {
-            continue;
-        }
-        let value = value.trim().trim_matches(['\'', '"']);
-        if matches!(value, "fast" | "priority") {
-            return Some(value.to_string());
-        }
-    }
-    None
-}
-
 fn collect_jsonl(
     root: &Path,
     tool: ToolType,
@@ -317,28 +278,40 @@ fn collect_jsonl(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanFileResult {
+    Scanned,
+    Skipped,
+    TooLarge,
+}
+
 fn scan_file(
     home: &Dir,
     home_path: &Path,
     source: &SourceFile,
-    codex_tier: Option<&str>,
     events: &mut Vec<UsageEvent>,
     malformed_lines: &mut u64,
-) {
+) -> ScanFileResult {
     let Ok(metadata) = fs::symlink_metadata(&source.path) else {
-        return;
+        return ScanFileResult::Skipped;
     };
-    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
-        return;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return ScanFileResult::Skipped;
+    }
+    if metadata.len() > MAX_FILE_BYTES {
+        return ScanFileResult::TooLarge;
     }
     let Ok(file) = open_source_file(home, home_path, source) else {
-        return;
+        return ScanFileResult::Skipped;
     };
     let Ok(open_metadata) = file.metadata() else {
-        return;
+        return ScanFileResult::Skipped;
     };
-    if !open_metadata.is_file() || open_metadata.len() > MAX_FILE_BYTES {
-        return;
+    if !open_metadata.is_file() {
+        return ScanFileResult::Skipped;
+    }
+    if open_metadata.len() > MAX_FILE_BYTES {
+        return ScanFileResult::TooLarge;
     }
     let fallback_time = open_metadata
         .modified()
@@ -351,9 +324,11 @@ fn scan_file(
         .take(MAX_FILE_BYTES + 1)
         .read_to_end(&mut bytes)
         .is_err()
-        || bytes.len() as u64 > MAX_FILE_BYTES
     {
-        return;
+        return ScanFileResult::Skipped;
+    }
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return ScanFileResult::TooLarge;
     }
 
     let mut codex_previous = (0_u64, 0_u64, 0_u64);
@@ -376,7 +351,6 @@ fn scan_file(
                 fallback_time,
                 &mut codex_model,
                 &mut codex_previous,
-                codex_tier,
                 &source.path,
                 events,
             ),
@@ -384,6 +358,7 @@ fn scan_file(
             _ => {}
         }
     }
+    ScanFileResult::Scanned
 }
 
 fn open_source_file(
@@ -418,7 +393,6 @@ fn parse_codex(
     fallback_time: Option<f64>,
     current_model: &mut String,
     previous: &mut (u64, u64, u64),
-    service_tier: Option<&str>,
     source_path: &Path,
     events: &mut Vec<UsageEvent>,
 ) {
@@ -494,7 +468,7 @@ fn parse_codex(
         cache_read: cached,
         output,
         cache_creation: 0,
-        service_tier: service_tier.map(str::to_string),
+        service_tier: explicit_service_tier(value, payload, info),
         session_id: None,
         message_id: None,
         request_id: None,
@@ -502,6 +476,20 @@ fn parse_codex(
         is_parent_path: true,
         source_key: source_path.to_string_lossy().into_owned(),
     });
+}
+
+fn explicit_service_tier(value: &Value, payload: &Value, info: &Value) -> Option<String> {
+    [value, payload, info]
+        .into_iter()
+        .find_map(|object| {
+            object
+                .get("speed")
+                .or_else(|| object.get("service_tier"))
+                .and_then(Value::as_str)
+        })
+        .map(str::trim)
+        .filter(|tier| !tier.is_empty())
+        .map(str::to_string)
 }
 
 fn parse_claude(
@@ -705,29 +693,32 @@ fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
         ToolType::Claude => claude_pricing(&event.model)?,
         _ => return None,
     };
-    let cache_read_rate = pricing.cache_read.unwrap_or(pricing.input);
-    let cache_creation_rate = pricing.cache_creation.unwrap_or(pricing.input);
-    let mut micros = tiered(
-        event.input,
-        pricing.input,
-        pricing.input_above,
-        pricing.threshold,
-    ) + tiered(
-        event.output,
-        pricing.output,
-        pricing.output_above,
-        pricing.threshold,
-    ) + tiered(
-        event.cache_read,
-        cache_read_rate,
-        pricing.cache_read_above.or(pricing.input_above),
-        pricing.threshold,
-    ) + tiered(
-        event.cache_creation,
-        cache_creation_rate,
-        pricing.cache_creation_above.or(pricing.input_above),
-        pricing.threshold,
-    );
+    let above_threshold = pricing.threshold.is_some_and(|threshold| {
+        event
+            .input
+            .saturating_add(event.cache_read)
+            .saturating_add(event.cache_creation)
+            > threshold
+    });
+    let rate = |base: f64, above: Option<f64>| {
+        if above_threshold {
+            above.unwrap_or(base)
+        } else {
+            base
+        }
+    };
+    let mut micros = event.input as f64 * rate(pricing.input, pricing.input_above)
+        + event.output as f64 * rate(pricing.output, pricing.output_above)
+        + event.cache_read as f64
+            * rate(
+                pricing.cache_read.unwrap_or(pricing.input),
+                pricing.cache_read_above.or(pricing.input_above),
+            )
+        + event.cache_creation as f64
+            * rate(
+                pricing.cache_creation.unwrap_or(pricing.input),
+                pricing.cache_creation_above.or(pricing.input_above),
+            );
     if event
         .service_tier
         .as_deref()
@@ -736,17 +727,6 @@ fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
         micros *= pricing.fast_multiplier.unwrap_or(1.0).max(1.0);
     }
     Some(micros.round() as i64)
-}
-
-fn tiered(tokens: u64, base: f64, above: Option<f64>, threshold: Option<u64>) -> f64 {
-    match (threshold, above) {
-        (Some(threshold), Some(above)) => {
-            let below = tokens.min(threshold);
-            let over = tokens.saturating_sub(threshold);
-            below as f64 * base + over as f64 * above
-        }
-        _ => tokens as f64 * base,
-    }
 }
 
 fn codex_pricing(raw: &str) -> Option<ModelPricing> {
@@ -896,7 +876,7 @@ fn aggregate(
     let mut month_totals = CostTotals::default();
     let mut all_totals = CostTotals::default();
     let mut daily: BTreeMap<String, CostTotals> = BTreeMap::new();
-    let mut models: HashMap<(ToolType, String), ModelCost> = HashMap::new();
+    let mut models: HashMap<(String, String), ModelCost> = HashMap::new();
     let mut unpriced_events = 0_u64;
 
     for event in events {
@@ -925,10 +905,11 @@ fn aggregate(
         }
         add_totals(daily.entry(day.to_string()).or_default(), tokens, cost);
 
+        let harness = harness_name(event.tool).to_string();
         let model = models
-            .entry((event.tool, event.model.clone()))
+            .entry((harness.clone(), event.model.clone()))
             .or_insert_with(|| ModelCost {
-                tool: event.tool,
+                harness,
                 model: event.model.clone(),
                 priced_cost_micros: 0,
                 tokens: 0,
@@ -954,7 +935,7 @@ fn aggregate(
             .priced_cost_micros
             .cmp(&left.priced_cost_micros)
             .then_with(|| right.tokens.cmp(&left.tokens))
-            .then_with(|| left.tool.raw_value().cmp(right.tool.raw_value()))
+            .then_with(|| left.harness.cmp(&right.harness))
             .then_with(|| left.model.cmp(&right.model))
     });
     CostView {
@@ -994,6 +975,15 @@ fn add_totals(totals: &mut CostTotals, tokens: u64, cost: Option<i64>) {
     }
 }
 
+fn harness_name(tool: ToolType) -> &'static str {
+    match tool {
+        ToolType::Codex => "Codex",
+        ToolType::Claude => "Claude Code",
+        ToolType::Gemini => "Gemini CLI",
+        _ => tool.raw_value(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1015,7 +1005,7 @@ mod tests {
     }
 
     #[test]
-    fn scans_codex_cumulative_deltas_model_and_cache_without_double_counting() {
+    fn scans_codex_deltas_and_uses_only_event_level_service_tier() {
         let home = tempfile::tempdir().unwrap();
         let scanned_at = now_unix();
         fs::create_dir_all(home.path().join(".codex")).unwrap();
@@ -1029,7 +1019,7 @@ mod tests {
             &[
                 serde_json::json!({"type":"turn_context","payload":{"model":"gpt-5.4"}}),
                 serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-10.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30}}}}),
-                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-5.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"cached_input_tokens":30,"output_tokens":50}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-5.0),"payload":{"type":"token_count","service_tier":"priority","info":{"total_token_usage":{"input_tokens":150,"cached_input_tokens":30,"output_tokens":50}}}}),
             ],
         );
         let view = CostEngine::new(home.path()).refresh().unwrap();
@@ -1038,8 +1028,11 @@ mod tests {
         assert_eq!(view.all_time.tokens, 200);
         assert_eq!(view.today.tokens, 200);
         assert_eq!(view.models[0].model, "gpt-5.4");
+        assert_eq!(view.models[0].harness, "Codex");
         assert_eq!(view.unpriced_events, 0);
-        assert_eq!(view.all_time.priced_cost_micros, 2_115);
+        // The first request is standard despite the current config; only the
+        // second request carries an explicit priority marker in its event.
+        assert_eq!(view.all_time.priced_cost_micros, 1_460);
     }
 
     #[test]
@@ -1071,6 +1064,7 @@ mod tests {
             .iter()
             .find(|model| model.model == "claude-opus-4-6")
             .unwrap();
+        assert_eq!(opus.harness, "Claude Code");
         assert_eq!(opus.priced_cost_micros, 180);
     }
 
@@ -1166,7 +1160,33 @@ mod tests {
             is_parent_path: true,
             source_key: String::new(),
         };
-        assert_eq!(priced_cost_micros(&event), Some(600_006));
+        assert_eq!(priced_cost_micros(&event), Some(1_200_006));
+    }
+
+    #[test]
+    fn sonnet_split_cache_threshold_selects_one_rate_for_the_whole_request() {
+        let event = |cache_read, cache_creation| UsageEvent {
+            tool: ToolType::Claude,
+            date: now_unix() - 1.0,
+            model: "claude-sonnet-4-5".into(),
+            input: 1,
+            cache_read,
+            output: 2,
+            cache_creation,
+            service_tier: None,
+            session_id: None,
+            message_id: None,
+            request_id: None,
+            is_sidechain: false,
+            is_parent_path: true,
+            source_key: String::new(),
+        };
+
+        // Exactly 200k input-context tokens stays on the base rates.
+        assert_eq!(priced_cost_micros(&event(99_999, 100_000)), Some(405_033));
+        // Crossing the threshold via split cache usage prices every column,
+        // including output, at the published above-threshold rate.
+        assert_eq!(priced_cost_micros(&event(100_000, 100_000)), Some(810_051));
     }
 
     #[test]
@@ -1230,5 +1250,29 @@ mod tests {
             collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
         assert!(files.is_empty());
         assert!(truncated);
+    }
+
+    #[test]
+    fn oversized_sparse_file_is_truncated_and_not_counted_as_scanned() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        let directory = home.path().join(".claude/projects/project");
+        fs::create_dir_all(&directory).unwrap();
+        fs::File::create(directory.join("too-large.jsonl"))
+            .unwrap()
+            .set_len(MAX_FILE_BYTES + 1)
+            .unwrap();
+        write_jsonl(
+            &directory.join("readable.jsonl"),
+            &[serde_json::json!({
+                "type":"assistant","timestamp":rfc3339(scanned_at-1.0),
+                "message":{"model":"claude-haiku-4-5","usage":{"input_tokens":1}}
+            })],
+        );
+
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert!(view.truncated);
+        assert_eq!(view.scanned_files, 1);
+        assert_eq!(view.all_time.requests, 1);
     }
 }
