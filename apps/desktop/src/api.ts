@@ -62,7 +62,7 @@ export interface SessionListing {
 }
 
 export interface TranscriptMessage {
-  role: "user" | "assistant" | "system" | "tool" | "note";
+  role: "user" | "assistant" | "system" | "tool" | "other";
   text: string;
   timestamp?: string;
 }
