@@ -3,14 +3,14 @@
 //! Merges two sources into the one list the UI renders:
 //!
 //! 1. What this client fetched through a live adapter, including its last
-//!    successful local snapshot — authoritative and labeled live.
+//!    successful private snapshot — explicitly labeled as Desktop cache.
 //! 2. What the shared cache holds — every other provider the native app
 //!    tracks, labeled as cache so the UI never overstates freshness.
 //!
 //! Per account, the newer observation wins regardless of which side produced
 //! it: on a Mac running both clients, whichever refreshed last is the truth.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -126,7 +126,8 @@ impl QuotaEngine {
             }
         }
 
-        // Errors are kept only when nothing better exists for that provider.
+        // A cached success hides transient failures, but never hides an
+        // authentication problem that requires the user to act.
         let (ok, failed): (Vec<_>, Vec<_>) =
             fetched.into_iter().partition(|q| q.error.is_none());
 
@@ -135,12 +136,21 @@ impl QuotaEngine {
         // account ids rather than surfacing the same account twice.
         let mut current = self.store.load_quotas();
         current.extend(ok);
+        let desktop_snapshot_tools: HashSet<_> = current
+            .iter()
+            .filter(|quota| quota.origin == QuotaOrigin::DesktopCache)
+            .map(|quota| quota.tool)
+            .collect();
         let (shared, has_shared_data) = self.load_shared(&current);
 
         let mut accounts = merge(current, shared);
         for failure in failed {
             let covered = accounts.iter().any(|a| a.tool == failure.tool);
-            if !covered {
+            if should_keep_failure(
+                covered,
+                desktop_snapshot_tools.contains(&failure.tool),
+                &failure,
+            ) {
                 accounts.push(failure);
             }
         }
@@ -166,7 +176,7 @@ impl QuotaEngine {
         });
         let last_updated = accounts
             .iter()
-            .filter(|a| a.error.is_none())
+            .filter(|a| !a.buckets.is_empty())
             .map(|a| a.queried_at)
             .fold(None::<f64>, |acc, value| {
                 Some(acc.map_or(value, |current: f64| current.max(value)))
@@ -254,9 +264,19 @@ fn consolidate(accounts: Vec<AccountQuota>, now: f64) -> Vec<AccountQuota> {
             .any(|a| a.origin == QuotaOrigin::Live && a.queried_at >= queried_at)
         {
             QuotaOrigin::Live
+        } else if usable
+            .iter()
+            .any(|a| a.origin == QuotaOrigin::DesktopCache && a.queried_at >= queried_at)
+        {
+            QuotaOrigin::DesktopCache
         } else {
             QuotaOrigin::SharedCache
         };
+        let auth_error = failures
+            .iter()
+            .filter_map(|failure| failure.error.as_ref())
+            .find(|error| is_auth_error(error))
+            .cloned();
 
         out.push(AccountQuota {
             account_id: source.account_id.clone(),
@@ -269,7 +289,7 @@ fn consolidate(accounts: Vec<AccountQuota>, now: f64) -> Vec<AccountQuota> {
                 .and_then(|a| a.plan.clone()),
             queried_at,
             origin,
-            error: None,
+            error: auth_error,
         });
     }
     out
@@ -284,9 +304,9 @@ fn merge(live: Vec<AccountQuota>, cached: Vec<AccountQuota>) -> Vec<AccountQuota
             Some(existing) if existing.queried_at > quota.queried_at => {}
             Some(existing)
                 if (existing.queried_at - quota.queried_at).abs() < f64::EPSILON
-                    && existing.origin == QuotaOrigin::Live =>
+                    && origin_rank(existing.origin) >= origin_rank(quota.origin) =>
             {
-                // Same instant, prefer the live reading already held.
+                // Same instant, prefer the stronger provenance already held.
             }
             _ => {
                 best.insert(quota.account_id.clone(), quota);
@@ -294,6 +314,33 @@ fn merge(live: Vec<AccountQuota>, cached: Vec<AccountQuota>) -> Vec<AccountQuota
         }
     }
     best.into_values().collect()
+}
+
+fn origin_rank(origin: QuotaOrigin) -> u8 {
+    match origin {
+        QuotaOrigin::Live => 2,
+        QuotaOrigin::DesktopCache => 1,
+        QuotaOrigin::SharedCache => 0,
+    }
+}
+
+fn is_auth_failure(quota: &AccountQuota) -> bool {
+    quota.error.as_ref().is_some_and(is_auth_error)
+}
+
+fn should_keep_failure(
+    covered: bool,
+    had_desktop_snapshot: bool,
+    failure: &AccountQuota,
+) -> bool {
+    !covered || (had_desktop_snapshot && is_auth_failure(failure))
+}
+
+fn is_auth_error(error: &crate::error::QuotaError) -> bool {
+    matches!(
+        error,
+        crate::error::QuotaError::NoCredential | crate::error::QuotaError::NeedsLogin
+    )
 }
 
 /// Core providers first, in the native app's display order, then the rest.
@@ -445,6 +492,33 @@ mod tests {
         assert_eq!(view.accounts.len(), 1);
         assert!(view.accounts[0].error.is_some());
         assert_eq!(view.last_updated, None);
+    }
+
+    #[test]
+    fn auth_failure_keeps_a_desktop_snapshot_visible_and_actionable() {
+        let cached = quota(
+            "oauth-codex",
+            ToolType::Codex,
+            NOW - 60.0,
+            QuotaOrigin::DesktopCache,
+        );
+        let failure = AccountQuota {
+            error: Some(crate::error::QuotaError::NeedsLogin),
+            ..quota_with("codex-unavailable", ToolType::Codex, NOW, &[])
+        };
+        assert!(should_keep_failure(true, true, &failure));
+        assert!(!should_keep_failure(true, false, &failure));
+
+        let view = QuotaEngine::view_at(vec![cached, failure], false, false, NOW);
+
+        assert_eq!(view.accounts.len(), 1);
+        assert_eq!(view.accounts[0].origin, QuotaOrigin::DesktopCache);
+        assert_eq!(view.accounts[0].buckets.len(), 1);
+        assert_eq!(
+            view.accounts[0].error,
+            Some(crate::error::QuotaError::NeedsLogin)
+        );
+        assert_eq!(view.last_updated, Some(NOW - 60.0));
     }
 
     #[test]

@@ -176,15 +176,34 @@ fn parse(body: &[u8], now: f64) -> Result<Snapshot, QuotaError> {
         .get("requestLimitInfo")
         .and_then(Value::as_object)
         .ok_or_else(|| QuotaError::ParseFailure("Warp missing requestLimitInfo".into()))?;
+    let is_unlimited = bool_value(limit.get("isUnlimited"));
+    let request_limit = match optional_int(limit.get("requestLimit")) {
+        Some(value) if value >= 0 => value,
+        None if is_unlimited => 0,
+        _ => {
+            return Err(QuotaError::ParseFailure(
+                "Warp missing or invalid requestLimit".into(),
+            ));
+        }
+    };
+    let requests_used = match optional_int(limit.get("requestsUsedSinceLastRefresh")) {
+        Some(value) if value >= 0 => value,
+        None if is_unlimited => 0,
+        _ => {
+            return Err(QuotaError::ParseFailure(
+                "Warp missing or invalid requestsUsedSinceLastRefresh".into(),
+            ));
+        }
+    };
     let bonus = bonus_summary(user, now);
     Ok(Snapshot {
-        request_limit: int_value(limit.get("requestLimit")),
-        requests_used: int_value(limit.get("requestsUsedSinceLastRefresh")),
+        request_limit,
+        requests_used,
         next_refresh_time: limit
             .get("nextRefreshTime")
             .and_then(Value::as_str)
             .and_then(parse_date),
-        is_unlimited: bool_value(limit.get("isUnlimited")),
+        is_unlimited,
         bonus_remaining: bonus.remaining,
         bonus_total: bonus.total,
         bonus_next_expiration: bonus.next_expiration,
@@ -330,6 +349,10 @@ fn grant(value: &Value) -> Option<BonusGrant> {
 }
 
 fn int_value(value: Option<&Value>) -> i64 {
+    optional_int(value).unwrap_or(0)
+}
+
+fn optional_int(value: Option<&Value>) -> Option<i64> {
     value
         .and_then(|value| {
             value
@@ -338,7 +361,6 @@ fn int_value(value: Option<&Value>) -> i64 {
                 .or_else(|| value.as_f64().map(|number| number as i64))
                 .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
         })
-        .unwrap_or(0)
 }
 
 fn bool_value(value: Option<&Value>) -> bool {
@@ -493,5 +515,53 @@ mod tests {
             parse(br#"{"data":{}}"#, 0.0),
             Err(QuotaError::ParseFailure(_))
         ));
+    }
+
+    #[test]
+    fn non_unlimited_response_requires_a_valid_request_limit() {
+        let missing = br#"{"data":{"user":{"__typename":"UserOutput","user":{"requestLimitInfo":{"isUnlimited":false,"requestsUsedSinceLastRefresh":0}}}}}"#;
+        assert!(matches!(
+            parse(missing, 0.0),
+            Err(QuotaError::ParseFailure(_))
+        ));
+
+        for request_limit in [Value::Null, Value::String("not-a-number".into())] {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "data": {"user": {
+                    "__typename": "UserOutput",
+                    "user": {"requestLimitInfo": {
+                        "isUnlimited": false,
+                        "requestLimit": request_limit,
+                        "requestsUsedSinceLastRefresh": 0
+                    }}
+                }}
+            }))
+            .unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
+    }
+
+    #[test]
+    fn non_unlimited_response_requires_a_valid_usage_count() {
+        let missing = br#"{"data":{"user":{"__typename":"UserOutput","user":{"requestLimitInfo":{"isUnlimited":false,"requestLimit":100}}}}}"#;
+        assert!(matches!(
+            parse(missing, 0.0),
+            Err(QuotaError::ParseFailure(_))
+        ));
+
+        for usage in [Value::Null, Value::String("not-a-number".into())] {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "data": {"user": {
+                    "__typename": "UserOutput",
+                    "user": {"requestLimitInfo": {
+                        "isUnlimited": false,
+                        "requestLimit": 100,
+                        "requestsUsedSinceLastRefresh": usage
+                    }}
+                }}
+            }))
+            .unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
     }
 }

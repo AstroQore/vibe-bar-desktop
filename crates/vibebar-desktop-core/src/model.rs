@@ -282,6 +282,8 @@ fn expanded_window_label(label: &str, bucket_id: &str) -> String {
 pub enum QuotaOrigin {
     /// Fetched by this client in this session.
     Live,
+    /// Restored from this client's private last-successful snapshot.
+    DesktopCache,
     /// Read from the shared cache under `~/.vibebar/quotas/`.
     SharedCache,
 }

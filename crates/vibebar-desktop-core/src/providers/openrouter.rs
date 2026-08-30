@@ -155,7 +155,7 @@ fn snapshot(credits: Credits, key_stats: Option<KeyStats>) -> Snapshot {
             "openrouter.credits",
             "Credits",
             "Credits",
-            0.0,
+            100.0,
             None,
             None,
             Some(format!("{} left", money(remaining))),
@@ -222,7 +222,7 @@ mod tests {
         );
         assert_eq!(result.buckets.len(), 1);
         assert_eq!(result.buckets[0].id, "openrouter.credits");
-        assert_eq!(result.buckets[0].used_percent, 0.0);
+        assert_eq!(result.buckets[0].used_percent, 100.0);
     }
 
     #[test]

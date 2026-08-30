@@ -73,12 +73,19 @@ function QuotaCard({
             shared data
           </span>
         ) : null}
+        {account.origin === "desktopCache" ? (
+          <span
+            className="pill"
+            title="Last successful quota fetched by Desktop — not a live refresh or native shared data."
+          >
+            desktop cache
+          </span>
+        ) : null}
         <span className="card-meta">{formatRelative(account.queriedAt)}</span>
       </div>
 
-      {account.error ? (
-        <p className="error-row">{describeError(account.error)}</p>
-      ) : account.buckets.length === 0 ? (
+      {account.error ? <p className="error-row">{describeError(account.error)}</p> : null}
+      {account.buckets.length === 0 && !account.error ? (
         <p className="error-row">No quota windows reported.</p>
       ) : (
         account.buckets.map((bucket) => {
