@@ -1,5 +1,5 @@
-import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
-import { formatRelative, hierarchyFor, severityFor } from "../api";
+import type { PresentationSettings, QuotaView } from "../api";
+import { hierarchyFor, severityFor } from "../api";
 import { orderedVisibleAccounts } from "./Overview";
 
 const CLOCK_SKEW_SECONDS = 300;
@@ -11,8 +11,6 @@ interface ResetEvent {
   product: string;
   bucket: string;
   plan?: string;
-  origin: AccountQuota["origin"];
-  queriedAt: number;
   resetAt: number;
   used: number;
   remaining: number;
@@ -58,8 +56,6 @@ export function collectResetEvents(
           ? `${bucket.groupTitle.trim()} · ${bucket.title}`
           : bucket.title,
         plan: settings?.providerPlanLabels[account.tool] ?? account.plan,
-        origin: account.origin,
-        queriedAt: account.queriedAt,
         resetAt: bucket.resetAt,
         used,
         remaining: 100 - used,
@@ -147,8 +143,6 @@ export function Resets({
                         <span className="card-title">{event.product}</span>
                         <span className="pill">{event.vendor}</span>
                         {event.plan ? <span className="pill">{event.plan}</span> : null}
-                        {event.origin === "sharedCache" ? <span className="pill">shared data</span> : null}
-                        <span className="card-meta">observed {formatRelative(event.queriedAt)}</span>
                       </div>
                       <div className="reset-card-line">
                         <div>
