@@ -52,15 +52,8 @@ async fn get_json(
         .send()
         .await
         .map_err(|error| super::classify_transport(&error))?;
-    match response.status().as_u16() {
-        200 => {}
-        401 | 403 => return Err(QuotaError::NeedsLogin),
-        429 => return Err(QuotaError::RateLimited),
-        status => {
-            return Err(QuotaError::Network(format!(
-                "OpenRouter returned HTTP {status}"
-            )))
-        }
+    if let Some(error) = super::classify_status(response.status()) {
+        return Err(error);
     }
     response
         .bytes()

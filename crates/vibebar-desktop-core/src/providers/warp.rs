@@ -77,11 +77,8 @@ pub async fn fetch(client: &reqwest::Client) -> Result<AccountQuota, QuotaError>
         .send()
         .await
         .map_err(|error| super::classify_transport(&error))?;
-    match response.status().as_u16() {
-        200 => {}
-        401 | 403 => return Err(QuotaError::NeedsLogin),
-        429 => return Err(QuotaError::RateLimited),
-        status => return Err(QuotaError::Network(format!("Warp returned HTTP {status}"))),
+    if let Some(error) = super::classify_status(response.status()) {
+        return Err(error);
     }
     let body = response
         .bytes()
@@ -239,7 +236,7 @@ fn buckets(snapshot: Snapshot) -> ParsedBuckets {
         ) {
             (Some(expiry), remaining) if remaining > 0 => format!(
                 "{} bonus left · expires {}",
-                snapshot.bonus_remaining,
+                remaining,
                 format_date(expiry)
             ),
             _ => format!("{} bonus credits left", snapshot.bonus_remaining),
@@ -419,6 +416,10 @@ mod tests {
         assert_eq!(
             parsed.buckets[1].reset_at,
             parse_date("2026-09-02T00:00:00Z")
+        );
+        assert_eq!(
+            parsed.buckets[1].group_title.as_deref(),
+            Some("5 bonus left · expires Sep 2")
         );
         assert!(parsed.plan.is_none());
     }

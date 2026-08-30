@@ -105,17 +105,15 @@ pub async fn fetch(client: &reqwest::Client) -> Result<AccountQuota, QuotaError>
                     continue;
                 }
             };
-            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                return Err(QuotaError::RateLimited);
-            }
-            if !response.status().is_success() {
-                last = Some(match response.status().as_u16() {
-                    401 | 403 => {
+            if let Some(error) = super::classify_status(response.status()) {
+                match error {
+                    QuotaError::RateLimited => return Err(QuotaError::RateLimited),
+                    QuotaError::NeedsLogin => {
                         saw_auth_error = true;
-                        QuotaError::NeedsLogin
+                        last = Some(QuotaError::NeedsLogin);
                     }
-                    status => QuotaError::Network(format!("MiniMax returned HTTP {status}")),
-                });
+                    other => last = Some(other),
+                }
                 continue;
             }
             let body = match response.bytes().await {
