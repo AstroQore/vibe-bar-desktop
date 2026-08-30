@@ -2,7 +2,9 @@
 
 The JSON and `.sha256` pairs in this directory are copied byte-for-byte from
 `AstroQore/vibe-bar/docs/contracts/`. That native directory is the **only
-source of truth**: never edit or regenerate these files from Rust.
+source of truth**: never edit or regenerate these files from Rust. The settings
+fixtures are synthetic and product-disabled, but are still authored on the
+native side so Swift and Rust consume the same exact vectors.
 
 `storage_contract` verifies each sidecar's exact SHA-256 before decoding the
 fixture, and CI runs those conformance tests. The native test suite performs

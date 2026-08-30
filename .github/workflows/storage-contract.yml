@@ -9,6 +9,7 @@ on:
       - "crates/vibebar-desktop-core/Cargo.toml"
       - "crates/vibebar-desktop-core/src/lib.rs"
       - "crates/vibebar-desktop-core/src/storage_contract/**"
+      - "crates/vibebar-desktop-core/src/shared/settings_document.rs"
       - "crates/vibebar-desktop-core/examples/shared_store_lease_probe.rs"
       - "docs/contracts/**"
       - ".github/workflows/storage-contract.yml"
@@ -19,6 +20,7 @@ on:
       - "crates/vibebar-desktop-core/Cargo.toml"
       - "crates/vibebar-desktop-core/src/lib.rs"
       - "crates/vibebar-desktop-core/src/storage_contract/**"
+      - "crates/vibebar-desktop-core/src/shared/settings_document.rs"
       - "crates/vibebar-desktop-core/examples/shared_store_lease_probe.rs"
       - "docs/contracts/**"
       - ".github/workflows/storage-contract.yml"
@@ -35,15 +37,31 @@ jobs:
       - name: Verify Rust contract and build the synthetic probe
         run: |
           cargo test -p vibebar-desktop-core --features contract-probe --locked storage_contract
+          cargo test -p vibebar-desktop-core --locked shared::settings_document
           cargo test -p vibebar-desktop-core --example shared_store_lease_probe --features contract-probe --locked
           cargo build -p vibebar-desktop-core --example shared_store_lease_probe --features contract-probe --locked
       - name: Check out the matching native contract implementation
         uses: actions/checkout@v4
         with:
           repository: AstroQore/vibe-bar
-          ref: 5271051feb67a46421fa2c5a1a5c2a1c83196bdc
+          ref: f10efd4225cf71860f07745036b36e628be4a139
           path: native-vibe-bar
+      - name: Verify settings fixtures are byte-identical
+        run: |
+          for name in \
+            settings-document-v0-legacy.json \
+            settings-document-v0-legacy.json.sha256 \
+            settings-document-v1-unknown.json \
+            settings-document-v1-unknown.json.sha256 \
+            settings-document-vectors.json \
+            settings-document-vectors.json.sha256 \
+            settings-document-v1.md
+          do
+            cmp "docs/contracts/${name}" "native-vibe-bar/docs/contracts/${name}"
+          done
       - name: Exercise Swift and Rust against the same locks and fixtures
         env:
           VIBEBAR_RUST_LEASE_PROBE: ${{ github.workspace }}/target/debug/examples/shared_store_lease_probe
-        run: swift test --package-path native-vibe-bar --filter RustProbeInteroperability
+        run: |
+          swift test --package-path native-vibe-bar --filter RustProbeInteroperability
+          swift test --package-path native-vibe-bar --filter SettingsDocumentTests
