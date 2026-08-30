@@ -42,6 +42,7 @@ one sitting.
 | Finding credentials the CLIs wrote | `credentials/` |
 | One provider's endpoint and wire shape | `providers/<name>.rs` |
 | Merging live and cached into what the UI shows | `refresh.rs` |
+| Read-only presentation preferences | `shared/settings.rs` → `presentation_settings` IPC |
 | Indexed vs scanned sessions | `sessions.rs` |
 
 ## Data flow for a refresh

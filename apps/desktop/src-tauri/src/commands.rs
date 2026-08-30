@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::State;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::SessionListing;
+use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
 
 use crate::native_app::{self, NativeAppPresence};
 use crate::state::AppState;
@@ -22,6 +23,14 @@ pub struct AppInfo {
 #[tauri::command]
 pub fn quota_view(state: State<'_, AppState>) -> QuotaView {
     state.engine().cached_view()
+}
+
+/// The current presentation projection from the shared settings file. This is
+/// deliberately a fresh read on every IPC call: Desktop neither caches nor
+/// writes the shared settings document.
+#[tauri::command]
+pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings {
+    SharedSettings::load(state.data_root()).presentation()
 }
 
 /// Fetch live quota for every provider with an adapter, then return the

@@ -23,6 +23,9 @@ window, on macOS, Windows, and Linux.
 - **Sessions.** Search and read local agent sessions. Uses the shared session
   index when one exists (every harness it covers, full-text search), and falls
   back to scanning Codex and Claude Code logs directly when it does not.
+- **Presentation settings.** Applies the shared used/remaining mode, provider
+  visibility/order, plan labels, and menu-bar field labels. A read-only
+  Settings page shows the effective values; Desktop does not save them yet.
 
 ## One product, two clients
 

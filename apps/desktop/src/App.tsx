@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { AppInfo, QuotaView } from "./api";
+import type { AppInfo, PresentationSettings, QuotaView } from "./api";
 import { api, formatRelative } from "./api";
 import { About } from "./components/About";
 import { Overview } from "./components/Overview";
 import { Sessions } from "./components/Sessions";
+import { Settings } from "./components/Settings";
 
-type Tab = "overview" | "sessions" | "about";
+type Tab = "overview" | "sessions" | "settings" | "about";
 
 export function App() {
   const [tab, setTab] = useState<Tab>("overview");
   const [view, setView] = useState<QuotaView | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
+  const [presentation, setPresentation] = useState<PresentationSettings | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -19,6 +21,7 @@ export function App() {
     // arrive from the background refresh loop.
     api.quotaView().then(setView).catch(() => undefined);
     api.appInfo().then(setInfo).catch(() => undefined);
+    api.presentationSettings().then(setPresentation).catch(() => undefined);
     const unlisten = api.onQuotaUpdated(setView);
     return () => {
       unlisten.then((off) => off()).catch(() => undefined);
@@ -27,9 +30,11 @@ export function App() {
 
   const refresh = useCallback(() => {
     setRefreshing(true);
-    api
-      .refreshQuota()
-      .then(setView)
+    Promise.all([api.refreshQuota(), api.presentationSettings()])
+      .then(([quota, settings]) => {
+        setView(quota);
+        setPresentation(settings);
+      })
       .catch(() => undefined)
       .finally(() => setRefreshing(false));
   }, []);
@@ -41,7 +46,7 @@ export function App() {
 
       <header className="header">
         <nav className="tabs" role="tablist">
-          {(["overview", "sessions", "about"] as const).map((id) => (
+          {(["overview", "sessions", "settings", "about"] as const).map((id) => (
             <button
               key={id}
               className="tab"
@@ -49,7 +54,13 @@ export function App() {
               aria-selected={tab === id}
               onClick={() => setTab(id)}
             >
-              {id === "overview" ? "Quota" : id === "sessions" ? "Sessions" : "About"}
+              {id === "overview"
+                ? "Quota"
+                : id === "sessions"
+                  ? "Sessions"
+                  : id === "settings"
+                    ? "Settings"
+                    : "About"}
             </button>
           ))}
         </nav>
@@ -69,12 +80,14 @@ export function App() {
       <main className="content">
         {tab === "overview" ? (
           view ? (
-            <Overview view={view} />
+            <Overview view={view} settings={presentation} />
           ) : (
             <p className="empty">Loading quota…</p>
           )
         ) : tab === "sessions" ? (
           <Sessions />
+        ) : tab === "settings" ? (
+          <Settings settings={presentation} />
         ) : (
           <About info={info} view={view} />
         )}

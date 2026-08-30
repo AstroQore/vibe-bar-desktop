@@ -88,12 +88,26 @@ export interface AppInfo {
   nativeApp: NativeAppPresence;
 }
 
+/** Read-only presentation preferences from the shared native settings file. */
+export interface PresentationSettings {
+  displayMode: string;
+  refreshIntervalSeconds: number;
+  menuBarColorBasis: string;
+  selectedFieldIds: string[];
+  customLabels: Record<string, string>;
+  visibleCoreProviders?: string[];
+  coreProviderOrder: string[];
+  visibleMiscProviders?: string[];
+  providerPlanLabels: Record<string, string>;
+}
+
 export const QUOTA_EVENT = "vibebar://quota-updated";
 
 export const api = {
   quotaView: () => invoke<QuotaView>("quota_view"),
   refreshQuota: () => invoke<QuotaView>("refresh_quota"),
   appInfo: () => invoke<AppInfo>("app_info"),
+  presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),

@@ -230,6 +230,39 @@ input[type="text"] {
   font-size: 12px;
 }
 
+.settings-readonly > .banner {
+  margin-top: 0;
+}
+.settings-group {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0 0 14px;
+  margin: 0 0 16px;
+}
+.settings-group h2 {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 8px;
+}
+.setting-row,
+.settings-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+}
+.setting-row > :last-child,
+.settings-list code {
+  color: var(--text-dim);
+  text-align: right;
+}
+.settings-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
 .empty {
   color: var(--text-faint);
   text-align: center;

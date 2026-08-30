@@ -31,6 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::quota_view,
+            commands::presentation_settings,
             commands::refresh_quota,
             commands::session_list,
             commands::session_search,

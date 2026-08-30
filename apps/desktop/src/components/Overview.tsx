@@ -1,4 +1,4 @@
-import type { AccountQuota, QuotaView } from "../api";
+import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
 import {
   describeError,
   formatCountdown,
@@ -9,8 +9,15 @@ import {
 
 /** Quota grouped the way Vibe Bar names things: L1 company → L2 SubProvider
  *  → L3 buckets. Never mix this with the harness (usage) axis. */
-export function Overview({ view }: { view: QuotaView }) {
-  if (view.accounts.length === 0) {
+export function Overview({
+  view,
+  settings,
+}: {
+  view: QuotaView;
+  settings: PresentationSettings | null;
+}) {
+  const accounts = orderedVisibleAccounts(view.accounts, settings);
+  if (accounts.length === 0) {
     return (
       <p className="empty">
         No quota yet. Sign in with the Codex or Claude CLI, or launch the macOS
@@ -20,7 +27,7 @@ export function Overview({ view }: { view: QuotaView }) {
   }
 
   const vendors = new Map<string, AccountQuota[]>();
-  for (const account of view.accounts) {
+  for (const account of accounts) {
     const vendor = hierarchyFor(account.tool).vendor;
     const list = vendors.get(vendor) ?? [];
     list.push(account);
@@ -33,7 +40,7 @@ export function Overview({ view }: { view: QuotaView }) {
         <section className="vendor-group" key={vendor}>
           <h2 className="vendor-name">{vendor}</h2>
           {accounts.map((account) => (
-            <QuotaCard key={account.accountId} account={account} />
+            <QuotaCard key={account.accountId} account={account} settings={settings} />
           ))}
         </section>
       ))}
@@ -41,14 +48,22 @@ export function Overview({ view }: { view: QuotaView }) {
   );
 }
 
-function QuotaCard({ account }: { account: AccountQuota }) {
+function QuotaCard({
+  account,
+  settings,
+}: {
+  account: AccountQuota;
+  settings: PresentationSettings | null;
+}) {
   const { product } = hierarchyFor(account.tool);
+  const plan = settings?.providerPlanLabels[account.tool] ?? account.plan;
+  const showsUsed = settings?.displayMode === "used";
 
   return (
     <article className="card">
       <div className="card-head">
         <span className="card-title">{product}</span>
-        {account.plan ? <span className="pill">{account.plan}</span> : null}
+        {plan ? <span className="pill">{plan}</span> : null}
         {account.origin === "sharedCache" ? (
           <span
             className="pill"
@@ -67,6 +82,7 @@ function QuotaCard({ account }: { account: AccountQuota }) {
       ) : (
         account.buckets.map((bucket) => {
           const remaining = Math.max(0, 100 - bucket.usedPercent);
+          const shown = showsUsed ? bucket.usedPercent : remaining;
           const severity = severityFor(remaining);
           const countdown = formatCountdown(bucket.resetAt);
           return (
@@ -81,20 +97,20 @@ function QuotaCard({ account }: { account: AccountQuota }) {
                   <span className="bucket-reset">{countdown}</span>
                 ) : null}
                 <span className="bucket-percent">
-                  {Math.round(remaining)}% left
+                  {Math.round(shown)}% {showsUsed ? "used" : "left"}
                 </span>
               </div>
               <div
                 className="track"
                 role="progressbar"
-                aria-valuenow={Math.round(remaining)}
+                aria-valuenow={Math.round(shown)}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label={`${product} ${bucket.title} remaining`}
+                aria-label={`${product} ${bucket.title} ${showsUsed ? "used" : "remaining"}`}
               >
                 <div
                   className={`fill ${severity}`}
-                  style={{ width: `${remaining}%` }}
+                  style={{ width: `${shown}%` }}
                 />
               </div>
             </div>
@@ -103,4 +119,50 @@ function QuotaCard({ account }: { account: AccountQuota }) {
       )}
     </article>
   );
+}
+
+function orderedVisibleAccounts(
+  accounts: AccountQuota[],
+  settings: PresentationSettings | null,
+): AccountQuota[] {
+  const visibleCore = settings?.visibleCoreProviders;
+  const visibleMisc = settings?.visibleMiscProviders;
+  const coreOrder = settings?.coreProviderOrder ?? [];
+  return accounts
+    .filter((account) => {
+      const representative = coreRepresentative(account.tool);
+      if (representative) {
+        return !visibleCore || visibleCore.includes(representative);
+      }
+      return !visibleMisc || visibleMisc.includes(account.tool);
+    })
+    .sort((left, right) => {
+      const leftRank = coreRank(left.tool, coreOrder);
+      const rightRank = coreRank(right.tool, coreOrder);
+      return (
+        leftRank - rightRank ||
+        familyMemberRank(left.tool) - familyMemberRank(right.tool) ||
+        left.tool.localeCompare(right.tool)
+      );
+    });
+}
+
+function familyMemberRank(tool: string): number {
+  if (tool === "gemini" || tool === "grok") return 0;
+  if (tool === "antigravity" || tool === "cursor") return 1;
+  return 0;
+}
+
+function coreRepresentative(tool: string): string | undefined {
+  if (tool === "codex" || tool === "claude" || tool === "gemini" || tool === "grok") return tool;
+  if (tool === "antigravity") return "gemini";
+  if (tool === "cursor") return "grok";
+  return undefined;
+}
+
+function coreRank(tool: string, order: string[]): number {
+  const representative = coreRepresentative(tool);
+  if (!representative) return 10_000;
+  const index = order.indexOf(representative);
+  return index === -1 ? 1_000 : index;
 }
