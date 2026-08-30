@@ -186,10 +186,19 @@ fn parse(body: &[u8], now: f64) -> Result<Snapshot, QuotaError> {
             ));
         }
     };
+    let requests_used = match optional_int(limit.get("requestsUsedSinceLastRefresh")) {
+        Some(value) if value >= 0 => value,
+        None if is_unlimited => 0,
+        _ => {
+            return Err(QuotaError::ParseFailure(
+                "Warp missing or invalid requestsUsedSinceLastRefresh".into(),
+            ));
+        }
+    };
     let bonus = bonus_summary(user, now);
     Ok(Snapshot {
         request_limit,
-        requests_used: int_value(limit.get("requestsUsedSinceLastRefresh")),
+        requests_used,
         next_refresh_time: limit
             .get("nextRefreshTime")
             .and_then(Value::as_str)
@@ -524,6 +533,30 @@ mod tests {
                         "isUnlimited": false,
                         "requestLimit": request_limit,
                         "requestsUsedSinceLastRefresh": 0
+                    }}
+                }}
+            }))
+            .unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
+    }
+
+    #[test]
+    fn non_unlimited_response_requires_a_valid_usage_count() {
+        let missing = br#"{"data":{"user":{"__typename":"UserOutput","user":{"requestLimitInfo":{"isUnlimited":false,"requestLimit":100}}}}}"#;
+        assert!(matches!(
+            parse(missing, 0.0),
+            Err(QuotaError::ParseFailure(_))
+        ));
+
+        for usage in [Value::Null, Value::String("not-a-number".into())] {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "data": {"user": {
+                    "__typename": "UserOutput",
+                    "user": {"requestLimitInfo": {
+                        "isUnlimited": false,
+                        "requestLimit": 100,
+                        "requestsUsedSinceLastRefresh": usage
                     }}
                 }}
             }))
