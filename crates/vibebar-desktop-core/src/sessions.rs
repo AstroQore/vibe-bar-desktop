@@ -272,12 +272,34 @@ impl SessionsService {
         };
         let now = Instant::now();
         references.retain(|_, resolved| resolved.expires_at > now);
-        trim_oldest_references(&mut references, rows.len());
         for row in rows {
             let Some(provider) = SessionProvider::from_raw(&row.provider) else {
                 row.session_ref.clear();
                 continue;
             };
+            let source_path = PathBuf::from(&row.source_path);
+            // Reuse one unexpired capability per resolved session. Repeated
+            // listings therefore do not grow the cache, and a stale request
+            // cannot evict the capability held by the currently visible row.
+            let existing = references.iter().find_map(|(session_ref, resolved)| {
+                (resolved.provider == provider && resolved.source_path == source_path)
+                    .then(|| session_ref.clone())
+            });
+            if let Some(session_ref) = existing {
+                if let Some(resolved) = references.get_mut(&session_ref) {
+                    resolved.expires_at = now + SESSION_REFERENCE_TTL;
+                }
+                row.session_ref = session_ref;
+                continue;
+            }
+            // Never evict an unexpired capability to make space for a newer
+            // listing: the backend cannot know whether that listing was later
+            // discarded by the frontend's cancellation guard. Fail closed for
+            // new rows until an old reference expires instead.
+            if references.len() >= MAX_SESSION_REFERENCES {
+                row.session_ref.clear();
+                continue;
+            }
             let Some(session_ref) = opaque_reference(&references) else {
                 row.session_ref.clear();
                 continue;
@@ -286,7 +308,7 @@ impl SessionsService {
                 session_ref.clone(),
                 ResolvedSession {
                     provider,
-                    source_path: PathBuf::from(&row.source_path),
+                    source_path,
                     expires_at: now + SESSION_REFERENCE_TTL,
                 },
             );
@@ -457,24 +479,6 @@ fn opaque_reference(references: &HashMap<String, ResolvedSession>) -> Option<Str
         }
     }
     None
-}
-
-fn trim_oldest_references(references: &mut HashMap<String, ResolvedSession>, incoming: usize) {
-    let overflow = references
-        .len()
-        .saturating_add(incoming)
-        .saturating_sub(MAX_SESSION_REFERENCES);
-    if overflow == 0 {
-        return;
-    }
-    let mut oldest: Vec<_> = references
-        .iter()
-        .map(|(key, resolved)| (key.clone(), resolved.expires_at))
-        .collect();
-    oldest.sort_by_key(|(_, expires_at)| *expires_at);
-    for (key, _) in oldest.into_iter().take(overflow) {
-        references.remove(&key);
-    }
 }
 
 #[cfg(test)]
@@ -653,10 +657,11 @@ mod tests {
             Err(CoreError::SessionReferenceInvalid)
         ));
 
-        // A newer listing gets a distinct token but does not revoke an
-        // unexpired token from an overlapping, slower request.
+        // A newer listing reuses the unexpired capability for the same
+        // resolved session, so repeated or overlapping requests do not grow
+        // the bounded cache.
         let refreshed_ref = service.list(20).rows[0].session_ref.clone();
-        assert_ne!(refreshed_ref, session_ref);
+        assert_eq!(refreshed_ref, session_ref);
         assert_eq!(
             service.transcript(&session_ref, 0, 1).unwrap().messages[0].text,
             "first message"
@@ -664,12 +669,12 @@ mod tests {
     }
 
     #[test]
-    fn session_reference_cache_is_bounded() {
+    fn session_reference_cache_is_bounded_without_evicting_visible_rows() {
         let dir = tempfile::tempdir().unwrap();
         let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
         let expires_at = Instant::now() + SESSION_REFERENCE_TTL;
         let mut references = service.references.lock().unwrap();
-        for index in 0..(MAX_SESSION_REFERENCES + 32) {
+        for index in 0..MAX_SESSION_REFERENCES {
             references.insert(
                 format!("reference-{index}"),
                 ResolvedSession {
@@ -679,8 +684,40 @@ mod tests {
                 },
             );
         }
-        trim_oldest_references(&mut references, 0);
+        drop(references);
+
+        let mut incoming = vec![SessionRow {
+            row_id: None,
+            provider: SessionProvider::Codex.raw_value().to_string(),
+            harness: "Codex".to_string(),
+            session_id: "new-session".to_string(),
+            title: None,
+            project_dir: None,
+            last_active_at: None,
+            session_ref: String::new(),
+            source_path: "/synthetic/new".to_string(),
+            message_count: None,
+            resume_command: None,
+            excerpt: None,
+        }];
+        service.authorize_rows(&mut incoming);
+        let references = service.references.lock().unwrap();
         assert_eq!(references.len(), MAX_SESSION_REFERENCES);
+        assert!(references.contains_key("reference-0"));
+        assert!(incoming[0].session_ref.is_empty());
+    }
+
+    #[test]
+    fn repeated_listing_reuses_the_same_session_reference() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        write_codex_session(home);
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+
+        let first = service.list(20).rows[0].session_ref.clone();
+        let second = service.list(20).rows[0].session_ref.clone();
+        assert_eq!(second, first);
+        assert_eq!(service.references.lock().unwrap().len(), 1);
     }
 
     #[test]

@@ -67,10 +67,16 @@ export function Sessions() {
           {query ? "No sessions match that search." : "No sessions found yet."}
         </p>
       ) : (
-        listing?.rows.map((row) => (
+        listing?.rows.map((row, index) => (
           <button
             className="session-row"
-            key={row.sessionRef}
+            key={`${row.provider}:${row.rowId ?? row.sessionId}:${index}`}
+            disabled={!row.sessionRef}
+            title={
+              row.sessionRef
+                ? undefined
+                : "Transcript temporarily unavailable; reload after older references expire."
+            }
             onClick={() => setSelected(row)}
           >
             <span className="session-title">
@@ -162,22 +168,24 @@ function Transcript({
         <p className="empty">Could not read this transcript: {error}</p>
       ) : !page ? (
         <p className="empty">Loading transcript…</p>
-      ) : page.messages.length === 0 ? (
-        <p className="empty">
-          No readable messages. {session.harness} may store this conversation in
-          a format this build cannot render yet.
-        </p>
       ) : (
         <>
-          {page.messages.map((message, index) => (
-            <div
-              className={`transcript-message ${message.role}`}
-              key={`${offset}-${index}`}
-            >
-              <div className="transcript-role">{message.role}</div>
-              <div className="transcript-text">{message.text}</div>
-            </div>
-          ))}
+          {page.messages.length === 0 ? (
+            <p className="empty">
+              No readable messages. {session.harness} may store this conversation in
+              a format this build cannot render yet.
+            </p>
+          ) : (
+            page.messages.map((message, index) => (
+              <div
+                className={`transcript-message ${message.role}`}
+                key={`${offset}-${index}`}
+              >
+                <div className="transcript-role">{message.role}</div>
+                <div className="transcript-text">{message.text}</div>
+              </div>
+            ))
+          )}
           <div className="toolbar" style={{ marginTop: 12 }}>
             <button
               disabled={offset === 0}
