@@ -123,8 +123,10 @@ fn parse_key_stats(body: &[u8]) -> Result<KeyStats, QuotaError> {
 fn snapshot(credits: Credits, key_stats: Option<KeyStats>) -> Snapshot {
     let mut buckets = Vec::new();
     if let Some(stats) = &key_stats {
-        if let Some(limit) = stats.limit.filter(|limit| *limit > 0.0) {
-            let usage = stats.usage.unwrap_or(0.0).max(0.0);
+        if let (Some(limit), Some(usage)) = (
+            stats.limit.filter(|limit| *limit > 0.0),
+            stats.usage.filter(|usage| *usage >= 0.0),
+        ) {
             buckets.push(QuotaBucket::new(
                 "openrouter.key",
                 "Key Limit",
@@ -223,6 +225,24 @@ mod tests {
         assert_eq!(result.buckets.len(), 1);
         assert_eq!(result.buckets[0].id, "openrouter.credits");
         assert_eq!(result.buckets[0].used_percent, 100.0);
+    }
+
+    #[test]
+    fn key_limit_without_usage_does_not_claim_full_availability() {
+        let result = snapshot(
+            Credits {
+                total_credits: 20.0,
+                total_usage: 7.5,
+            },
+            Some(KeyStats {
+                label: Some("Production".into()),
+                limit: Some(10.0),
+                usage: None,
+            }),
+        );
+        assert_eq!(result.buckets.len(), 1);
+        assert_eq!(result.buckets[0].id, "openrouter.credits");
+        assert_eq!(result.buckets[0].used_percent, 37.5);
     }
 
     #[test]

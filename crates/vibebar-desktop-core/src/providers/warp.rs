@@ -225,7 +225,7 @@ fn buckets(snapshot: Snapshot) -> ParsedBuckets {
         )
     } else {
         (
-            0.0,
+            100.0,
             "No active plan".to_string(),
             snapshot.next_refresh_time,
         )
@@ -457,6 +457,24 @@ mod tests {
         assert_eq!(parsed.buckets[0].used_percent, 0.0);
         assert_eq!(parsed.buckets[0].reset_at, None);
         assert_eq!(parsed.plan.as_deref(), Some("Unlimited"));
+    }
+
+    #[test]
+    fn explicit_zero_limit_is_exhausted_not_fully_available() {
+        let mut body = payload(false);
+        let mut root: Value = serde_json::from_slice(&body).unwrap();
+        root["data"]["user"]["user"]["requestLimitInfo"]["requestLimit"] = Value::from(0);
+        root["data"]["user"]["user"]["requestLimitInfo"]["requestsUsedSinceLastRefresh"] =
+            Value::from(0);
+        body = serde_json::to_vec(&root).unwrap();
+
+        let parsed = buckets(parse(&body, 0.0).unwrap());
+
+        assert_eq!(parsed.buckets[0].used_percent, 100.0);
+        assert_eq!(
+            parsed.buckets[0].group_title.as_deref(),
+            Some("No active plan")
+        );
     }
 
     #[test]
