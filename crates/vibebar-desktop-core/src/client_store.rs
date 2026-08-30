@@ -27,7 +27,7 @@ use crate::model::{AccountQuota, QuotaOrigin};
 use crate::paths::DataRoot;
 
 const MAX_COST_SNAPSHOT_BYTES: u64 = 4 * 1024 * 1024;
-const COST_SNAPSHOT_SCHEMA: u8 = 4;
+const COST_SNAPSHOT_SCHEMA: u8 = 5;
 
 #[derive(Clone)]
 pub struct ClientStore {
@@ -39,7 +39,6 @@ pub struct ClientStore {
 struct CostSnapshotFile {
     schema: u8,
     generated_at: f64,
-    generated_utc_offset_seconds: i32,
     generated_time_zone: String,
     view: crate::cost::CostView,
 }
@@ -113,7 +112,6 @@ impl ClientStore {
         let current_time_zone = current_time_zone()?;
         if snapshot.schema != COST_SNAPSHOT_SCHEMA
             || !snapshot.generated_at.is_finite()
-            || snapshot.generated_utc_offset_seconds != current_utc_offset_seconds()
             || snapshot.generated_time_zone != current_time_zone
             || !valid_cost_view(&snapshot.view, snapshot.generated_at)
         {
@@ -131,7 +129,6 @@ impl ClientStore {
         let snapshot = CostSnapshotFile {
             schema: COST_SNAPSHOT_SCHEMA,
             generated_at: view.scanned_at,
-            generated_utc_offset_seconds: current_utc_offset_seconds(),
             generated_time_zone: current_time_zone().ok_or_else(|| {
                 CoreError::InvalidClientSnapshot("local time zone identity is unavailable".into())
             })?,
@@ -221,10 +218,6 @@ impl ClientStore {
         sync_directory(&directory)?;
         Ok(())
     }
-}
-
-fn current_utc_offset_seconds() -> i32 {
-    chrono::Local::now().offset().local_minus_utc()
 }
 
 fn current_time_zone() -> Option<String> {
@@ -613,7 +606,19 @@ mod tests {
             serde_json::to_vec(&CostSnapshotFile {
                 schema: COST_SNAPSHOT_SCHEMA,
                 generated_at: view.scanned_at,
-                generated_utc_offset_seconds: current_utc_offset_seconds(),
+                generated_time_zone: time_zone.clone(),
+                view: view.clone(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(store.load_cost_snapshot(), Some(view.clone()));
+
+        std::fs::write(
+            root.client_cost_snapshot_file(),
+            serde_json::to_vec(&CostSnapshotFile {
+                schema: COST_SNAPSHOT_SCHEMA,
+                generated_at: view.scanned_at,
                 generated_time_zone: format!("{time_zone}-changed"),
                 view: view.clone(),
             })
@@ -627,7 +632,6 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "schema": COST_SNAPSHOT_SCHEMA - 1,
                 "generatedAt": view.scanned_at,
-                "generatedUtcOffsetSeconds": current_utc_offset_seconds(),
                 "generatedTimeZone": time_zone,
                 "view": view,
             }))
@@ -672,7 +676,6 @@ mod tests {
             serde_json::to_vec(&CostSnapshotFile {
                 schema: COST_SNAPSHOT_SCHEMA,
                 generated_at: stale.scanned_at,
-                generated_utc_offset_seconds: current_utc_offset_seconds(),
                 generated_time_zone: current_time_zone().unwrap(),
                 view: stale,
             })
@@ -688,7 +691,6 @@ mod tests {
             serde_json::to_vec(&CostSnapshotFile {
                 schema: COST_SNAPSHOT_SCHEMA,
                 generated_at: prior_day.scanned_at,
-                generated_utc_offset_seconds: current_utc_offset_seconds(),
                 generated_time_zone: current_time_zone().unwrap(),
                 view: prior_day,
             })
@@ -750,7 +752,6 @@ mod tests {
             serde_json::to_vec(&CostSnapshotFile {
                 schema: COST_SNAPSHOT_SCHEMA,
                 generated_at: view.scanned_at,
-                generated_utc_offset_seconds: current_utc_offset_seconds(),
                 generated_time_zone: current_time_zone().unwrap(),
                 view,
             })
