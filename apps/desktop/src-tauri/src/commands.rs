@@ -4,7 +4,7 @@ use serde::Serialize;
 use tauri::State;
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::refresh::QuotaView;
-use vibebar_desktop_core::sessions::SessionListing;
+use vibebar_desktop_core::sessions::{SessionListing, TranscriptCursor};
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
 use vibebar_desktop_core::status::ServiceStatusView;
 
@@ -92,13 +92,15 @@ pub fn session_transcript(
     session_ref: String,
     offset: Option<usize>,
     limit: Option<usize>,
+    cursor: Option<TranscriptCursor>,
 ) -> Result<serde_json::Value, String> {
     let page = state
         .sessions()
-        .transcript(
+        .transcript_with_cursor(
             &session_ref,
             offset.unwrap_or(0),
             limit.unwrap_or(50).clamp(1, 200),
+            cursor,
         )
         .map_err(|e| e.to_string())?;
     serde_json::to_value(page).map_err(|e| e.to_string())

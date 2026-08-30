@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use agent_session_core::discovery::{self, DiscoveredSession};
 use agent_session_core::index::{SessionIndexReader, SessionListFilter};
+pub use agent_session_core::transcript::TranscriptCursor;
 use agent_session_core::{resume, SessionProvider};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -251,6 +252,16 @@ impl SessionsService {
         offset: usize,
         limit: usize,
     ) -> Result<agent_session_core::transcript::TranscriptPage, CoreError> {
+        self.transcript_with_cursor(session_ref, offset, limit, None)
+    }
+
+    pub fn transcript_with_cursor(
+        &self,
+        session_ref: &str,
+        offset: usize,
+        limit: usize,
+        cursor: Option<TranscriptCursor>,
+    ) -> Result<agent_session_core::transcript::TranscriptPage, CoreError> {
         let resolved = self
             .references
             .lock()
@@ -265,8 +276,14 @@ impl SessionsService {
         // Do not pass through filesystem errors: those can contain local
         // path details and are irrelevant to a UI that can simply reload its
         // session listing.
-        agent_session_core::transcript::read_page_from_file(resolved.provider, file, offset, limit)
-            .map_err(|_| CoreError::TranscriptUnavailable)
+        agent_session_core::transcript::read_page_from_file_with_cursor(
+            resolved.provider,
+            file,
+            offset,
+            limit,
+            cursor,
+        )
+        .map_err(|_| CoreError::TranscriptUnavailable)
     }
 
     fn open_index(&self) -> IndexState {
@@ -558,10 +575,16 @@ fn scanned_row(session: DiscoveredSession) -> SessionRow {
     let resume_command = resume::command(session.provider, &session.session_id, None)
         .ok()
         .map(|command| resume_line(session.project_dir.as_deref(), &command));
+    let harness = session
+        .harness
+        .as_deref()
+        .and_then(harness_display_name)
+        .unwrap_or_else(|| session.provider.default_harness())
+        .to_string();
     SessionRow {
         row_id: None,
         provider: session.provider.raw_value().to_string(),
-        harness: session.provider.default_harness().to_string(),
+        harness,
         session_id: session.session_id,
         title: session.title,
         project_dir: session.project_dir,
@@ -619,16 +642,29 @@ mod tests {
     }
 
     fn write_codex_session_named(home: &Path, id: &str, first_message: &str) -> PathBuf {
+        write_codex_session_with_originator(home, id, first_message, None)
+    }
+
+    fn write_codex_session_with_originator(
+        home: &Path,
+        id: &str,
+        first_message: &str,
+        originator: Option<&str>,
+    ) -> PathBuf {
         use std::io::Write;
 
         let sessions = home.join(".codex/sessions/2026/08/30");
         std::fs::create_dir_all(&sessions).unwrap();
         let path = sessions.join(format!("rollout-2026-08-30T04-55-08-{id}.jsonl"));
         let mut file = std::fs::File::create(&path).unwrap();
+        let mut payload = serde_json::json!({"id": id, "cwd": "/Users/example/proj"});
+        if let Some(originator) = originator {
+            payload["originator"] = serde_json::Value::String(originator.to_string());
+        }
         writeln!(
             file,
             "{}",
-            serde_json::json!({"type": "session_meta", "payload": {"id": id, "cwd": "/Users/example/proj"}})
+            serde_json::json!({"type": "session_meta", "payload": payload})
         )
         .unwrap();
         writeln!(
@@ -705,6 +741,28 @@ mod tests {
         // Title/id search works without a body index.
         assert_eq!(service.search("0199aaaa", 20).rows.len(), 1);
         assert_eq!(service.search("nothing-matches-this", 20).rows.len(), 0);
+    }
+
+    #[test]
+    fn scanned_codex_originator_distinguishes_chatgpt_work_harness() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        write_codex_session_with_originator(
+            home,
+            "0199aaaa-1111-2222-3333-444455556666",
+            "work prompt",
+            Some("codex_work_desktop"),
+        );
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+        let work = ["chatgptWork".to_string()];
+        let listing = service.list_filtered(None, Some(&work), None, 0, 10);
+        assert_eq!(listing.rows.len(), 1);
+        assert_eq!(listing.rows[0].harness, "ChatGPT Work");
+        let codex = ["codex".to_string()];
+        assert!(service
+            .list_filtered(None, Some(&codex), None, 0, 10)
+            .rows
+            .is_empty());
     }
 
     #[test]
