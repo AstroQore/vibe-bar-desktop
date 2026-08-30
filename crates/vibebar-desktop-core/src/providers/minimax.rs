@@ -210,8 +210,9 @@ fn model_buckets(rows: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> {
     let mut added_weekly = false;
     for (index, row) in rows.iter().enumerate() {
         let total = int(row.get("current_interval_total_count")).unwrap_or(0);
+        let used = int(row.get("current_interval_usage_count")).filter(|used| *used >= 0);
         let remaining = number(row.get("current_interval_remaining_percent"));
-        if total <= 0 && remaining.is_none() {
+        if remaining.is_none() && (total <= 0 || used.is_none()) {
             continue;
         }
         buckets.push(model_bucket(row, index, now));
@@ -265,13 +266,14 @@ fn weekly_bucket(row: &Value, now: f64) -> Option<QuotaBucket> {
     let total = int(row.get("current_weekly_total_count"))
         .unwrap_or(0)
         .max(0);
+    let used = int(row.get("current_weekly_usage_count")).filter(|used| *used >= 0);
     let remaining = number(row.get("current_weekly_remaining_percent"));
-    if total <= 0 && remaining.is_none() {
+    if remaining.is_none() && (total <= 0 || used.is_none()) {
         return None;
     }
     let (used_percent, group) = usage(
         total,
-        int(row.get("current_weekly_usage_count")),
+        used,
         remaining,
         "weekly",
     );
@@ -605,7 +607,7 @@ mod tests {
     }
     #[test]
     fn zero_limit_service_placeholders_do_not_hide_model_rows() {
-        let body = br#"{"data":{"services":[{"service_type":"coding","limit":0},{"service_type":"coding","limit":100}],"model_remains":[{"model_name":"MiniMax-M2","current_interval_total_count":100,"current_interval_usage_count":25}]}}"#;
+        let body = br#"{"data":{"services":[{"service_type":"coding","limit":0},{"service_type":"coding","limit":100}],"model_remains":[{"model_name":"MiniMax-M2","current_interval_total_count":100,"current_interval_usage_count":25,"current_weekly_total_count":100}]}}"#;
         let (buckets, _) = parse(body, 1_700_000_000.0).unwrap();
         assert_eq!(buckets.len(), 1);
         assert_eq!(buckets[0].id, "minimax.coding.0.minimax-m2");
@@ -643,6 +645,13 @@ mod tests {
         assert!(matches!(
             parse(
                 br#"{"data":{"model_remains":[{"model_name":"inactive","current_interval_total_count":0}]}}"#,
+                0.0
+            ),
+            Err(QuotaError::ParseFailure(_))
+        ));
+        assert!(matches!(
+            parse(
+                br#"{"data":{"model_remains":[{"model_name":"incomplete","current_interval_total_count":100}]}}"#,
                 0.0
             ),
             Err(QuotaError::ParseFailure(_))
