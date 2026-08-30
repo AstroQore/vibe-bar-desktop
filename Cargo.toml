@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/vibebar-desktop-core", "apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+repository = "https://github.com/AstroQore/vibe-bar-desktop"
+
+[workspace.dependencies]
+# The Rust lane of agent-session-kit. Pinned to its branch until
+# AstroQore/agent-session-kit#12 merges, then this moves to a tag.
+# To develop against a local checkout, add a `[patch]` section to
+# `.cargo/config.toml` rather than editing this file.
+agent-session-core = { git = "https://github.com/AstroQore/agent-session-kit", branch = "feat/rust-session-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

@@ -1,0 +1,3 @@
+# esbuild is Vite's bundler; its postinstall fetches the platform binary.
+allowBuilds:
+  esbuild: true

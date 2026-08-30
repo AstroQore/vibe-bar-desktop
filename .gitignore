@@ -1,0 +1,23 @@
+# Rust
+target/
+Cargo.lock
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Tauri
+apps/desktop/src-tauri/gen/
+
+# macOS
+.DS_Store
+
+# Agent harness scratch
+.codex/
+.claude/
+.grok/
+.agy/
+.gemini/
+.cursor/
+.agents/

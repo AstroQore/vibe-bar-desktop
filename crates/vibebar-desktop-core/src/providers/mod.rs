@@ -1,0 +1,91 @@
+//! Provider quota adapters.
+//!
+//! Each adapter owns one provider's whole story: which credential it accepts,
+//! which endpoint it calls, and how that response becomes buckets. Parsing is
+//! kept in free functions taking bytes so the wire shapes are unit-tested
+//! against synthetic fixtures without a network.
+//!
+//! This preview slice ships Codex and Claude. Every other provider renders
+//! from the shared cache, attributed as such, until its adapter lands.
+
+pub mod claude;
+pub mod codex;
+
+use std::path::Path;
+use std::time::Duration;
+
+use crate::error::QuotaError;
+use crate::model::{AccountQuota, ToolType};
+
+/// Per-request ceiling. The native app quarantines an adapter that blows this
+/// budget; here it simply becomes [`QuotaError::TimedOut`], and the previous
+/// observation stays on screen.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Fetch one provider's live quota. Providers without an adapter in this
+/// build report [`QuotaError::NotImplemented`] and are rendered from the
+/// shared cache instead.
+pub async fn fetch(
+    tool: ToolType,
+    home: &Path,
+    client: &reqwest::Client,
+) -> Result<AccountQuota, QuotaError> {
+    match tool {
+        ToolType::Codex => codex::fetch(home, client).await,
+        ToolType::Claude => claude::fetch(home, client).await,
+        _ => Err(QuotaError::NotImplemented),
+    }
+}
+
+/// Map a transport failure onto the shared error taxonomy.
+pub(crate) fn classify_transport(error: &reqwest::Error) -> QuotaError {
+    if error.is_timeout() {
+        QuotaError::TimedOut
+    } else {
+        QuotaError::Network(error.to_string())
+    }
+}
+
+/// Map an HTTP status onto the shared error taxonomy.
+pub(crate) fn classify_status(status: reqwest::StatusCode) -> Option<QuotaError> {
+    match status.as_u16() {
+        200..=299 => None,
+        401 | 403 => Some(QuotaError::NeedsLogin),
+        429 => Some(QuotaError::RateLimited),
+        other => Some(QuotaError::Unknown(format!("HTTP {other}"))),
+    }
+}
+
+/// Seconds since the Unix epoch, as a float.
+pub(crate) fn now_unix() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_classification_matches_the_shared_taxonomy() {
+        assert!(classify_status(reqwest::StatusCode::OK).is_none());
+        assert_eq!(
+            classify_status(reqwest::StatusCode::UNAUTHORIZED),
+            Some(QuotaError::NeedsLogin)
+        );
+        assert_eq!(
+            classify_status(reqwest::StatusCode::FORBIDDEN),
+            Some(QuotaError::NeedsLogin)
+        );
+        assert_eq!(
+            classify_status(reqwest::StatusCode::TOO_MANY_REQUESTS),
+            Some(QuotaError::RateLimited)
+        );
+        assert_eq!(
+            classify_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+            Some(QuotaError::Unknown("HTTP 500".into()))
+        );
+    }
+}

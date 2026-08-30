@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Vibe Bar Desktop",
+  "version": "0.1.0",
+  "identifier": "com.astroqore.VibeBarDesktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vibe Bar Desktop",
+        "width": 900,
+        "height": 680,
+        "minWidth": 560,
+        "minHeight": 420,
+        "resizable": true,
+        "visible": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    },
+    "macOSPrivateApi": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Cross-platform Vibe Bar client",
+    "longDescription": "Vibe Bar Desktop shows AI subscription quota and local agent sessions. It shares the Vibe Bar data root with the macOS native app but depends on none of its components.",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}
