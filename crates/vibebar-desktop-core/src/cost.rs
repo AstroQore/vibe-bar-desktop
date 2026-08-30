@@ -1,4 +1,4 @@
-//! Read-only local Codex and Claude usage/cost.
+//! Read-only local Codex, Claude, and Gemini CLI usage/cost.
 //!
 //! This first slice scans bounded JSONL inputs and keeps only an in-memory
 //! snapshot. It never reads provider credentials and never writes any shared
@@ -21,7 +21,7 @@ use crate::model::ToolType;
 const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_FILES: usize = 20_000;
-const MAX_FILES_PER_PROVIDER: usize = MAX_FILES / 2;
+const MAX_FILES_PER_PROVIDER: usize = MAX_FILES / 3;
 const MAX_DISCOVERED_PER_PROVIDER: usize = MAX_FILES_PER_PROVIDER * 10;
 const MAX_DISCOVERY_ENTRIES: usize = 200_000;
 const MAX_DISCOVERY_DEPTH: usize = 32;
@@ -116,8 +116,10 @@ impl CostEngine {
             MAX_FILES_PER_PROVIDER,
         );
         codex_files.extend(claude_files);
+        let (gemini_files, gemini_truncated) = collect_gemini_chat_files(&self.home);
+        codex_files.extend(gemini_files);
         let files = codex_files;
-        let truncated = codex_truncated || claude_truncated;
+        let truncated = codex_truncated || claude_truncated || gemini_truncated;
         let codex_tier = codex_service_tier(&home);
 
         let mut events = Vec::new();
@@ -132,7 +134,7 @@ impl CostEngine {
                 &mut malformed_lines,
             );
         }
-        let events = deduplicate_claude_events(events);
+        let events = deduplicate_events(events);
 
         let view = aggregate(
             &events,
@@ -216,6 +218,86 @@ fn collect_provider_files(
     let truncated = discovery_truncated || files.len() > limit;
     files.truncate(limit);
     (files, truncated)
+}
+
+fn collect_gemini_chat_files(home: &Path) -> (Vec<SourceFile>, bool) {
+    let gemini = home.join(".gemini");
+    let tmp = gemini.join("tmp");
+    if !safe_directory(&gemini) || !safe_directory(&tmp) {
+        return (Vec::new(), false);
+    }
+    let root = tmp;
+    let Ok(projects) = fs::read_dir(root) else {
+        return (Vec::new(), false);
+    };
+    let mut files = Vec::new();
+    let mut truncated = false;
+    let mut budget = DiscoveryBudget::default();
+    for project in projects.flatten() {
+        budget.entries += 1;
+        if budget.entries > MAX_DISCOVERY_ENTRIES {
+            truncated = true;
+            break;
+        }
+        let Ok(kind) = project.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() || !kind.is_dir() {
+            continue;
+        }
+        let chats = project.path().join("chats");
+        if !safe_directory(&chats) {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(chats) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            budget.entries += 1;
+            if budget.entries > MAX_DISCOVERY_ENTRIES {
+                truncated = true;
+                break;
+            }
+            if files.len() >= MAX_FILES_PER_PROVIDER {
+                truncated = true;
+                break;
+            }
+            let path = entry.path();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            let name_ok = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("session-"));
+            if kind.is_symlink()
+                || !kind.is_file()
+                || !name_ok
+                || path.extension().and_then(|e| e.to_str()) != Some("jsonl")
+            {
+                continue;
+            }
+            files.push(SourceFile {
+                tool: ToolType::Gemini,
+                path,
+            });
+        }
+        if truncated {
+            break;
+        }
+    }
+    files.sort_by(|a, b| {
+        source_mtime(&b.path)
+            .cmp(&source_mtime(&a.path))
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    (files, truncated)
+}
+
+fn safe_directory(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|metadata| !metadata.file_type().is_symlink() && metadata.is_dir())
+        .unwrap_or(false)
 }
 
 #[derive(Default)]
@@ -358,6 +440,7 @@ fn scan_file(
 
     let mut codex_previous = (0_u64, 0_u64, 0_u64);
     let mut codex_model = "gpt-5".to_string();
+    let mut gemini_session_id = None;
     for line in bytes.split(|byte| *byte == b'\n') {
         if line.is_empty() || line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -381,9 +464,69 @@ fn scan_file(
                 events,
             ),
             ToolType::Claude => parse_claude(&value, fallback_time, &source.path, events),
+            ToolType::Gemini => parse_gemini(
+                &value,
+                fallback_time,
+                &source.path,
+                &mut gemini_session_id,
+                events,
+            ),
             _ => {}
         }
     }
+}
+
+fn parse_gemini(
+    value: &Value,
+    fallback_time: Option<f64>,
+    source_path: &Path,
+    session_id: &mut Option<String>,
+    events: &mut Vec<UsageEvent>,
+) {
+    if let Some(value) = value.get("sessionId").and_then(Value::as_str) {
+        if session_id.is_none() {
+            *session_id = Some(value.to_string());
+        }
+    }
+    if value.get("type").and_then(Value::as_str) != Some("gemini") {
+        return;
+    }
+    let Some(tokens) = value.get("tokens").and_then(Value::as_object) else {
+        return;
+    };
+    let input_total = number_map(tokens, "input");
+    let cache_read = number_map(tokens, "cached");
+    let output = number_map(tokens, "output")
+        .saturating_add(number_map(tokens, "thoughts"))
+        .saturating_add(number_map(tokens, "tool"));
+    if input_total == 0 && cache_read == 0 && output == 0 {
+        return;
+    }
+    let Some(date) = timestamp(value).or(fallback_time) else {
+        return;
+    };
+    events.push(UsageEvent {
+        tool: ToolType::Gemini,
+        date,
+        model: value
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .unwrap_or("gemini-unknown")
+            .to_string(),
+        input: input_total.saturating_sub(cache_read),
+        cache_read,
+        output,
+        cache_creation: 0,
+        service_tier: None,
+        session_id: session_id.clone(),
+        message_id: value.get("id").and_then(Value::as_str).map(str::to_string),
+        request_id: None,
+        is_sidechain: false,
+        is_parent_path: true,
+        source_key: source_path.to_string_lossy().into_owned(),
+    });
 }
 
 fn open_source_file(
@@ -593,17 +736,25 @@ fn bool_value(value: Option<&Value>) -> bool {
     }
 }
 
-fn deduplicate_claude_events(events: Vec<UsageEvent>) -> Vec<UsageEvent> {
+fn deduplicate_events(events: Vec<UsageEvent>) -> Vec<UsageEvent> {
     let mut keyed = BTreeMap::new();
     let mut unkeyed = Vec::new();
     for event in events {
-        let key = if event.tool == ToolType::Claude {
+        let key = if event.tool == ToolType::Gemini {
+            event
+                .session_id
+                .as_deref()
+                .zip(event.message_id.as_deref())
+                .map(|(session, message)| format!("gemini\0{session}\0{message}"))
+        } else if event.tool == ToolType::Claude {
             event
                 .session_id
                 .as_deref()
                 .zip(event.message_id.as_deref())
                 .zip(event.request_id.as_deref())
-                .map(|((session, message), request)| format!("{session}\0{message}\0{request}"))
+                .map(|((session, message), request)| {
+                    format!("claude\0{session}\0{message}\0{request}")
+                })
         } else {
             None
         };
@@ -635,6 +786,17 @@ fn claude_event_wins(candidate: &UsageEvent, existing: &UsageEvent) -> bool {
 }
 
 fn number(value: &Value, key: &str) -> u64 {
+    value
+        .get(key)
+        .and_then(|number| {
+            number
+                .as_u64()
+                .or_else(|| number.as_str().and_then(|text| text.trim().parse().ok()))
+        })
+        .unwrap_or(0)
+}
+
+fn number_map(value: &serde_json::Map<String, Value>, key: &str) -> u64 {
     value
         .get(key)
         .and_then(|number| {
@@ -697,12 +859,36 @@ impl ModelPricing {
             fast_multiplier: None,
         }
     }
+
+    const fn threshold(
+        input: f64,
+        output: f64,
+        read: f64,
+        threshold: u64,
+        input_above: f64,
+        output_above: f64,
+        read_above: f64,
+    ) -> Self {
+        Self {
+            input,
+            output,
+            cache_read: Some(read),
+            cache_creation: None,
+            threshold: Some(threshold),
+            input_above: Some(input_above),
+            output_above: Some(output_above),
+            cache_read_above: Some(read_above),
+            cache_creation_above: None,
+            fast_multiplier: None,
+        }
+    }
 }
 
 fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
     let pricing = match event.tool {
         ToolType::Codex => codex_pricing(&event.model)?,
         ToolType::Claude => claude_pricing(&event.model)?,
+        ToolType::Gemini => gemini_pricing(&event.model)?,
         _ => return None,
     };
     let cache_read_rate = pricing.cache_read.unwrap_or(pricing.input);
@@ -736,6 +922,22 @@ fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
         micros *= pricing.fast_multiplier.unwrap_or(1.0).max(1.0);
     }
     Some(micros.round() as i64)
+}
+
+fn gemini_pricing(raw: &str) -> Option<ModelPricing> {
+    match raw.trim() {
+        "gemini-2.5-pro" => Some(ModelPricing::threshold(
+            1.25, 10.0, 0.31, 200_000, 2.5, 15.0, 0.625,
+        )),
+        "gemini-2.5-flash" => Some(ModelPricing::simple(0.3, 2.5, Some(0.075))),
+        "gemini-2.5-flash-lite" => Some(ModelPricing::simple(0.1, 0.4, Some(0.025))),
+        "gemini-3-pro" | "gemini-3-pro-preview" => Some(ModelPricing::threshold(
+            2.0, 12.0, 0.5, 200_000, 4.0, 18.0, 1.0,
+        )),
+        "gemini-3-flash" => Some(ModelPricing::simple(0.35, 2.8, Some(0.0875))),
+        "gemini-3-flash-lite" => Some(ModelPricing::simple(0.125, 0.5, Some(0.031))),
+        _ => None,
+    }
 }
 
 fn tiered(tokens: u64, base: f64, above: Option<f64>, threshold: Option<u64>) -> f64 {
@@ -1187,7 +1389,7 @@ mod tests {
             is_parent_path: parent,
             source_key: if parent { "parent" } else { "subagents/child" }.into(),
         };
-        let values = deduplicate_claude_events(vec![
+        let values = deduplicate_events(vec![
             event("one", true, false, 999),
             event("one", false, true, 10),
             event("two", false, true, 20),
@@ -1230,5 +1432,110 @@ mod tests {
             collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
         assert!(files.is_empty());
         assert!(truncated);
+    }
+
+    #[test]
+    fn scans_gemini_chat_history_deduplicates_and_prices() {
+        let home = tempfile::tempdir().unwrap();
+        let path = home
+            .path()
+            .join(".gemini/tmp/project/chats/session-one.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let ts = now_unix() - 1.0;
+        write_jsonl(
+            &path,
+            &[
+                serde_json::json!({"sessionId":"s"}),
+                serde_json::json!({"type":"gemini","id":"m","model":"gemini-2.5-flash","timestamp":rfc3339(ts),"tokens":{"input":100,"cached":20,"output":30,"thoughts":4,"tool":6}}),
+                serde_json::json!({"type":"gemini","id":"m","model":"gemini-2.5-flash","timestamp":rfc3339(ts),"tokens":{"input":100,"cached":20,"output":30,"thoughts":4,"tool":6}}),
+                serde_json::json!({"type":"gemini","model":"unknown-gemini","timestamp":rfc3339(ts),"tokens":{"input":2,"output":3}}),
+            ],
+        );
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert_eq!(view.scanned_files, 1);
+        assert_eq!(view.all_time.requests, 2);
+        assert_eq!(view.all_time.tokens, 145);
+        assert_eq!(view.unpriced_events, 1);
+        assert!(view.all_time.priced_cost_micros > 0);
+    }
+
+    #[test]
+    fn gemini_pro_threshold_uses_above_threshold_rate() {
+        let event = UsageEvent {
+            tool: ToolType::Gemini,
+            date: now_unix() - 1.0,
+            model: "gemini-2.5-pro".into(),
+            input: 200_001,
+            cache_read: 0,
+            output: 0,
+            cache_creation: 0,
+            service_tier: None,
+            session_id: None,
+            message_id: None,
+            request_id: None,
+            is_sidechain: false,
+            is_parent_path: true,
+            source_key: String::new(),
+        };
+        assert_eq!(priced_cost_micros(&event), Some(250_003));
+    }
+
+    #[test]
+    fn gemini_invalid_timestamp_uses_mtime_and_telemetry_is_not_scanned() {
+        let home = tempfile::tempdir().unwrap();
+        let chat = home.path().join(".gemini/tmp/p/chats/session-one.jsonl");
+        fs::create_dir_all(chat.parent().unwrap()).unwrap();
+        write_jsonl(
+            &chat,
+            &[
+                serde_json::json!({"type":"gemini","model":"gemini-3-flash","timestamp":"bad","tokens":{"input":10,"output":5}}),
+            ],
+        );
+        fs::write(
+            home.path().join(".gemini/telemetry.log"),
+            serde_json::json!({"type":"gemini","tokens":{"input":999,"output":999}}).to_string(),
+        )
+        .unwrap();
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert_eq!(view.scanned_files, 1);
+        assert_eq!(view.all_time.requests, 1);
+    }
+
+    #[test]
+    fn gemini_chat_file_budget_and_symlinks_are_safe() {
+        let home = tempfile::tempdir().unwrap();
+        let chats = home.path().join(".gemini/tmp/p/chats");
+        fs::create_dir_all(&chats).unwrap();
+        fs::write(
+            chats.join("session-large.jsonl"),
+            vec![b'x'; (MAX_FILE_BYTES + 1) as usize],
+        )
+        .unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            chats.join("session-large.jsonl"),
+            chats.join("session-link.jsonl"),
+        )
+        .unwrap();
+        let (files, truncated) = collect_gemini_chat_files(home.path());
+        assert_eq!(files.len(), 1);
+        assert!(!truncated);
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert_eq!(view.all_time.requests, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn gemini_symlinked_ancestor_is_not_followed() {
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let chats = outside.path().join("p/chats");
+        fs::create_dir_all(&chats).unwrap();
+        fs::write(chats.join("session-outside.jsonl"), "{}\n").unwrap();
+        fs::create_dir_all(home.path().join(".gemini")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), home.path().join(".gemini/tmp")).unwrap();
+        let (files, truncated) = collect_gemini_chat_files(home.path());
+        assert!(files.is_empty());
+        assert!(!truncated);
     }
 }

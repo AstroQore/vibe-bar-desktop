@@ -28,7 +28,7 @@ window, on macOS, Windows, and Linux.
   Settings page shows the effective values; Desktop does not save them yet.
 - **Service status.** Reads cached native status immediately, then refreshes
   Claude and Cursor from their public Statuspage feeds without credentials.
-- **Local usage and cost.** Scans bounded Codex and Claude session JSONL files
+- **Local usage and cost.** Scans bounded Codex, Claude, and Gemini CLI session JSONL files
   into an in-memory priced-usage view. Unknown models stay visibly unpriced;
   Desktop does not write a cost cache or ledger yet.
 
