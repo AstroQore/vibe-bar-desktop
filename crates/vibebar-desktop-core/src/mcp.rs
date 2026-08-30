@@ -363,7 +363,7 @@ fn session_providers_schema() -> Value {
     json!({"type": "array", "items": {"type": "string", "enum": SessionProvider::ALL.map(|provider| provider.raw_value())}})
 }
 fn harnesses_schema() -> Value {
-    json!({"type": "array", "items": {"type": "string", "enum": SESSION_HARNESSES.map(|(raw, _)| raw)}})
+    json!({"type": "array", "items": {"type": "string", "enum": SESSION_HARNESSES}})
 }
 fn string_schema() -> Value {
     json!({"type": "string"})
@@ -456,10 +456,8 @@ fn parse_harnesses(value: Option<&Value>) -> Result<Option<Vec<String>>, Problem
         .map(|raw| {
             let raw = raw.as_str().ok_or_else(Problem::invalid_params)?;
             SESSION_HARNESSES
-                .iter()
-                .find_map(|(candidate, display)| {
-                    (*candidate == raw).then(|| (*display).to_string())
-                })
+                .contains(&raw)
+                .then(|| raw.to_string())
                 .ok_or_else(Problem::invalid_params)
         })
         .collect::<Result<Vec<_>, _>>()
@@ -498,16 +496,16 @@ fn parse_offset(value: Option<&Value>, default: usize) -> Result<usize, Problem>
         .ok_or_else(Problem::invalid_params)
 }
 
-const SESSION_HARNESSES: [(&str, &str); 9] = [
-    ("codex", "Codex"),
-    ("chatgptWork", "ChatGPT Work"),
-    ("claudeCode", "Claude Code"),
-    ("claudeCowork", "Claude Cowork"),
-    ("geminiCLI", "Gemini CLI"),
-    ("antigravity", "AntiGravity"),
-    ("grokBuild", "Grok Build"),
-    ("cursor", "Cursor"),
-    ("grokBot", "Grok Bot"),
+const SESSION_HARNESSES: [&str; 9] = [
+    "codex",
+    "chatgptWork",
+    "claudeCode",
+    "claudeCowork",
+    "geminiCLI",
+    "antigravity",
+    "grokBuild",
+    "cursor",
+    "grokBot",
 ];
 
 struct Problem {
