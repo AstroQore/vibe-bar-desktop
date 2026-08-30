@@ -528,9 +528,15 @@ mod tests {
         let listing = service.list(20);
         assert_eq!(listing.rows.len(), 1);
         assert_eq!(listing.rows[0].harness, "Codex");
+        #[cfg(unix)]
         assert_eq!(
             listing.rows[0].resume_command.as_deref(),
             Some("cd '/Users/example/proj' && codex resume 0199aaaa-1111-2222-3333-444455556666")
+        );
+        #[cfg(not(unix))]
+        assert_eq!(
+            listing.rows[0].resume_command.as_deref(),
+            Some("codex resume 0199aaaa-1111-2222-3333-444455556666")
         );
 
         // Title/id search works without a body index.
