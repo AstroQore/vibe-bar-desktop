@@ -348,7 +348,14 @@ fn replace_atomically(
         let _ = directory.remove_file(&temp);
         return Err(error);
     }
-    if source_fingerprint(directory)? != source {
+    let final_source = match source_fingerprint(directory) {
+        Ok(fingerprint) => fingerprint,
+        Err(error) => {
+            let _ = directory.remove_file(&temp);
+            return Err(error);
+        }
+    };
+    if final_source != source {
         let _ = directory.remove_file(&temp);
         return Err(SettingsTransactionError::SourceChangedBeforeCommit);
     }
@@ -359,7 +366,8 @@ fn replace_atomically(
     if seam.checkpoint(SettingsTransactionStage::Renamed).is_err() {
         return Err(SettingsTransactionError::PostRenameUnconfirmed);
     }
-    let durability = sync_parent(directory)?;
+    let durability =
+        sync_parent(directory).map_err(|_| SettingsTransactionError::PostRenameUnconfirmed)?;
     if seam
         .checkpoint(SettingsTransactionStage::ParentSynced)
         .is_err()
@@ -640,10 +648,12 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     struct RewriteBeforeRename {
         path: std::path::PathBuf,
         bytes: Vec<u8>,
     }
+    #[cfg(unix)]
     impl SettingsTransactionSeam for RewriteBeforeRename {
         fn checkpoint(
             &self,
@@ -819,6 +829,37 @@ mod tests {
             SettingsTransactionError::SourceChangedBeforeCommit
         ));
         assert_eq!(std::fs::read(&path).unwrap(), external);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn final_source_read_failure_cleans_the_temporary_file() {
+        let root = root();
+        let path = root.path().join(SETTINGS_RELATIVE_PATH);
+        std::fs::write(&path, br#"{"displayMode":"remaining"}"#).unwrap();
+        let authorization = authorize(root.path());
+        let requested = patch(
+            json!({"displayMode":"remaining"}),
+            json!({"displayMode":"used"}),
+        );
+        let error = apply_settings_patch_with_seam(
+            &authorization,
+            &requested,
+            &RewriteBeforeRename {
+                path,
+                bytes: vec![b'x'; MAX_SETTINGS_DOCUMENT_BYTES + 1],
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            SettingsTransactionError::Patch(SettingsPatchError::SizeLimit { .. })
+        ));
+        assert!(std::fs::read_dir(root.path()).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("desktop-settings")));
     }
 
     #[cfg(unix)]
