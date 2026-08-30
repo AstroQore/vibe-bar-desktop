@@ -50,6 +50,8 @@ pub struct SessionRow {
     pub provider: String,
     pub harness: String,
     pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_variant: Option<String>,
     pub title: Option<String>,
     pub project_dir: Option<String>,
     /// Unix epoch seconds.
@@ -560,6 +562,7 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
             .map(|raw| harness_display_name(raw).unwrap_or(raw).to_string())
             .unwrap_or_else(|| session.provider.default_harness().to_string()),
         session_id: session.session_id,
+        provider_variant: session.provider_variant,
         title: session.title,
         project_dir: session.project_dir,
         last_active_at: session.last_active_at.or(session.created_at),
@@ -572,9 +575,13 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
 }
 
 fn scanned_row(session: DiscoveredSession) -> SessionRow {
-    let resume_command = resume::command(session.provider, &session.session_id, None)
-        .ok()
-        .map(|command| resume_line(session.project_dir.as_deref(), &command));
+    let resume_command = resume::command(
+        session.provider,
+        &session.session_id,
+        session.provider_variant.as_deref(),
+    )
+    .ok()
+    .map(|command| resume_line(session.project_dir.as_deref(), &command));
     let harness = session
         .harness
         .as_deref()
@@ -586,6 +593,7 @@ fn scanned_row(session: DiscoveredSession) -> SessionRow {
         provider: session.provider.raw_value().to_string(),
         harness,
         session_id: session.session_id,
+        provider_variant: session.provider_variant,
         title: session.title,
         project_dir: session.project_dir,
         last_active_at: Some(session.modified_at),
@@ -682,6 +690,30 @@ mod tests {
         path
     }
 
+    fn write_codex_auto_review(home: &Path, id: &str, root_id: &str) -> PathBuf {
+        use std::io::Write;
+
+        let sessions = home.join(".codex/sessions/2026/08/30");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let path = sessions.join(format!("rollout-2026-08-30T04-55-08-{id}.jsonl"));
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {
+                    "id": id,
+                    "session_id": root_id,
+                    "originator": "Codex Desktop",
+                    "source": {"subagent": {"other": "guardian"}}
+                }
+            })
+        )
+        .unwrap();
+        path
+    }
+
     #[test]
     fn falls_back_to_scanning_when_no_index_exists() {
         let dir = tempfile::tempdir().unwrap();
@@ -727,6 +759,11 @@ mod tests {
         let listing = service.list(20);
         assert_eq!(listing.rows.len(), 1);
         assert_eq!(listing.rows[0].harness, "Codex");
+        assert!(listing.rows[0].provider_variant.is_none());
+        assert!(serde_json::to_value(&listing.rows[0])
+            .unwrap()
+            .get("providerVariant")
+            .is_none());
         #[cfg(unix)]
         assert_eq!(
             listing.rows[0].resume_command.as_deref(),
@@ -763,6 +800,29 @@ mod tests {
             .list_filtered(None, Some(&codex), None, 0, 10)
             .rows
             .is_empty());
+    }
+
+    #[test]
+    fn scanned_codex_auto_review_preserves_provider_variant() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        write_codex_auto_review(
+            home,
+            "0199aaaa-1111-2222-3333-444455556667",
+            "0299aaaa-1111-2222-3333-444455556667",
+        );
+        let service = service(DataRoot::at(home.join(".vibebar")), home);
+        let listing = service.list(20);
+        assert_eq!(listing.rows.len(), 1);
+        assert_eq!(listing.rows[0].harness, "Codex");
+        assert_eq!(
+            listing.rows[0].provider_variant.as_deref(),
+            Some("auto-review:0299aaaa-1111-2222-3333-444455556667")
+        );
+        assert_eq!(
+            serde_json::to_value(&listing).unwrap()["rows"][0]["providerVariant"],
+            "auto-review:0299aaaa-1111-2222-3333-444455556667"
+        );
     }
 
     #[test]
@@ -816,7 +876,8 @@ mod tests {
                (2, 'codex', 'work', 'chatgptWork', 300, '/Users/example/work.jsonl'),\
                (3, 'claude', 'claude', 'claudeCode', 350, '/Users/example/claude.jsonl'),\
                (4, 'codex', 'newer-codex', 'codex', 400, '/Users/example/newer.jsonl'),\
-               (5, 'codex', 'future-codex', 'codex', 9223372036854775807, '/Users/example/future.jsonl');",
+               (5, 'codex', 'future-codex', 'codex', 9223372036854775807, '/Users/example/future.jsonl');\
+             UPDATE sessions SET provider_variant = 'auto-review:index-root' WHERE id = 4;",
         )
         .unwrap();
         drop(conn);
@@ -828,6 +889,10 @@ mod tests {
         assert_eq!(first.rows.len(), 1);
         assert_eq!(first.rows[0].session_id, "newer-codex");
         assert_eq!(first.rows[0].harness, "Codex");
+        assert_eq!(
+            first.rows[0].provider_variant.as_deref(),
+            Some("auto-review:index-root")
+        );
 
         let listing = service.list_filtered(Some(&providers), Some(&harnesses), Some(200), 1, 1);
         assert_eq!(listing.source, SessionSource::Indexed);
@@ -918,6 +983,7 @@ mod tests {
             provider: SessionProvider::Codex.raw_value().to_string(),
             harness: "Codex".to_string(),
             session_id: "new-session".to_string(),
+            provider_variant: None,
             title: None,
             project_dir: None,
             last_active_at: None,

@@ -556,7 +556,7 @@ mod tests {
         std::fs::create_dir_all(&sessions).unwrap();
         std::fs::write(
             sessions.join("rollout-2026-01-01T00-00-00-0199aaaa-1111-2222-3333-444455556666.jsonl"),
-            r#"{"type":"session_meta","payload":{"id":"0199aaaa-1111-2222-3333-444455556666"}}"#,
+            r#"{"type":"session_meta","payload":{"id":"0199aaaa-1111-2222-3333-444455556666","session_id":"0299aaaa-1111-2222-3333-444455556666","originator":"Codex Desktop","source":{"subagent":{"other":"guardian"}}}}"#,
         )
         .unwrap();
         ReadonlyMcp::with_home(root, temp.path())
@@ -669,6 +669,10 @@ mod tests {
         );
         assert_eq!(codex["rows"].as_array().unwrap().len(), 1);
         assert!(codex["rows"][0].get("sourcePath").is_none());
+        assert_eq!(
+            codex["rows"][0]["providerVariant"],
+            "auto-review:0299aaaa-1111-2222-3333-444455556666"
+        );
         assert!(
             tool_payload(&server, "sessions.list", json!({"providers": ["claude"]}))["rows"]
                 .as_array()

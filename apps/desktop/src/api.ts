@@ -44,6 +44,7 @@ export interface SessionRow {
   provider: string;
   harness: string;
   sessionId: string;
+  providerVariant?: string;
   title?: string;
   projectDir?: string;
   lastActiveAt?: number;
