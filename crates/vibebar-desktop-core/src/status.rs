@@ -18,6 +18,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOGLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_GOOGLE_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_STATUS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const GOOGLE_GEMINI_PRODUCT_ID: &str = "npdyhgECDJ6tB66MxXyo";
 const GOOGLE_INCIDENTS_URL: &str = "https://www.google.com/appsstatus/dashboard/incidents.json";
 
@@ -96,13 +97,15 @@ impl ServiceStatusEngine {
             tokio::try_join!(
                 fetch_source(&self.client, SOURCES[0]),
                 fetch_source(&self.client, SOURCES[1]),
+                fetch_source(&self.client, SOURCES[2]),
                 fetch_google_gemini(&self.client, now_unix())
             )
         };
-        let (claude, cursor, gemini) = tokio::time::timeout(REFRESH_TIMEOUT, fetch)
-            .await
-            .map_err(|_| ServiceStatusError::Network("refresh timed out".into()))??;
-        let mut providers = vec![claude, cursor, gemini];
+        let (claude, cursor, codex, gemini) =
+            tokio::time::timeout(REFRESH_TIMEOUT, fetch)
+                .await
+                .map_err(|_| ServiceStatusError::Network("refresh timed out".into()))??;
+        let mut providers = vec![claude, cursor, codex, gemini];
         providers.sort_by_key(|status| status.tool.raw_value());
         let updated_at = providers
             .iter()
@@ -125,7 +128,7 @@ struct Source {
     base: &'static str,
 }
 
-const SOURCES: [Source; 2] = [
+const SOURCES: [Source; 3] = [
     Source {
         tool: ToolType::Claude,
         base: "https://status.claude.com",
@@ -133,6 +136,10 @@ const SOURCES: [Source; 2] = [
     Source {
         tool: ToolType::Cursor,
         base: "https://status.cursor.com",
+    },
+    Source {
+        tool: ToolType::Codex,
+        base: "https://status.openai.com",
     },
 ];
 
@@ -156,7 +163,7 @@ fn seed(root: &DataRoot) -> ServiceStatusView {
             .updated_at
             .is_none_or(|updated_at| updated_at <= now + CLOCK_SKEW_TOLERANCE_SECONDS)
     };
-    let mut providers = [ToolType::Claude, ToolType::Cursor]
+    let mut providers = [ToolType::Claude, ToolType::Cursor, ToolType::Codex]
         .into_iter()
         .filter_map(|tool| {
             cached
@@ -254,6 +261,7 @@ async fn get_json<T: serde::de::DeserializeOwned>(
 ) -> Result<T, ServiceStatusError> {
     let response = client
         .get(url)
+        .timeout(Duration::from_secs(8))
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await
@@ -264,10 +272,29 @@ async fn get_json<T: serde::de::DeserializeOwned>(
             response.status()
         )));
     }
-    response
-        .json::<T>()
+    if response
+        .content_length()
+        .is_some_and(|n| n > MAX_STATUS_RESPONSE_BYTES as u64)
+    {
+        return Err(ServiceStatusError::Parse(
+            "status response exceeded 4 MiB".into(),
+        ));
+    }
+    let mut response = response;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|error| ServiceStatusError::Parse(error.to_string()))
+        .map_err(|error| ServiceStatusError::Network(error.to_string()))?
+    {
+        if bytes.len().saturating_add(chunk.len()) > MAX_STATUS_RESPONSE_BYTES {
+            return Err(ServiceStatusError::Parse(
+                "status response exceeded 4 MiB".into(),
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&bytes).map_err(|error| ServiceStatusError::Parse(error.to_string()))
 }
 
 async fn fetch_google_gemini(
@@ -667,6 +694,30 @@ mod tests {
     #[test]
     fn unknown_indicator_fails_closed() {
         assert_eq!(normalize_indicator(Some("future")), None);
+    }
+
+    #[test]
+    fn codex_uses_public_statuspage_source_and_standard_incident_shape() {
+        let source = SOURCES
+            .iter()
+            .find(|source| source.tool == ToolType::Codex)
+            .unwrap();
+        assert_eq!(source.base, "https://status.openai.com");
+        let summary: Summary = serde_json::from_slice(
+            br#"{"page":{"updated_at":"2026-08-17T08:00:00Z"},"status":{"indicator":"minor","description":"Elevated errors"}}"#,
+        ).unwrap();
+        assert_eq!(summary.status.indicator, "minor");
+        let incidents: Incidents = serde_json::from_slice(
+            br#"{"incidents":[{"id":"new","name":"API","status":"investigating","impact":"major","created_at":"2026-08-17T01:00:00Z"},{"id":"old","name":"Old","status":"resolved","impact":"minor","created_at":"2026-08-16T01:00:00Z"}]}"#,
+        ).unwrap();
+        let active = incidents
+            .incidents
+            .into_iter()
+            .map(StatusIncident::from)
+            .filter(is_active_incident)
+            .collect::<Vec<_>>();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, "new");
     }
 
     #[test]

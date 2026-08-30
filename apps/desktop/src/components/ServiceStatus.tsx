@@ -1,7 +1,7 @@
 import type { ProviderStatus, ServiceStatusView, StatusIncident } from "../api";
 import { formatRelative } from "../api";
 
-const WATCHED_TOOLS = ["claude", "gemini", "cursor"] as const;
+const WATCHED_TOOLS = ["codex", "claude", "gemini", "cursor"] as const;
 
 export function ServiceStatus({
   status,
@@ -49,7 +49,7 @@ export function ServiceStatus({
 }
 
 function ProviderPill({ tool, provider }: { tool: string; provider?: ProviderStatus }) {
-  const label = tool === "claude" ? "Claude" : tool === "gemini" ? "Gemini Web" : "Cursor";
+  const label = tool === "codex" ? "ChatGPT Agentic" : tool === "claude" ? "Claude" : tool === "gemini" ? "Gemini Web" : "Cursor";
   if (!provider) {
     return <span className="status-pill unavailable">{label} unavailable</span>;
   }
