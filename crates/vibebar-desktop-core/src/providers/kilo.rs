@@ -81,14 +81,9 @@ fn urlencoding(input: &str) -> String {
 pub async fn fetch(client: &reqwest::Client, home: &Path) -> Result<AccountQuota, QuotaError> {
     let env: HashMap<String, String> = std::env::vars().collect();
     let token = resolve_token(home, &env, true).ok_or(QuotaError::NoCredential)?;
-    let base = env
-        .get("KILO_API_URL")
-        .map(String::as_str)
-        .map(str::trim)
-        .filter(|url| reqwest::Url::parse(url).is_ok())
-        .unwrap_or("https://app.kilo.ai/api/trpc");
+    let base = api_base_url(&env);
     let response = client
-        .get(batch_url(base)?)
+        .get(batch_url(&base)?)
         .timeout(super::REQUEST_TIMEOUT)
         .bearer_auth(token)
         .header("Accept", "application/json")
@@ -121,6 +116,13 @@ pub async fn fetch(client: &reqwest::Client, home: &Path) -> Result<AccountQuota
         origin: QuotaOrigin::Live,
         error: None,
     })
+}
+
+fn api_base_url(env: &HashMap<String, String>) -> String {
+    env.get("KILO_API_URL")
+        .and_then(|url| super::trusted_https_url(url, &["kilo.ai"]))
+        .map(|url| url.to_string())
+        .unwrap_or_else(|| "https://app.kilo.ai/api/trpc".to_string())
 }
 
 pub fn parse(body: &[u8], now: f64) -> Result<(Vec<QuotaBucket>, Option<String>), QuotaError> {
@@ -376,6 +378,11 @@ mod tests {
         assert!(batch_url("https://app.kilo.ai/api/trpc")
             .unwrap()
             .contains("batch=1&input="));
+        env.insert(
+            "KILO_API_URL".into(),
+            "https://example.test/steal".into(),
+        );
+        assert_eq!(api_base_url(&env), "https://app.kilo.ai/api/trpc");
     }
     #[test]
     fn parses_credit_and_pass_shapes() {
