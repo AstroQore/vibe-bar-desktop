@@ -175,11 +175,21 @@ export function formatCountdown(resetAt?: number): string {
   return `resets in ${minutes}m`;
 }
 
-export function describeError(error: QuotaErrorPayload): string {
+const API_KEY_ENV: Record<string, string> = {
+  zai: "Z_AI_API_KEY",
+  minimax: "MINIMAX_CODING_API_KEY or MINIMAX_API_KEY",
+  openRouter: "OPENROUTER_API_KEY",
+  warp: "WARP_API_KEY or WARP_TOKEN",
+};
+
+export function describeError(error: QuotaErrorPayload, tool?: string): string {
+  const apiKey = tool ? API_KEY_ENV[tool] : undefined;
   switch (error.kind) {
     case "noCredential":
+      if (apiKey) return `Set ${apiKey} and refresh.`;
       return "Not signed in — run the provider's CLI login.";
     case "needsLogin":
+      if (apiKey) return `The configured ${apiKey} was rejected. Update it and refresh.`;
       return "Credential rejected — sign in again with the provider's CLI.";
     case "rateLimited":
       return "Rate limited by the provider. Try again shortly.";

@@ -69,7 +69,9 @@ function QuotaCard({ account }: { account: AccountQuota }) {
         <span className="card-meta">{formatRelative(account.queriedAt)}</span>
       </div>
 
-      {account.error ? <p className="error-row">{describeError(account.error)}</p> : null}
+      {account.error ? (
+        <p className="error-row">{describeError(account.error, account.tool)}</p>
+      ) : null}
       {account.buckets.length === 0 && !account.error ? (
         <p className="error-row">No quota windows reported.</p>
       ) : (
