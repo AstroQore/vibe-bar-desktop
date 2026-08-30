@@ -12,7 +12,7 @@ mod tray;
 use std::time::Duration;
 
 use state::AppState;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WindowEvent};
 
 /// Emitted whenever a refresh completes, carrying the full `QuotaView`.
 pub const QUOTA_EVENT: &str = "vibebar://quota-updated";
@@ -29,6 +29,17 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        // Closing the one user-facing window leaves the tray refresh loop
+        // alive. Explicit tray Quit still calls `app.exit(0)` and terminates
+        // the process rather than requesting this window close.
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::quota_view,
             commands::refresh_quota,
