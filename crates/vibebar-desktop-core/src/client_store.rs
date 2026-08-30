@@ -13,7 +13,7 @@
 //! pretty-printed with sorted keys, so a human diff of the two clients'
 //! files stays readable.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
@@ -69,6 +69,71 @@ impl ClientStore {
             out.push(quota);
         }
         out
+    }
+
+    /// Persist Desktop's own last-good public status result. This never
+    /// touches the native-owned shared `service_status.json`.
+    pub(crate) fn save_status_snapshot(
+        &self,
+        snapshot: &crate::status::StoredStatusSnapshot,
+    ) -> Result<(), CoreError> {
+        let path = self.root.client_dir().join("service_status.v1.json");
+        self.write_json_bounded(&path, snapshot, crate::status::STATUS_SNAPSHOT_MAX_BYTES)
+    }
+
+    /// Read the one fixed Desktop status cache through capability-relative,
+    /// no-follow handles. A malformed, stale, or unsafe file is unavailable;
+    /// this read never creates the private namespace.
+    pub(crate) fn load_status_snapshot(
+        &self,
+        now: f64,
+    ) -> Option<crate::status::StoredStatusSnapshot> {
+        let root = crate::paths::open_ambient_dir(self.root.shared()).ok()?;
+        let client = crate::paths::open_dir_nofollow(&root, Path::new("client")).ok()?;
+        let desktop = crate::paths::open_dir_nofollow(&client, Path::new("desktop")).ok()?;
+        let mut options = OpenOptions::new();
+        options.read(true).follow(FollowSymlinks::No);
+        let file = desktop
+            .open_with(Path::new("service_status.v1.json"), &options)
+            .ok()?;
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file() || metadata.len() > crate::status::STATUS_SNAPSHOT_MAX_BYTES as u64 {
+            return None;
+        }
+        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+        let file = file;
+        if file
+            .take(crate::status::STATUS_SNAPSHOT_MAX_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+            || bytes.len() > crate::status::STATUS_SNAPSHOT_MAX_BYTES
+        {
+            return None;
+        }
+        let snapshot =
+            serde_json::from_slice::<crate::status::StoredStatusSnapshot>(&bytes).ok()?;
+        snapshot.valid_at(now).then_some(snapshot)
+    }
+
+    fn write_json_bounded<T: Serialize>(
+        &self,
+        path: &Path,
+        value: &T,
+        max_bytes: usize,
+    ) -> Result<(), CoreError> {
+        let mut buffer = Vec::new();
+        let formatter = serde_json::ser::PrettyFormatter::with_indent(b"  ");
+        let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
+        value.serialize(&mut serializer)?;
+        buffer.push(b'\n');
+        if buffer.len() > max_bytes {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Desktop status snapshot exceeds its fixed size limit",
+            )
+            .into());
+        }
+        self.write_json(path, value)
     }
 
     /// Atomic, namespace-guarded JSON write.
@@ -459,5 +524,37 @@ mod tests {
             .collect();
         assert_eq!(entries.len(), 1, "got {entries:?}");
         assert!(entries[0].starts_with("quota-v1-"));
+    }
+
+    #[test]
+    fn status_snapshot_is_bounded_and_read_nofollow() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let now = 1_800_000_000.0;
+        let snapshot = crate::status::StoredStatusSnapshot {
+            schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
+            saved_at: now,
+            providers: vec![],
+        };
+        let store = ClientStore::new(root.clone());
+        store.save_status_snapshot(&snapshot).unwrap();
+        assert_eq!(
+            store.load_status_snapshot(now).unwrap().schema_version,
+            crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION
+        );
+
+        let oversized = crate::status::StoredStatusSnapshot {
+            schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
+            saved_at: now,
+            providers: vec![crate::status::StoredProviderStatus {
+                tool: ToolType::Claude,
+                indicator: "none".into(),
+                description: "x".repeat(crate::status::STATUS_SNAPSHOT_MAX_BYTES),
+                updated_at: None,
+                incidents: vec![],
+            }],
+        };
+        assert!(store.save_status_snapshot(&oversized).is_err());
+        assert_eq!(store.load_status_snapshot(now).unwrap().providers.len(), 0);
     }
 }

@@ -28,6 +28,8 @@ window, on macOS, Windows, and Linux.
   Settings page shows the effective values; Desktop does not save them yet.
 - **Service status.** Reads cached native status immediately, then refreshes
   OpenAI-wide, Claude, Google AI, and Cursor status from public feeds without credentials.
+  A fresh Desktop last-good snapshot is private to `client/desktop/`; shared
+  `service_status.json` remains read-only.
 - **Local usage and cost.** Scans bounded Codex and Claude session JSONL files
   into an in-memory priced-usage view. Unknown models stay visibly unpriced;
   Desktop does not write a cost cache or ledger yet.
@@ -89,11 +91,10 @@ pnpm tauri build    # package
 ### Read-only MCP stdio
 
 Run the Desktop binary with `--mcp-stdio` to serve cached `quota.get`,
-`sessions.list`, and `sessions.search` over JSON-RPC stdin/stdout. This mode
-never refreshes providers, scans usage, writes configuration, or connects to
-the native app. Cost and service-status tools are intentionally absent: their
-Desktop snapshots are process-local, so a fresh stdio process could not report
-them truthfully without a new scan or a durable read-only cache contract.
+`sessions.list`, `sessions.search`, and `status.get` over JSON-RPC stdin/stdout.
+This mode never refreshes providers, scans usage, writes configuration, or
+connects to the native app. `status.get` returns only Desktop's fresh private
+last-good snapshot, never a network refresh or native shared-status write.
 
 Verification:
 

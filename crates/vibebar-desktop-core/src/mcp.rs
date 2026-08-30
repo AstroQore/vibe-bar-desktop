@@ -9,6 +9,7 @@ use crate::model::ToolType;
 use crate::paths::{home_directory, DataRoot};
 use crate::refresh::QuotaEngine;
 use crate::sessions::SessionsService;
+use crate::status::StoredStatusSnapshot;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 static EMPTY_PARAMS: std::sync::LazyLock<Map<String, Value>> = std::sync::LazyLock::new(Map::new);
@@ -16,6 +17,7 @@ static EMPTY_PARAMS: std::sync::LazyLock<Map<String, Value>> = std::sync::LazyLo
 pub struct ReadonlyMcp {
     quota: QuotaEngine,
     sessions: SessionsService,
+    status: Option<StoredStatusSnapshot>,
 }
 
 impl ReadonlyMcp {
@@ -34,9 +36,12 @@ impl ReadonlyMcp {
 
     pub fn with_home(root: DataRoot, home: impl Into<std::path::PathBuf>) -> Self {
         let home = home.into();
+        let status =
+            crate::client_store::ClientStore::new(root.clone()).load_status_snapshot(now_unix());
         Self {
             quota: QuotaEngine::new(root.clone()),
             sessions: SessionsService::with_home(root.clone(), home.clone()),
+            status,
         }
     }
 
@@ -136,6 +141,12 @@ impl ReadonlyMcp {
                 serde_json::to_value(self.sessions.search(query, limit))
                     .map_err(|_| Problem::internal())?
             }
+            "status.get" => {
+                let arguments = object_params(arguments, &["tools"])?;
+                let tools = parse_tools(arguments.get("tools"))?;
+                serde_json::to_value(status_response(self.status.as_ref(), tools.as_deref()))
+                    .map_err(|_| Problem::internal())?
+            }
             _ => return Err(Problem::invalid_params()),
         };
         Ok(json!({"content": [{"type": "text", "text": value.to_string()}]}))
@@ -185,7 +196,78 @@ fn tool_catalog() -> Vec<Value> {
                 &["query"],
             ),
         ),
+        tool(
+            "status.get",
+            "Read Desktop's last-good public provider status without refreshing the network",
+            schema(&[("tools", tools_schema())], &[]),
+        ),
     ]
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpStatusResponse {
+    generated_at: f64,
+    last_fetched: Option<f64>,
+    companies: Vec<McpStatusCompany>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpStatusCompany {
+    tool: ToolType,
+    company: &'static str,
+    indicator: String,
+    description: String,
+    updated_at: Option<f64>,
+    is_refreshing: bool,
+    error: Option<String>,
+}
+
+fn status_response(
+    snapshot: Option<&StoredStatusSnapshot>,
+    tools: Option<&[ToolType]>,
+) -> McpStatusResponse {
+    let now = now_unix();
+    let Some(snapshot) = snapshot.filter(|snapshot| snapshot.valid_at(now)) else {
+        return McpStatusResponse {
+            generated_at: now,
+            last_fetched: None,
+            companies: Vec::new(),
+        };
+    };
+    let mut companies = snapshot
+        .providers
+        .iter()
+        .filter(|provider| {
+            tools.is_none_or(|tools| {
+                tools.contains(&provider.tool)
+                    || (provider.tool == ToolType::Gemini && tools.contains(&ToolType::Antigravity))
+            })
+        })
+        .map(|provider| McpStatusCompany {
+            tool: provider.tool,
+            company: provider.tool.hierarchy().vendor,
+            indicator: provider.indicator.clone(),
+            description: provider.description.clone(),
+            updated_at: provider.updated_at,
+            is_refreshing: false,
+            error: None,
+        })
+        .collect::<Vec<_>>();
+    companies.sort_by_key(|company| company.tool.raw_value());
+    McpStatusResponse {
+        generated_at: now,
+        last_fetched: Some(snapshot.saved_at),
+        companies,
+    }
+}
+
+fn now_unix() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .unwrap_or(0.0)
 }
 
 fn tool(name: &str, description: &str, input_schema: Value) -> Value {
@@ -327,7 +409,12 @@ mod tests {
                 .iter()
                 .filter_map(|tool| tool["name"].as_str())
                 .collect::<Vec<_>>(),
-            vec!["quota.get", "sessions.list", "sessions.search"]
+            vec![
+                "quota.get",
+                "sessions.list",
+                "sessions.search",
+                "status.get"
+            ]
         );
         assert!(tools
             .iter()
@@ -453,12 +540,60 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = DataRoot::at(temp.path().join(".vibebar"));
         let server = ReadonlyMcp::with_home(root.clone(), temp.path());
-        for name in ["quota.get", "sessions.list"] {
+        for name in ["quota.get", "sessions.list", "status.get"] {
             let line = format!(
                 r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"{name}","arguments":{{}}}}}}"#
             );
             assert!(server.handle_line(&line).is_some());
         }
         assert!(!root.shared().exists());
+    }
+
+    #[test]
+    fn status_get_reads_only_the_fresh_private_snapshot_and_maps_antigravity() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(temp.path().join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+        std::fs::write(root.service_status_file(), "native-must-not-change").unwrap();
+        let before = std::fs::read(root.service_status_file()).unwrap();
+        let now = now_unix();
+        crate::client_store::ClientStore::new(root.clone())
+            .save_status_snapshot(&crate::status::StoredStatusSnapshot {
+                schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
+                saved_at: now,
+                providers: vec![crate::status::StoredProviderStatus {
+                    tool: ToolType::Gemini,
+                    indicator: "minor".into(),
+                    description: "Synthetic Google AI issue".into(),
+                    updated_at: Some(now - 1.0),
+                    incidents: vec![],
+                }],
+            })
+            .unwrap();
+        let server = ReadonlyMcp::with_home(root.clone(), temp.path());
+        let reply = server.handle_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status.get","arguments":{"tools":["antigravity"]},"_meta":{"progressToken":"p"}}}"#).unwrap();
+        let response: Value = serde_json::from_str(&reply).unwrap();
+        let value: Value =
+            serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap())
+                .unwrap();
+        assert!(value["lastFetched"].as_f64().unwrap() > 0.0);
+        assert_eq!(value["companies"].as_array().unwrap().len(), 1);
+        assert_eq!(value["companies"][0]["tool"], "gemini");
+        assert_eq!(value["companies"][0]["company"], "Google AI");
+        assert_eq!(value["companies"][0]["isRefreshing"], false);
+        assert_eq!(value["companies"][0]["error"], Value::Null);
+        assert_eq!(std::fs::read(root.service_status_file()).unwrap(), before);
+    }
+
+    #[test]
+    fn status_get_rechecks_freshness_for_a_long_running_stdio_server() {
+        let stale = crate::status::StoredStatusSnapshot {
+            schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
+            saved_at: 1.0,
+            providers: vec![],
+        };
+        let response = status_response(Some(&stale), None);
+        assert_eq!(response.last_fetched, None);
+        assert!(response.companies.is_empty());
     }
 }

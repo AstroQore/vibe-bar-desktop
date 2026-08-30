@@ -14,6 +14,9 @@ use crate::model::{ToolType, CLOCK_SKEW_TOLERANCE_SECONDS};
 use crate::paths::DataRoot;
 use crate::shared::service_status;
 
+pub(crate) const STATUS_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+pub(crate) const STATUS_SNAPSHOT_MAX_BYTES: usize = 256 * 1024;
+const STATUS_SNAPSHOT_MAX_AGE: f64 = 24.0 * 60.0 * 60.0;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOGLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
@@ -22,14 +25,14 @@ const MAX_STATUS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const GOOGLE_GEMINI_PRODUCT_ID: &str = "npdyhgECDJ6tB66MxXyo";
 const GOOGLE_INCIDENTS_URL: &str = "https://www.google.com/appsstatus/dashboard/incidents.json";
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceStatusView {
     pub providers: Vec<ProviderStatus>,
     pub updated_at: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
     pub tool: ToolType,
@@ -39,7 +42,7 @@ pub struct ProviderStatus {
     pub incidents: Vec<StatusIncident>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusIncident {
     pub id: String,
@@ -48,6 +51,153 @@ pub struct StatusIncident {
     pub impact: String,
     pub created_at: Option<f64>,
     pub updated_at: Option<f64>,
+}
+
+/// Fixed Desktop-owned, last-good cache. It intentionally has no relationship
+/// to native's shared `service_status.json` wire format.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StoredStatusSnapshot {
+    pub schema_version: u32,
+    pub saved_at: f64,
+    pub providers: Vec<StoredProviderStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StoredProviderStatus {
+    pub tool: ToolType,
+    pub indicator: String,
+    pub description: String,
+    pub updated_at: Option<f64>,
+    pub incidents: Vec<StoredStatusIncident>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StoredStatusIncident {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub impact: String,
+    pub created_at: Option<f64>,
+    pub updated_at: Option<f64>,
+}
+
+impl StoredStatusSnapshot {
+    pub(crate) fn from_view(view: &ServiceStatusView, saved_at: f64) -> Option<Self> {
+        let snapshot = Self {
+            schema_version: STATUS_SNAPSHOT_SCHEMA_VERSION,
+            saved_at,
+            providers: view
+                .providers
+                .iter()
+                .map(StoredProviderStatus::from)
+                .collect(),
+        };
+        snapshot.valid_at(saved_at).then_some(snapshot)
+    }
+
+    pub(crate) fn valid_at(&self, now: f64) -> bool {
+        if self.schema_version != STATUS_SNAPSHOT_SCHEMA_VERSION
+            || !plausible_time(self.saved_at, now)
+            || now - self.saved_at > STATUS_SNAPSHOT_MAX_AGE
+            || self.providers.len() > 4
+        {
+            return false;
+        }
+        let mut seen = std::collections::HashSet::new();
+        self.providers.iter().all(|provider| {
+            matches!(
+                provider.tool,
+                ToolType::Codex | ToolType::Claude | ToolType::Gemini | ToolType::Cursor
+            ) && seen.insert(provider.tool)
+                && normalize_indicator(Some(&provider.indicator)).is_some()
+                && !provider.description.trim().is_empty()
+                && provider
+                    .updated_at
+                    .is_none_or(|time| plausible_time(time, now))
+                && provider.incidents.len() <= 4
+                && provider.incidents.iter().all(|incident| {
+                    !incident.id.trim().is_empty()
+                        && !incident.name.trim().is_empty()
+                        && !incident.status.trim().is_empty()
+                        && normalize_indicator(Some(&incident.impact)).is_some()
+                        && incident
+                            .created_at
+                            .is_none_or(|time| plausible_time(time, now))
+                        && incident
+                            .updated_at
+                            .is_none_or(|time| plausible_time(time, now))
+                })
+        })
+    }
+
+    pub(crate) fn view(&self) -> ServiceStatusView {
+        let updated_at = self
+            .providers
+            .iter()
+            .filter_map(|provider| provider.updated_at)
+            .max_by(f64::total_cmp);
+        ServiceStatusView {
+            providers: self.providers.iter().map(ProviderStatus::from).collect(),
+            updated_at,
+        }
+    }
+}
+
+impl From<&ProviderStatus> for StoredProviderStatus {
+    fn from(value: &ProviderStatus) -> Self {
+        Self {
+            tool: value.tool,
+            indicator: value.indicator.clone(),
+            description: value.description.clone(),
+            updated_at: value.updated_at,
+            incidents: value
+                .incidents
+                .iter()
+                .map(StoredStatusIncident::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<&StoredProviderStatus> for ProviderStatus {
+    fn from(value: &StoredProviderStatus) -> Self {
+        Self {
+            tool: value.tool,
+            indicator: value.indicator.clone(),
+            description: value.description.clone(),
+            updated_at: value.updated_at,
+            incidents: value.incidents.iter().map(StatusIncident::from).collect(),
+        }
+    }
+}
+
+impl From<&StatusIncident> for StoredStatusIncident {
+    fn from(value: &StatusIncident) -> Self {
+        Self {
+            id: value.id.clone(),
+            name: value.name.clone(),
+            status: value.status.clone(),
+            impact: value.impact.clone(),
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+impl From<&StoredStatusIncident> for StatusIncident {
+    fn from(value: &StoredStatusIncident) -> Self {
+        Self {
+            id: value.id.clone(),
+            name: value.name.clone(),
+            status: value.status.clone(),
+            impact: value.impact.clone(),
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -59,6 +209,7 @@ pub enum ServiceStatusError {
 }
 
 pub struct ServiceStatusEngine {
+    root: DataRoot,
     client: reqwest::Client,
     cached: RwLock<ServiceStatusView>,
     refresh_gate: tokio::sync::Mutex<()>,
@@ -67,11 +218,17 @@ pub struct ServiceStatusEngine {
 
 impl ServiceStatusEngine {
     pub fn new(root: DataRoot) -> Self {
+        let is_demo = root.is_demo();
+        let cached = crate::client_store::ClientStore::new(root.clone())
+            .load_status_snapshot(now_unix())
+            .map(|snapshot| snapshot.view())
+            .unwrap_or_else(|| seed(&root));
         Self {
+            root,
             client: public_client(),
-            cached: RwLock::new(seed(&root)),
+            cached: RwLock::new(cached),
             refresh_gate: tokio::sync::Mutex::new(()),
-            is_demo: root.is_demo(),
+            is_demo,
         }
     }
 
@@ -115,6 +272,13 @@ impl ServiceStatusEngine {
             providers,
             updated_at,
         };
+        // Persistence is deliberately best-effort: a successful public
+        // refresh remains useful in this process, while an I/O failure leaves
+        // the prior last-good private snapshot intact for the next launch.
+        if let Some(snapshot) = StoredStatusSnapshot::from_view(&next, now_unix()) {
+            let _ = crate::client_store::ClientStore::new(self.root.clone())
+                .save_status_snapshot(&snapshot);
+        }
         if let Ok(mut cached) = self.cached.write() {
             *cached = next.clone();
         }
@@ -153,6 +317,10 @@ fn public_client() -> reqwest::Client {
 
 fn now_unix() -> f64 {
     Utc::now().timestamp_millis() as f64 / 1_000.0
+}
+
+pub(crate) fn plausible_time(time: f64, now: f64) -> bool {
+    time.is_finite() && time > 0.0 && time <= now + CLOCK_SKEW_TOLERANCE_SECONDS
 }
 
 fn seed(root: &DataRoot) -> ServiceStatusView {
@@ -762,10 +930,78 @@ mod tests {
         );
     }
 
+    fn stored(now: f64) -> StoredStatusSnapshot {
+        StoredStatusSnapshot {
+            schema_version: STATUS_SNAPSHOT_SCHEMA_VERSION,
+            saved_at: now,
+            providers: vec![StoredProviderStatus {
+                tool: ToolType::Claude,
+                indicator: "minor".into(),
+                description: "Synthetic incident".into(),
+                updated_at: Some(now - 1.0),
+                incidents: vec![StoredStatusIncident {
+                    id: "incident-1".into(),
+                    name: "Synthetic incident".into(),
+                    status: "investigating".into(),
+                    impact: "minor".into(),
+                    created_at: Some(now - 2.0),
+                    updated_at: Some(now - 1.0),
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn private_last_good_snapshot_round_trips_and_outranks_shared_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+        let shared = root.service_status_file();
+        std::fs::write(
+            &shared,
+            r#"["claude",{"indicator":"none","description":"Shared"}]"#,
+        )
+        .unwrap();
+        let before = std::fs::read(&shared).unwrap();
+        let now = now_unix();
+        crate::client_store::ClientStore::new(root.clone())
+            .save_status_snapshot(&stored(now))
+            .unwrap();
+
+        let restored = ServiceStatusEngine::new(root.clone()).cached();
+        assert_eq!(restored.providers.len(), 1);
+        assert_eq!(restored.providers[0].indicator, "minor");
+        assert_eq!(std::fs::read(&shared).unwrap(), before);
+        assert!(root.client_dir().join("service_status.v1.json").is_file());
+    }
+
+    #[test]
+    fn private_snapshot_rejects_bad_unknown_duplicate_future_and_stale_values() {
+        let now = 1_800_000_000.0;
+        let mut snapshot = stored(now);
+        assert!(snapshot.valid_at(now));
+        snapshot.schema_version = 2;
+        assert!(!snapshot.valid_at(now));
+        snapshot.schema_version = 1;
+        snapshot.providers.push(snapshot.providers[0].clone());
+        assert!(!snapshot.valid_at(now));
+
+        let future = stored(now + CLOCK_SKEW_TOLERANCE_SECONDS + 1.0);
+        assert!(!future.valid_at(now));
+        let stale = stored(now - STATUS_SNAPSHOT_MAX_AGE - 1.0);
+        assert!(!stale.valid_at(now));
+        assert!(serde_json::from_str::<StoredStatusSnapshot>(
+            r#"{"schemaVersion":1,"savedAt":1,"providers":[],"future":true}"#
+        )
+        .is_err());
+    }
+
     #[tokio::test]
     async fn demo_refresh_never_goes_to_the_network() {
         let dir = tempfile::tempdir().unwrap();
-        let engine = ServiceStatusEngine::new(DataRoot::at(dir.path().join(".vibebar")));
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let engine = ServiceStatusEngine::new(root.clone());
         assert_eq!(engine.refresh().await.unwrap().providers, Vec::new());
+        assert!(!root.client_dir().exists());
     }
 }
