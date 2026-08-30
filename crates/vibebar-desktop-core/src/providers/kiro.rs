@@ -110,7 +110,7 @@ async fn run(cli: &Path, args: &[&str], timeout: Duration) -> Result<CommandOutp
         Err(_) => {
             let _ = child.kill().await;
             let _ = child.wait().await;
-            return Err(QuotaError::Network("Kiro CLI timed out.".into()));
+            return Err(QuotaError::TimedOut);
         }
     };
     stdout.extend_from_slice(&stderr);
