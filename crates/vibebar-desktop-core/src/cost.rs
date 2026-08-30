@@ -124,8 +124,7 @@ impl CostEngine {
         for source in &files {
             match scan_file(&home, &self.home, source, &mut events, &mut malformed_lines) {
                 ScanFileResult::Scanned => scanned_files += 1,
-                ScanFileResult::TooLarge => truncated = true,
-                ScanFileResult::Skipped => {}
+                ScanFileResult::Skipped | ScanFileResult::TooLarge => truncated = true,
             }
         }
         let events = deduplicate_claude_events(events);
@@ -166,7 +165,8 @@ struct UsageEvent {
     input: u64,
     cache_read: u64,
     output: u64,
-    cache_creation: u64,
+    cache_creation_5m: u64,
+    cache_creation_1h: u64,
     service_tier: Option<String>,
     session_id: Option<String>,
     message_id: Option<String>,
@@ -181,7 +181,8 @@ impl UsageEvent {
         self.input
             .saturating_add(self.cache_read)
             .saturating_add(self.output)
-            .saturating_add(self.cache_creation)
+            .saturating_add(self.cache_creation_5m)
+            .saturating_add(self.cache_creation_1h)
     }
 }
 
@@ -243,24 +244,49 @@ fn collect_jsonl(
         budget.truncated = true;
         return;
     }
-    let Ok(root_metadata) = fs::symlink_metadata(root) else {
-        return;
+    let root_metadata = match fs::symlink_metadata(root) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            mark_discovery_error(&error, budget);
+            return;
+        }
     };
     if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
         return;
     }
-    let Ok(entries) = fs::read_dir(root) else {
-        return;
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            mark_discovery_error(&error, budget);
+            return;
+        }
     };
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                mark_discovery_error(&error, budget);
+                if budget.truncated {
+                    return;
+                }
+                continue;
+            }
+        };
         budget.entries += 1;
         if out.len() >= MAX_DISCOVERED_PER_PROVIDER || budget.entries > MAX_DISCOVERY_ENTRIES {
             budget.truncated = true;
             return;
         }
         let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
-            continue;
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                mark_discovery_error(&error, budget);
+                if budget.truncated {
+                    return;
+                }
+                continue;
+            }
         };
         if file_type.is_symlink() {
             continue;
@@ -275,6 +301,12 @@ fn collect_jsonl(
         {
             out.push(SourceFile { tool, path });
         }
+    }
+}
+
+fn mark_discovery_error(error: &std::io::Error, budget: &mut DiscoveryBudget) {
+    if error.kind() != std::io::ErrorKind::NotFound {
+        budget.truncated = true;
     }
 }
 
@@ -467,7 +499,8 @@ fn parse_codex(
         input,
         cache_read: cached,
         output,
-        cache_creation: 0,
+        cache_creation_5m: 0,
+        cache_creation_1h: 0,
         service_tier: explicit_service_tier(value, payload, info),
         session_id: None,
         message_id: None,
@@ -509,9 +542,14 @@ fn parse_claude(
     };
     let input = number(usage, "input_tokens");
     let cache_read = number(usage, "cache_read_input_tokens");
-    let cache_creation = number(usage, "cache_creation_input_tokens");
+    let (cache_creation_5m, cache_creation_1h) = claude_cache_creation(usage);
     let output = number(usage, "output_tokens");
-    if input == 0 && cache_read == 0 && cache_creation == 0 && output == 0 {
+    if input == 0
+        && cache_read == 0
+        && cache_creation_5m == 0
+        && cache_creation_1h == 0
+        && output == 0
+    {
         return;
     }
     let Some(date) = timestamp(value).or(fallback_time) else {
@@ -525,12 +563,13 @@ fn parse_claude(
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|model| !model.is_empty())
-            .unwrap_or("claude-sonnet-4-5")
+            .unwrap_or("claude-unknown")
             .to_string(),
         input,
         cache_read,
         output,
-        cache_creation,
+        cache_creation_5m,
+        cache_creation_1h,
         service_tier: usage
             .get("speed")
             .or_else(|| usage.get("service_tier"))
@@ -568,6 +607,24 @@ fn parse_claude(
             .any(|component| component.as_os_str() == "subagents"),
         source_key: source_path.to_string_lossy().into_owned(),
     });
+}
+
+fn claude_cache_creation(usage: &Value) -> (u64, u64) {
+    let total = number(usage, "cache_creation_input_tokens");
+    let Some(breakdown) = usage
+        .get("cache_creation")
+        .filter(|value| value.is_object())
+    else {
+        return (total, 0);
+    };
+    let five_minutes = number(breakdown, "ephemeral_5m_input_tokens");
+    let one_hour = number(breakdown, "ephemeral_1h_input_tokens");
+    let breakdown_total = five_minutes.saturating_add(one_hour);
+    if breakdown_total > 0 && (total == 0 || breakdown_total == total) {
+        (five_minutes, one_hour)
+    } else {
+        (total, 0)
+    }
 }
 
 fn bool_value(value: Option<&Value>) -> bool {
@@ -697,7 +754,8 @@ fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
         event
             .input
             .saturating_add(event.cache_read)
-            .saturating_add(event.cache_creation)
+            .saturating_add(event.cache_creation_5m)
+            .saturating_add(event.cache_creation_1h)
             > threshold
     });
     let rate = |base: f64, above: Option<f64>| {
@@ -714,11 +772,12 @@ fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
                 pricing.cache_read.unwrap_or(pricing.input),
                 pricing.cache_read_above.or(pricing.input_above),
             )
-        + event.cache_creation as f64
+        + event.cache_creation_5m as f64
             * rate(
                 pricing.cache_creation.unwrap_or(pricing.input),
                 pricing.cache_creation_above.or(pricing.input_above),
-            );
+            )
+        + event.cache_creation_1h as f64 * 2.0 * rate(pricing.input, pricing.input_above);
     if event
         .service_tier
         .as_deref()
@@ -1069,6 +1128,70 @@ mod tests {
     }
 
     #[test]
+    fn claude_cache_creation_breakdown_prices_one_hour_at_double_input() {
+        let value = serde_json::json!({
+            "type":"assistant","timestamp":rfc3339(now_unix()-1.0),
+            "message":{"model":"claude-haiku-4-5","usage":{
+                "input_tokens":10,"cache_read_input_tokens":10,
+                "cache_creation_input_tokens":14,"output_tokens":4,
+                "cache_creation":{
+                    "ephemeral_5m_input_tokens":8,
+                    "ephemeral_1h_input_tokens":6
+                }
+            }}
+        });
+        let mut events = Vec::new();
+        parse_claude(
+            &value,
+            None,
+            Path::new("/Users/example/.claude/projects/session.jsonl"),
+            &mut events,
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].cache_creation_5m, 8);
+        assert_eq!(events[0].cache_creation_1h, 6);
+        assert_eq!(events[0].tokens(), 38);
+        assert_eq!(priced_cost_micros(&events[0]), Some(53));
+        assert_eq!(
+            claude_cache_creation(&serde_json::json!({
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 3,
+                    "ephemeral_1h_input_tokens": 2
+                }
+            })),
+            (3, 2)
+        );
+    }
+
+    #[test]
+    fn missing_or_empty_claude_model_stays_unpriced() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        write_jsonl(
+            &home.path().join(".claude/projects/project/session.jsonl"),
+            &[
+                serde_json::json!({
+                    "type":"assistant","timestamp":rfc3339(scanned_at-2.0),
+                    "message":{"usage":{"input_tokens":2}}
+                }),
+                serde_json::json!({
+                    "type":"assistant","timestamp":rfc3339(scanned_at-1.0),
+                    "message":{"model":"  ","usage":{"output_tokens":3}}
+                }),
+            ],
+        );
+
+        let view = CostEngine::new(home.path()).refresh().unwrap();
+        assert_eq!(view.all_time.requests, 2);
+        assert_eq!(view.all_time.tokens, 5);
+        assert_eq!(view.unpriced_events, 2);
+        assert_eq!(view.models.len(), 1);
+        assert_eq!(view.models[0].model, "claude-unknown");
+        assert_eq!(view.models[0].priced_cost_micros, 0);
+    }
+
+    #[test]
     fn unknown_future_malformed_and_oversized_lines_are_honest() {
         let home = tempfile::tempdir().unwrap();
         let scanned_at = now_unix();
@@ -1113,7 +1236,8 @@ mod tests {
             input: 1,
             cache_read: 0,
             output: 0,
-            cache_creation: 0,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
             service_tier: None,
             session_id: None,
             message_id: None,
@@ -1138,6 +1262,7 @@ mod tests {
         assert_eq!(before, after);
         assert_eq!(view.scanned_files, 0);
         assert_eq!(view.all_time.requests, 0);
+        assert!(!view.truncated);
         assert!(view.scanned_at > 0.0);
         assert_eq!(view.pricing_version, PRICING_VERSION);
     }
@@ -1151,7 +1276,8 @@ mod tests {
             input: 200_001,
             cache_read: 0,
             output: 0,
-            cache_creation: 0,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
             service_tier: None,
             session_id: None,
             message_id: None,
@@ -1165,14 +1291,15 @@ mod tests {
 
     #[test]
     fn sonnet_split_cache_threshold_selects_one_rate_for_the_whole_request() {
-        let event = |cache_read, cache_creation| UsageEvent {
+        let event = |cache_read, cache_creation_5m, cache_creation_1h| UsageEvent {
             tool: ToolType::Claude,
             date: now_unix() - 1.0,
             model: "claude-sonnet-4-5".into(),
             input: 1,
             cache_read,
             output: 2,
-            cache_creation,
+            cache_creation_5m,
+            cache_creation_1h,
             service_tier: None,
             session_id: None,
             message_id: None,
@@ -1183,10 +1310,16 @@ mod tests {
         };
 
         // Exactly 200k input-context tokens stays on the base rates.
-        assert_eq!(priced_cost_micros(&event(99_999, 100_000)), Some(405_033));
+        assert_eq!(
+            priced_cost_micros(&event(99_999, 50_000, 50_000)),
+            Some(517_533)
+        );
         // Crossing the threshold via split cache usage prices every column,
         // including output, at the published above-threshold rate.
-        assert_eq!(priced_cost_micros(&event(100_000, 100_000)), Some(810_051));
+        assert_eq!(
+            priced_cost_micros(&event(100_000, 50_000, 50_000)),
+            Some(1_035_051)
+        );
     }
 
     #[test]
@@ -1198,7 +1331,8 @@ mod tests {
             input,
             cache_read: 0,
             output: 0,
-            cache_creation: 0,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
             service_tier: None,
             session_id: Some(session.into()),
             message_id: Some("message".into()),
@@ -1253,6 +1387,21 @@ mod tests {
     }
 
     #[test]
+    fn discovery_missing_roots_are_empty_but_other_io_errors_fail_closed() {
+        let home = tempfile::tempdir().unwrap();
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Codex, &[".codex/missing"], 1);
+        assert!(files.is_empty());
+        assert!(!truncated);
+
+        fs::write(home.path().join(".codex"), "not a directory").unwrap();
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
+        assert!(files.is_empty());
+        assert!(truncated);
+    }
+
+    #[test]
     fn oversized_sparse_file_is_truncated_and_not_counted_as_scanned() {
         let home = tempfile::tempdir().unwrap();
         let scanned_at = now_unix();
@@ -1274,5 +1423,30 @@ mod tests {
         assert!(view.truncated);
         assert_eq!(view.scanned_files, 1);
         assert_eq!(view.all_time.requests, 1);
+    }
+
+    #[test]
+    fn source_outside_the_scan_home_returns_skipped() {
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let path = outside.path().join("outside.jsonl");
+        fs::write(&path, "{}\n").unwrap();
+        let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
+        let mut events = Vec::new();
+        let mut malformed_lines = 0;
+
+        let result = scan_file(
+            &directory,
+            home.path(),
+            &SourceFile {
+                tool: ToolType::Claude,
+                path,
+            },
+            &mut events,
+            &mut malformed_lines,
+        );
+
+        assert_eq!(result, ScanFileResult::Skipped);
+        assert!(events.is_empty());
     }
 }
