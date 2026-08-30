@@ -27,7 +27,7 @@ use crate::model::{AccountQuota, QuotaOrigin};
 use crate::paths::DataRoot;
 
 const MAX_COST_SNAPSHOT_BYTES: u64 = 4 * 1024 * 1024;
-const COST_SNAPSHOT_SCHEMA: u8 = 1;
+const COST_SNAPSHOT_SCHEMA: u8 = 2;
 
 #[derive(Clone)]
 pub struct ClientStore {
