@@ -115,6 +115,25 @@ input[type="text"] {
   white-space: nowrap;
 }
 
+@media (max-width: 640px) {
+  .header {
+    gap: 4px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+  .header > .status-line {
+    display: none;
+  }
+  .tabs {
+    gap: 0;
+    min-width: 0;
+  }
+  .tab {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+}
+
 .content {
   flex: 1;
   overflow-y: auto;
