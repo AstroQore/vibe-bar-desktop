@@ -13,10 +13,10 @@ window, on macOS, Windows, and Linux.
 
 ## What it does today
 
-- **Quota.** Fetches Codex and Claude with their CLI credentials, plus Z.ai,
-  MiniMax, OpenRouter, and Warp with explicit environment API keys. The other
-  19 providers are read from the shared data root and labeled `shared data`,
-  so the UI never overstates how fresh a number is.
+- **Quota.** Fetches Codex and Claude with their CLI credentials, plus Alibaba
+  Coding Plan, Z.ai, MiniMax, Kilo, OpenRouter, and Warp with explicit API
+  credentials. The other 17 providers are read from the shared data root and
+  labeled `shared data`, so the UI never overstates how fresh a number is.
 - **Tray.** One line of the fields you picked, with your labels and your
   remaining-vs-used preference — read from the same settings the macOS menu
   bar uses.
@@ -25,10 +25,11 @@ window, on macOS, Windows, and Linux.
   back to scanning Codex and Claude Code logs directly when it does not.
 
 API-key adapters read credentials from the process environment and never
-persist them: `Z_AI_API_KEY`, `MINIMAX_CODING_API_KEY` (or
-`MINIMAX_API_KEY`), `OPENROUTER_API_KEY`, and `WARP_API_KEY` (or
-`WARP_TOKEN`). Endpoint/region overrides retain each provider's standard env
-names; see the corresponding module in `providers/`.
+persist them: `DASHSCOPE_API_KEY` (or `ALIBABA_API_KEY`), `Z_AI_API_KEY`,
+`MINIMAX_CODING_API_KEY` (or `MINIMAX_API_KEY`), `KILO_API_KEY`,
+`OPENROUTER_API_KEY`, and `WARP_API_KEY` (or `WARP_TOKEN`). Kilo can also
+read its CLI login file. Endpoint/region overrides retain each provider's
+standard env names; see the corresponding module in `providers/`.
 
 ## One product, two clients
 

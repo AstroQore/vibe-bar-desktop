@@ -16,8 +16,8 @@ turned out to be wrong.
 | Area | State |
 | --- | --- |
 | Quota — Codex, Claude | Live fetch from the provider's own API using CLI credentials |
-| Quota — Z.ai, MiniMax, OpenRouter, Warp | Live fetch using explicit environment API keys |
-| Quota — the other 19 providers | Read from the shared cache, labeled `shared data` |
+| Quota — Alibaba, Z.ai, MiniMax, Kilo, OpenRouter, Warp | Live fetch using explicit API credentials |
+| Quota — the other 17 providers | Read from the shared cache, labeled `shared data` |
 | Tray | One line, fields and labels from the shared settings, remaining/used honoured |
 | Sessions | Shared index when present (all harnesses, FTS); otherwise Codex + Claude log scan |
 | Transcripts | Codex and Claude Code JSONL, paged, tolerant of unknown lines |

@@ -51,9 +51,10 @@ export function About({ info, view }: { info: AppInfo | null; view: QuotaView | 
       </dl>
 
       <p className="status-line" style={{ marginTop: 20, whiteSpace: "normal" }}>
-        This preview fetches Codex, Claude, Z.ai, MiniMax, OpenRouter, and Warp
-        quota directly and reads every other provider from the shared cache. It
-        never writes shared Vibe Bar state — see docs/SHARED-STORAGE.md.
+        This preview fetches Codex, Claude, Alibaba, Z.ai, MiniMax, Kilo,
+        OpenRouter, and Warp quota directly and reads every other provider from
+        the shared cache. It never writes shared Vibe Bar state — see
+        docs/SHARED-STORAGE.md.
       </p>
 
       <p style={{ marginTop: 12 }}>

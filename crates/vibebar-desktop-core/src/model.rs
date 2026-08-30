@@ -188,8 +188,10 @@ impl ToolType {
             self,
             ToolType::Codex
                 | ToolType::Claude
+                | ToolType::Alibaba
                 | ToolType::Zai
                 | ToolType::Minimax
+                | ToolType::Kilo
                 | ToolType::OpenRouter
                 | ToolType::Warp
         )
