@@ -4,7 +4,7 @@
 //! snapshot. It never reads provider credentials and never writes any shared
 //! Vibe Bar cost, history, pricing, or ledger store.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -692,10 +692,11 @@ fn scan_file(
     let mut codex_model = "codex-unknown".to_string();
     let source_key: Arc<str> = source.path.to_string_lossy().into_owned().into();
     let mut gemini_session_id = None;
+    let capacity = event_limit.saturating_sub(events.len());
+    let mut retained_events = VecDeque::with_capacity(capacity);
+    let mut parsed_events = Vec::with_capacity(1);
+    let mut dropped_events = false;
     for line in bytes.split(|byte| *byte == b'\n') {
-        if events.len() >= event_limit {
-            return ScanFileResult::EventLimit;
-        }
         if line.is_empty() || line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
@@ -707,29 +708,43 @@ fn scan_file(
             *malformed_lines += 1;
             continue;
         };
+        parsed_events.clear();
         match source.tool {
             ToolType::Codex => parse_codex(
                 &value,
                 &mut codex_model,
                 &mut codex_previous,
                 &source_key,
-                events,
+                &mut parsed_events,
             ),
-            ToolType::Claude => parse_claude(&value, &source.path, &source_key, events),
+            ToolType::Claude => {
+                parse_claude(&value, &source.path, &source_key, &mut parsed_events)
+            }
             ToolType::Gemini => parse_gemini(
                 &value,
                 gemini_fallback_time,
                 &source_key,
                 &mut gemini_session_id,
-                events,
+                &mut parsed_events,
             ),
             _ => {}
         }
-        if events.len() >= event_limit {
-            return ScanFileResult::EventLimit;
+        for event in parsed_events.drain(..) {
+            if retained_events.len() == capacity {
+                retained_events.pop_front();
+                dropped_events = true;
+            }
+            if capacity > 0 {
+                retained_events.push_back(event);
+            }
         }
     }
-    ScanFileResult::Scanned
+    events.extend(retained_events);
+    if dropped_events {
+        ScanFileResult::EventLimit
+    } else {
+        ScanFileResult::Scanned
+    }
 }
 
 fn parse_gemini(
@@ -2265,6 +2280,47 @@ mod tests {
     }
 
     #[test]
+    fn newest_events_from_a_long_lived_file_fill_the_provider_capacity() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        let path = home.path().join(".codex/sessions/session.jsonl");
+        write_jsonl(
+            &path,
+            &[
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-3.0*86_400.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-2.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":102}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-1.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":105}}}}),
+            ],
+        );
+        let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
+        let scan = scan_sources(
+            &directory,
+            home.path(),
+            [vec![SourceFile {
+                tool: ToolType::Codex,
+                path,
+                mtime: UNIX_EPOCH,
+            }]],
+            2,
+            1024 * 1024,
+        );
+
+        assert!(scan.truncated);
+        assert_eq!(scan.events.len(), 2);
+        let view = aggregate(
+            &scan.events,
+            scan.scanned_files,
+            scan.malformed_lines,
+            scan.truncated,
+            scanned_at,
+        );
+        assert_eq!(view.today.requests, 2);
+        assert_eq!(view.today.tokens, 5);
+        assert_eq!(view.all_time.requests, 2);
+        assert_eq!(view.all_time.tokens, 5);
+    }
+
+    #[test]
     fn deeply_nested_empty_trees_stop_at_the_discovery_budget() {
         let home = tempfile::tempdir().unwrap();
         let mut directory = home.path().join(".codex/sessions");
@@ -2542,6 +2598,6 @@ mod tests {
 
         assert_eq!(result, ScanFileResult::EventLimit);
         assert_eq!(events.len(), 2);
-        assert_eq!(events.iter().map(|event| event.input).sum::<u64>(), 3);
+        assert_eq!(events.iter().map(|event| event.input).sum::<u64>(), 6);
     }
 }
