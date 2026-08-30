@@ -103,6 +103,9 @@ impl DataRoot {
     pub fn client_quotas_dir(&self) -> PathBuf {
         self.client_dir().join("quotas")
     }
+    pub fn client_launch_state_file(&self) -> PathBuf {
+        self.client_dir().join("launch-state.json")
+    }
 
     /// Guard used by every write path in this crate.
     pub fn is_within_client_namespace(&self, path: &Path) -> bool {

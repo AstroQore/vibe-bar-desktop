@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use state::AppState;
 use tauri::{Emitter, Manager, WindowEvent};
+use vibebar_desktop_core::client_store::{startup_action, ClientStore, StartupAction};
 
 /// Emitted whenever a refresh completes, carrying the full `QuotaView`.
 pub const QUOTA_EVENT: &str = "vibebar://quota-updated";
@@ -50,13 +51,47 @@ pub fn run() {
         ])
         .setup(|app| {
             let state = AppState::new();
-            tray::install(app.handle(), &state)?;
+            // Tray failure deliberately does not abort setup: without a tray,
+            // hiding the only window would leave the user no way back in.
+            let tray_installed = tray::install(app.handle(), &state).is_ok();
+            let store = ClientStore::new(state.data_root().clone());
+            let action = startup_action(
+                state.data_root().is_demo(),
+                tray_installed,
+                store.first_run_state(),
+            );
             app.manage(state);
+            apply_startup_action(app.handle(), &store, action);
             spawn_refresh_loop(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running Vibe Bar Desktop");
+}
+
+fn apply_startup_action<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &ClientStore,
+    action: StartupAction,
+) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    match action {
+        StartupAction::HideToTray => {
+            if window.hide().is_err() {
+                let _ = window.show();
+            }
+        }
+        StartupAction::Show => {
+            let _ = window.show();
+        }
+        StartupAction::ShowAndMarkFirstRunComplete => {
+            if window.show().is_ok() {
+                let _ = store.mark_first_run_complete();
+            }
+        }
+    }
 }
 
 /// Background refresh: one immediate pass, then on the cadence the shared
