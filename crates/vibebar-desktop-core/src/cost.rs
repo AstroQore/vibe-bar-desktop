@@ -215,11 +215,11 @@ fn collect_provider_files(
     let mut budget = DiscoveryBudget::default();
     for root in roots {
         collect_jsonl(&home.join(root), tool, &mut files, 0, true, &mut budget);
-        if budget.truncated {
+        if budget.stop {
             break;
         }
     }
-    let discovery_truncated = budget.truncated;
+    let discovery_truncated = budget.incomplete;
     files.sort_by(|left, right| {
         right
             .mtime
@@ -343,7 +343,19 @@ fn scan_sources<const N: usize>(
 #[derive(Default)]
 struct DiscoveryBudget {
     entries: usize,
-    truncated: bool,
+    incomplete: bool,
+    stop: bool,
+}
+
+impl DiscoveryBudget {
+    fn mark_incomplete(&mut self) {
+        self.incomplete = true;
+    }
+
+    fn exhaust(&mut self) {
+        self.mark_incomplete();
+        self.stop = true;
+    }
 }
 
 fn collect_jsonl(
@@ -358,7 +370,7 @@ fn collect_jsonl(
         || out.len() >= MAX_DISCOVERED_PER_PROVIDER
         || budget.entries >= MAX_DISCOVERY_ENTRIES
     {
-        budget.truncated = true;
+        budget.exhaust();
         return;
     }
     let root_metadata = match fs::symlink_metadata(root) {
@@ -369,7 +381,7 @@ fn collect_jsonl(
         }
     };
     if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
-        budget.truncated = true;
+        budget.mark_incomplete();
         return;
     }
     let entries = match fs::read_dir(root) {
@@ -384,15 +396,12 @@ fn collect_jsonl(
             Ok(entry) => entry,
             Err(error) => {
                 mark_discovery_error(&error, false, budget);
-                if budget.truncated {
-                    return;
-                }
                 continue;
             }
         };
         budget.entries += 1;
         if out.len() >= MAX_DISCOVERED_PER_PROVIDER || budget.entries > MAX_DISCOVERY_ENTRIES {
-            budget.truncated = true;
+            budget.exhaust();
             return;
         }
         let path = entry.path();
@@ -400,19 +409,16 @@ fn collect_jsonl(
             Ok(file_type) => file_type,
             Err(error) => {
                 mark_discovery_error(&error, false, budget);
-                if budget.truncated {
-                    return;
-                }
                 continue;
             }
         };
         if file_type.is_symlink() {
-            budget.truncated = true;
-            return;
+            budget.mark_incomplete();
+            continue;
         }
         if file_type.is_dir() {
             collect_jsonl(&path, tool, out, depth + 1, false, budget);
-            if budget.truncated {
+            if budget.stop {
                 return;
             }
         } else if file_type.is_file()
@@ -422,12 +428,12 @@ fn collect_jsonl(
                 Ok(metadata) => metadata,
                 Err(error) => {
                     mark_discovery_error(&error, false, budget);
-                    return;
+                    continue;
                 }
             };
             if metadata.file_type().is_symlink() || !metadata.is_file() {
-                budget.truncated = true;
-                return;
+                budget.mark_incomplete();
+                continue;
             }
             out.push(SourceFile {
                 tool,
@@ -444,7 +450,7 @@ fn mark_discovery_error(
     budget: &mut DiscoveryBudget,
 ) {
     if error.kind() != std::io::ErrorKind::NotFound || !optional_root {
-        budget.truncated = true;
+        budget.mark_incomplete();
     }
 }
 
@@ -1968,7 +1974,7 @@ mod tests {
             false,
             &mut budget,
         );
-        assert!(budget.truncated);
+        assert!(budget.incomplete);
 
         fs::write(home.path().join(".codex"), "not a directory").unwrap();
         let (files, truncated) =
@@ -1995,7 +2001,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn symlinked_project_below_an_accepted_root_is_truncated() {
+    fn symlinked_project_marks_truncated_but_keeps_a_valid_sibling() {
         use std::os::unix::fs::symlink;
 
         let home = tempfile::tempdir().unwrap();
@@ -2003,11 +2009,21 @@ mod tests {
         let projects = home.path().join(".claude/projects");
         fs::create_dir_all(&projects).unwrap();
         symlink(outside.path(), projects.join("linked-project")).unwrap();
+        let scanned_at = now_unix();
+        write_jsonl(
+            &projects.join("safe/session.jsonl"),
+            &[serde_json::json!({
+                "type":"assistant","timestamp":rfc3339(scanned_at-1.0),
+                "message":{"model":"claude-haiku-4-5","usage":{"input_tokens":1}}
+            })],
+        );
 
-        let (files, truncated) =
-            collect_provider_files(home.path(), ToolType::Claude, &[".claude/projects"], 1);
-        assert!(files.is_empty());
-        assert!(truncated);
+        let root = DataRoot::at_non_demo(home.path().join(".vibebar"));
+        let view = CostEngine::new(root.clone(), home.path()).refresh().unwrap();
+        assert!(view.truncated);
+        assert_eq!(view.scanned_files, 1);
+        assert_eq!(view.all_time.requests, 1);
+        assert!(!root.client_cost_snapshot_file().exists());
     }
 
     #[test]
