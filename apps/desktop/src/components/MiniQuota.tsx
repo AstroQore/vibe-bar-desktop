@@ -24,7 +24,13 @@ export function MiniQuota() {
     };
   }, []);
 
-  const fields = settings?.selectedFieldIds.length ? settings.selectedFieldIds : DEFAULT_FIELDS;
+  const fields = settings?.selectedFieldIds.length
+    ? settings.selectedFieldIds
+    : [...new Set([
+        ...DEFAULT_FIELDS,
+        ...(view?.accounts.flatMap((account) =>
+          account.buckets[0] ? [`${account.tool}.${account.buckets[0].id}`] : []) ?? []),
+      ])];
   const rows = view ? fields.slice(0, 4).flatMap((field) => resolveField(view, settings, field)) : [];
 
   return (
@@ -57,7 +63,7 @@ function resolveField(view: QuotaView, settings: PresentationSettings | null, fi
   const tool = field.slice(0, separator);
   const bucketId = field.slice(separator + 1);
   const bucket = view.accounts
-    .filter((account) => account.tool === tool && !account.error)
+    .filter((account) => account.tool === tool)
     .flatMap((account) => account.buckets)
     .find((candidate) => candidate.id === bucketId);
   if (!bucket) return [];

@@ -120,7 +120,7 @@ impl ReadonlyMcp {
                     view.last_updated = view
                         .accounts
                         .iter()
-                        .filter(|account| account.error.is_none())
+                        .filter(|account| !account.buckets.is_empty())
                         .map(|account| account.queried_at)
                         .reduce(f64::max);
                 }
