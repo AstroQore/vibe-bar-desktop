@@ -10,10 +10,18 @@ export function MiniQuota() {
   const [settings, setSettings] = useState<PresentationSettings | null>(null);
 
   useEffect(() => {
+    const refreshSettings = () => api.presentationSettings().then(setSettings).catch(() => undefined);
     api.quotaView().then(setView).catch(() => undefined);
-    api.presentationSettings().then(setSettings).catch(() => undefined);
-    const unlisten = api.onQuotaUpdated(setView);
-    return () => { unlisten.then((off) => off()).catch(() => undefined); };
+    refreshSettings();
+    const unlistenQuota = api.onQuotaUpdated((next) => {
+      setView(next);
+      refreshSettings();
+    });
+    const unlistenShown = api.onMiniShown(refreshSettings);
+    return () => {
+      unlistenQuota.then((off) => off()).catch(() => undefined);
+      unlistenShown.then((off) => off()).catch(() => undefined);
+    };
   }, []);
 
   const fields = settings?.selectedFieldIds.length ? settings.selectedFieldIds : DEFAULT_FIELDS;
@@ -54,9 +62,10 @@ function resolveField(view: QuotaView, settings: PresentationSettings | null, fi
   if (!bucket) return [];
   const remaining = Math.max(0, 100 - bucket.usedPercent);
   const used = settings?.displayMode === "used";
+  const bucketLabel = bucket.groupTitle ? `${bucket.groupTitle} ${bucket.title}` : bucket.title;
   return [{
     id: field,
-    label: settings?.customLabels[field] || bucket.groupTitle || bucket.title || hierarchyFor(tool).product,
+    label: settings?.customLabels[field] || `${hierarchyFor(tool).product} ${bucketLabel}`,
     bucket,
     value: used ? bucket.usedPercent : remaining,
     suffix: used ? "used" : "left",

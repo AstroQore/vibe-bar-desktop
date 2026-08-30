@@ -17,6 +17,7 @@ use tauri::{Emitter, Manager, RunEvent};
 
 /// Emitted whenever a refresh completes, carrying the full `QuotaView`.
 pub const QUOTA_EVENT: &str = "vibebar://quota-updated";
+pub const MINI_SHOWN_EVENT: &str = "vibebar://mini-shown";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

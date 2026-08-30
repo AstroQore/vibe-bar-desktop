@@ -102,6 +102,7 @@ export interface PresentationSettings {
 }
 
 export const QUOTA_EVENT = "vibebar://quota-updated";
+export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 
 export const api = {
   quotaView: () => invoke<QuotaView>("quota_view"),
@@ -124,6 +125,7 @@ export const api = {
     }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
+  onMiniShown: (handler: () => void) => listen<void>(MINI_SHOWN_EVENT, handler),
 };
 
 /** L1 company → L2 SubProvider naming, mirrored from the core crate so the

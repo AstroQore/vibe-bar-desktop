@@ -3,7 +3,8 @@
 use std::sync::Mutex;
 
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, PhysicalPosition, Runtime, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 use vibebar_desktop_core::client_store::{ClientStore, MiniWindowGeometry};
 use vibebar_desktop_core::paths::DataRoot;
@@ -73,6 +74,7 @@ fn show<R: Runtime>(app: &AppHandle<R>) {
     };
     restore_or_center(&window, app);
     let _ = window.show();
+    let _ = app.emit(crate::MINI_SHOWN_EVENT, ());
     let state = app.state::<MiniState>();
     if let Ok(mut geometry) = state.geometry.lock() {
         geometry.was_open = true;
