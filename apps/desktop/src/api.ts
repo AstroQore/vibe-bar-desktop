@@ -70,6 +70,7 @@ export interface TranscriptMessage {
 export interface TranscriptCursor {
   byteOffset: number;
   messageOffset: number;
+  skipToNewline?: boolean;
 }
 
 export interface TranscriptPage {
