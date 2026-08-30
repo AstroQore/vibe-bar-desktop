@@ -356,13 +356,21 @@ fn grant(value: &Value) -> Result<BonusGrant, QuotaError> {
     let remaining = optional_int(object.get("requestCreditsRemaining"))
         .filter(|value| *value >= 0 && *value <= granted)
         .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant has invalid counters".into()))?;
+    let expiration = match object.get("expiration") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(value)) => Some(parse_date(value).ok_or_else(|| {
+            QuotaError::ParseFailure("Warp bonus grant has invalid expiration".into())
+        })?),
+        Some(_) => {
+            return Err(QuotaError::ParseFailure(
+                "Warp bonus grant has invalid expiration".into(),
+            ));
+        }
+    };
     Ok(BonusGrant {
         granted,
         remaining,
-        expiration: object
-            .get("expiration")
-            .and_then(Value::as_str)
-            .and_then(parse_date),
+        expiration,
     })
 }
 
@@ -543,6 +551,16 @@ mod tests {
         ] {
             let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
             root["data"]["user"]["user"]["bonusGrants"] = Value::Array(vec![grant]);
+            let body = serde_json::to_vec(&root).unwrap();
+            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        }
+    }
+
+    #[test]
+    fn malformed_bonus_expiration_fails_the_snapshot_closed() {
+        for expiration in [Value::String("not-a-date".into()), Value::from(123)] {
+            let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
+            root["data"]["user"]["user"]["bonusGrants"][0]["expiration"] = expiration;
             let body = serde_json::to_vec(&root).unwrap();
             assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
         }

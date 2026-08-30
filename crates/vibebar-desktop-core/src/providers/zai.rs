@@ -136,9 +136,7 @@ fn parse_snapshot(body: &[u8]) -> Result<Snapshot, QuotaError> {
     let mut token_limits = Vec::new();
     let mut time_limit = None;
     for limit in &data.limits {
-        let Some(bucket) = limit.bucket() else {
-            continue;
-        };
+        let bucket = limit.bucket()?;
         match limit.kind.as_str() {
             "TOKENS_LIMIT" => token_limits.push(bucket),
             "TIME_LIMIT" => time_limit = Some(bucket),
@@ -227,7 +225,19 @@ impl RawLimit {
         }
     }
 
-    fn bucket(&self) -> Option<QuotaBucket> {
+    fn bucket(&self) -> Result<QuotaBucket, QuotaError> {
+        if !(0..=100).contains(&self.percentage) {
+            return Err(QuotaError::ParseFailure(
+                "Z.ai quota limit has invalid counters".into(),
+            ));
+        }
+        if let (Some(usage), Some(remaining)) = (self.usage, self.remaining) {
+            if usage < 0 || remaining < 0 || remaining > usage {
+                return Err(QuotaError::ParseFailure(
+                    "Z.ai quota limit has invalid counters".into(),
+                ));
+            }
+        }
         let (title, short_label) = match self.unit {
             1 if self.number == 1 => ("Daily".to_string(), "Day".to_string()),
             1 => (format!("{} Days", self.number), format!("{}d", self.number)),
@@ -267,7 +277,7 @@ impl RawLimit {
             "TOKENS_LIMIT" => format!("zai.tokens.{}.{}", self.unit, self.number),
             other => format!("zai.{}.{}.{}", other.to_lowercase(), self.unit, self.number),
         };
-        Some(QuotaBucket::new(
+        Ok(QuotaBucket::new(
             id,
             title.clone(),
             short_label,
@@ -385,6 +395,16 @@ mod tests {
             br#"{"success":true,"code":200,"data":{"limits":[{"type":"FUTURE_LIMIT","unit":1,"number":1,"percentage":0}]}}"#.as_slice(),
         ] {
             assert!(matches!(parse(body), Err(QuotaError::ParseFailure(_))));
+        }
+        for invalid in [
+            serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"usage":100,"remaining":120,"percentage":0}),
+            serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":101}),
+            serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":-1}),
+        ] {
+            assert!(matches!(
+                parse(&payload(vec![invalid])),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
     }
 
