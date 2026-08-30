@@ -151,11 +151,6 @@ pub(super) mod lease_platform {
             return Err(map_open_error("openat_lock"));
         }
         let setup = (|| {
-            unsafe {
-                if libc::fchmod(fd, 0o600) != 0 {
-                    return Err(io("chmod_lock"));
-                }
-            }
             let mut stat: libc::stat = unsafe { std::mem::zeroed() };
             unsafe {
                 if libc::fstat(fd, &mut stat) != 0 {
@@ -167,6 +162,27 @@ pub(super) mod lease_platform {
                     operation: "fstat_regular_lock",
                     code: libc::EINVAL,
                 });
+            }
+            // O_NOFOLLOW excludes symlinks, but a pathname can still be a
+            // hard link to an inode outside this run directory. Validate the
+            // inode before chmod/flock so neither operation mutates external
+            // data. Keep this check portable across Unix targets.
+            if stat.st_nlink != 1 {
+                return Err(LeaseError::Io {
+                    operation: "reject_hard_link_lock",
+                    code: libc::EMLINK,
+                });
+            }
+            if stat.st_uid != unsafe { libc::geteuid() } {
+                return Err(LeaseError::Io {
+                    operation: "reject_foreign_lock_owner",
+                    code: libc::EACCES,
+                });
+            }
+            unsafe {
+                if libc::fchmod(fd, 0o600) != 0 {
+                    return Err(io("chmod_lock"));
+                }
             }
             let reservation = reserve((stat.st_dev as u64, stat.st_ino as u64), mode)?;
             let flock_mode = match mode {

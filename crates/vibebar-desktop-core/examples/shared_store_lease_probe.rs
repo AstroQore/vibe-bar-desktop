@@ -11,7 +11,8 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use vibebar_desktop_core::storage_contract::{
-    LeaseError, SharedStoreId, SharedStoreLeaseBatch, SharedStoreLeaseRole,
+    ContractError, LeaseError, SharedStoreId, SharedStoreLeaseBatch, SharedStoreLeaseRole,
+    SharedStoreManifest,
 };
 
 fn main() {
@@ -38,7 +39,7 @@ fn run(args: Vec<String>) -> Result<(), LeaseError> {
     let role = if maintenance {
         SharedStoreLeaseRole::Migrator
     } else {
-        role_for(store)
+        role_for(store)?
     };
     let mut lease = SharedStoreLeaseBatch::acquire_synthetic_probe(
         std::path::Path::new(root),
@@ -66,34 +67,22 @@ fn has_flag(args: &[String], name: &str) -> bool {
     args.iter().any(|argument| argument == name)
 }
 
-fn role_for(store: SharedStoreId) -> SharedStoreLeaseRole {
-    match store {
-        SharedStoreId::ServiceStatus => SharedStoreLeaseRole::StatusCollector,
-        SharedStoreId::ScanCache | SharedStoreId::CostSnapshots | SharedStoreId::CostHistory => {
-            SharedStoreLeaseRole::UsageScanner
-        }
-        SharedStoreId::PricingCache
-        | SharedStoreId::PricingSources
-        | SharedStoreId::PricingRefreshStatus => SharedStoreLeaseRole::PricingRefresher,
-        SharedStoreId::SessionIndex | SharedStoreId::SessionIndexScratch => {
-            SharedStoreLeaseRole::SessionIndexer
-        }
-        SharedStoreId::PageLayout => SharedStoreLeaseRole::LayoutEditor,
-        SharedStoreId::MiniWindowGeometry => SharedStoreLeaseRole::MiniWindowManager,
-        SharedStoreId::SkillsRegistry | SharedStoreId::SkillBackups => {
-            SharedStoreLeaseRole::SkillsManager
-        }
-        SharedStoreId::RemoteCoreConfig | SharedStoreId::RemoteUsage => {
-            SharedStoreLeaseRole::RemoteSync
-        }
-        SharedStoreId::McpSocket => SharedStoreLeaseRole::McpOwner,
-        _ => SharedStoreLeaseRole::QuotaCollector,
-    }
+fn role_for(store: SharedStoreId) -> Result<SharedStoreLeaseRole, LeaseError> {
+    let manifest = SharedStoreManifest::native_fixture().map_err(LeaseError::Contract)?;
+    let contract = manifest.contract(store).ok_or_else(|| {
+        LeaseError::Contract(ContractError::UnknownStore(store.as_raw().to_owned()))
+    })?;
+    contract
+        .writer_roles
+        .first()
+        .copied()
+        .ok_or(LeaseError::InvalidRole)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::has_flag;
+    use super::{has_flag, role_for};
+    use vibebar_desktop_core::storage_contract::{SharedStoreId, SharedStoreLeaseRole};
 
     #[test]
     fn bare_maintenance_flag_is_detected() {
@@ -103,5 +92,21 @@ mod tests {
             "--maintenance".into(),
         ];
         assert!(has_flag(&args, "--maintenance"));
+    }
+
+    #[test]
+    fn role_is_selected_from_each_store_manifest() {
+        assert_eq!(
+            role_for(SharedStoreId::Settings).unwrap(),
+            SharedStoreLeaseRole::SettingsEditor
+        );
+        assert_eq!(
+            role_for(SharedStoreId::UsageEvents).unwrap(),
+            SharedStoreLeaseRole::UsageScanner
+        );
+        assert_eq!(
+            role_for(SharedStoreId::SessionIndexMaintenance).unwrap(),
+            SharedStoreLeaseRole::Pruner
+        );
     }
 }

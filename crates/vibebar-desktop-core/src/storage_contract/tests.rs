@@ -27,6 +27,14 @@ fn endpoint_and_legacy_contracts_are_classified_fail_closed() {
             .share_eligibility,
         SharedStoreShareEligibility::EndpointOnly
     );
+    assert_eq!(
+        manifest
+            .contract(SharedStoreId::McpSocket)
+            .unwrap()
+            .endpoint_version
+            .as_deref(),
+        Some("2025-06-18")
+    );
     assert!(manifest
         .stores
         .iter()
@@ -324,4 +332,43 @@ fn diagnostic_probe_rejects_final_and_intermediate_root_symlinks() {
             Some(LeaseError::SymlinkDetected)
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn diagnostic_probe_rejects_hard_linked_lock_without_mutating_target() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp_root();
+    let run = root.path().join("run");
+    std::fs::create_dir(&run).unwrap();
+    let external = root.path().join("external.lock");
+    let original = b"external lock content";
+    std::fs::write(&external, original).unwrap();
+    std::fs::set_permissions(&external, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::hard_link(&external, run.join("quota_cache.lock")).unwrap();
+
+    let result = SharedStoreLeaseBatch::acquire_synthetic_probe(
+        root.path(),
+        &[SharedStoreId::QuotaCache],
+        SharedStoreLeaseRole::QuotaCollector,
+        false,
+        "hard-link-test",
+    );
+    let error = match result {
+        Ok(_) => panic!("hard-linked lock must be rejected"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error,
+        LeaseError::Io {
+            operation: "reject_hard_link_lock",
+            code: libc::EMLINK,
+        }
+    );
+    assert_eq!(std::fs::read(&external).unwrap(), original);
+    assert_eq!(
+        std::fs::metadata(&external).unwrap().permissions().mode() & 0o777,
+        0o644
+    );
 }

@@ -93,7 +93,7 @@ pub struct SharedStoreContract {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint_protocol: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint_version: Option<u32>,
+    pub endpoint_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_pattern: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -304,7 +304,11 @@ fn validate_store(store: &SharedStoreContract) -> Result<(), ContractError> {
                     .as_deref()
                     .filter(|v| !v.is_empty())
                     .is_none()
-                || store.endpoint_version.unwrap_or(0) == 0
+                || store
+                    .endpoint_version
+                    .as_deref()
+                    .filter(|v| !v.is_empty())
+                    .is_none()
             {
                 return Err(invalid(store.store_id, "endpoint locator is incomplete"));
             }
