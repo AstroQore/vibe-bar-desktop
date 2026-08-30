@@ -19,6 +19,7 @@ use serde_json::Value;
 use crate::model::ToolType;
 
 const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_TOTAL_READ_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_RAW_EVENTS: usize = 400_000;
 const MAX_FILES: usize = 20_000;
@@ -134,7 +135,7 @@ impl CostEngine {
             .map_err(|_| "cost refresh lock poisoned".to_string())?;
         let home = crate::paths::open_ambient_dir(&self.home)
             .map_err(|_| "cost scan home is not readable".to_string())?;
-        let (mut codex_files, codex_truncated) = collect_provider_files(
+        let (codex_files, codex_truncated) = collect_provider_files(
             &self.home,
             ToolType::Codex,
             &[".codex/sessions", ".codex/archived_sessions"],
@@ -146,42 +147,22 @@ impl CostEngine {
             &[".claude/projects", ".config/claude/projects"],
             MAX_FILES_PER_PROVIDER,
         );
-        codex_files.extend(claude_files);
         let (gemini_files, gemini_truncated) = collect_gemini_chat_files(&self.home);
-        codex_files.extend(gemini_files);
-        let files = codex_files;
-        let mut truncated = codex_truncated || claude_truncated || gemini_truncated;
-
-        let mut events = Vec::new();
-        let mut malformed_lines = 0;
-        let mut scanned_files = 0;
-        for source in &files {
-            match scan_file(
-                &home,
-                &self.home,
-                source,
-                &mut events,
-                &mut malformed_lines,
-                MAX_RAW_EVENTS,
-            ) {
-                ScanFileResult::Scanned => scanned_files += 1,
-                ScanFileResult::Skipped | ScanFileResult::TooLarge => truncated = true,
-                ScanFileResult::EventLimit => {
-                    truncated = true;
-                    break;
-                }
-            }
-        }
-        if malformed_lines > 0 {
-            truncated = true;
-        }
-        let events = deduplicate_events(events);
+        let mut scan = scan_sources(
+            &home,
+            &self.home,
+            [codex_files, claude_files, gemini_files],
+            MAX_RAW_EVENTS,
+            MAX_TOTAL_READ_BYTES,
+        );
+        scan.truncated |= codex_truncated || claude_truncated || gemini_truncated;
+        let events = deduplicate_events(scan.events);
 
         let view = aggregate(
             &events,
-            scanned_files,
-            malformed_lines,
-            truncated,
+            scan.scanned_files,
+            scan.malformed_lines,
+            scan.truncated,
             now_unix(),
         );
         if let Ok(mut cached) = self.cached.write() {
@@ -401,6 +382,115 @@ fn checked_directory(path: &Path) -> DirectoryState {
     }
 }
 
+fn interleave_provider_files<const N: usize>(groups: [Vec<SourceFile>; N]) -> Vec<SourceFile> {
+    let mut files = Vec::with_capacity(groups.iter().map(Vec::len).sum());
+    let mut iterators = groups.map(Vec::into_iter);
+    loop {
+        let before = files.len();
+        for iterator in &mut iterators {
+            if let Some(file) = iterator.next() {
+                files.push(file);
+            }
+        }
+        if files.len() == before {
+            return files;
+        }
+    }
+}
+
+fn provider_event_limits<const N: usize>(
+    groups: &[Vec<SourceFile>; N],
+    max_events: usize,
+) -> HashMap<ToolType, usize> {
+    let mut providers = Vec::new();
+    for tool in groups
+        .iter()
+        .filter_map(|files| files.first().map(|source| source.tool))
+    {
+        if !providers.contains(&tool) {
+            providers.push(tool);
+        }
+    }
+    let mut limits = HashMap::new();
+    if providers.is_empty() {
+        return limits;
+    }
+    let base = max_events / providers.len();
+    let remainder = max_events % providers.len();
+    for (index, tool) in providers.into_iter().enumerate() {
+        limits.insert(tool, base + usize::from(index < remainder));
+    }
+    limits
+}
+
+#[derive(Default)]
+struct RawScan {
+    events: Vec<UsageEvent>,
+    scanned_files: u64,
+    malformed_lines: u64,
+    truncated: bool,
+}
+
+fn scan_sources<const N: usize>(
+    home: &Dir,
+    home_path: &Path,
+    groups: [Vec<SourceFile>; N],
+    max_events: usize,
+    max_read_bytes: u64,
+) -> RawScan {
+    let provider_limits = provider_event_limits(&groups, max_events);
+    let files = interleave_provider_files(groups);
+    let mut provider_counts = HashMap::<ToolType, usize>::new();
+    let mut remaining_bytes = max_read_bytes;
+    let mut scan = RawScan::default();
+
+    for source in &files {
+        if scan.events.len() >= max_events || remaining_bytes == 0 {
+            scan.truncated = true;
+            break;
+        }
+        let provider_limit = provider_limits.get(&source.tool).copied().unwrap_or(0);
+        let provider_count = provider_counts.get(&source.tool).copied().unwrap_or(0);
+        if provider_count >= provider_limit {
+            scan.truncated = true;
+            continue;
+        }
+        let event_limit = scan
+            .events
+            .len()
+            .saturating_add(provider_limit - provider_count)
+            .min(max_events);
+        let before = scan.events.len();
+        let result = scan_file(
+            home,
+            home_path,
+            source,
+            &mut scan.events,
+            &mut scan.malformed_lines,
+            event_limit,
+            &mut remaining_bytes,
+        );
+        *provider_counts.entry(source.tool).or_default() += scan.events.len() - before;
+        match result {
+            ScanFileResult::Scanned => scan.scanned_files += 1,
+            ScanFileResult::Skipped | ScanFileResult::TooLarge => scan.truncated = true,
+            ScanFileResult::EventLimit => scan.truncated = true,
+            ScanFileResult::ByteLimit => {
+                scan.truncated = true;
+                break;
+            }
+        }
+        if remaining_bytes == 0 {
+            scan.truncated = true;
+            break;
+        }
+    }
+    if scan.malformed_lines > 0 {
+        scan.truncated = true;
+    }
+    scan
+}
+
 #[derive(Default)]
 struct DiscoveryBudget {
     entries: usize,
@@ -477,7 +567,7 @@ fn collect_jsonl(
         };
         if file_type.is_symlink() {
             budget.truncated = true;
-            continue;
+            return;
         }
         if file_type.is_dir() {
             collect_jsonl(&path, tool, out, depth + 1, budget);
@@ -504,6 +594,7 @@ enum ScanFileResult {
     Skipped,
     TooLarge,
     EventLimit,
+    ByteLimit,
 }
 
 fn scan_file(
@@ -513,7 +604,11 @@ fn scan_file(
     events: &mut Vec<UsageEvent>,
     malformed_lines: &mut u64,
     event_limit: usize,
+    remaining_bytes: &mut u64,
 ) -> ScanFileResult {
+    if *remaining_bytes == 0 {
+        return ScanFileResult::ByteLimit;
+    }
     let Ok(metadata) = fs::symlink_metadata(&source.path) else {
         return ScanFileResult::Skipped;
     };
@@ -522,6 +617,9 @@ fn scan_file(
     }
     if metadata.len() > MAX_FILE_BYTES {
         return ScanFileResult::TooLarge;
+    }
+    if metadata.len() > *remaining_bytes {
+        return ScanFileResult::ByteLimit;
     }
     let Ok(file) = open_source_file(home, home_path, source) else {
         return ScanFileResult::Skipped;
@@ -535,22 +633,25 @@ fn scan_file(
     if open_metadata.len() > MAX_FILE_BYTES {
         return ScanFileResult::TooLarge;
     }
-    let gemini_fallback_time = (source.tool == ToolType::Gemini)
-        .then(|| {
-            open_metadata
-                .modified()
-                .ok()
-                .map(|modified| modified.into_std())
-                .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|duration| duration.as_secs_f64())
-        })
-        .flatten();
+    if open_metadata.len() > *remaining_bytes {
+        return ScanFileResult::ByteLimit;
+    }
+    let gemini_fallback_time = if source.tool == ToolType::Gemini {
+        open_metadata
+            .modified()
+            .ok()
+            .map(|modified| modified.into_std())
+            .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs_f64())
+    } else {
+        None
+    };
     let mut bytes = Vec::with_capacity(open_metadata.len() as usize);
-    if file
-        .take(MAX_FILE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .is_err()
-    {
+    let read_result = file
+        .take((MAX_FILE_BYTES + 1).min(*remaining_bytes))
+        .read_to_end(&mut bytes);
+    *remaining_bytes = remaining_bytes.saturating_sub(bytes.len() as u64);
+    if read_result.is_err() {
         return ScanFileResult::Skipped;
     }
     if bytes.len() as u64 > MAX_FILE_BYTES {
@@ -1905,6 +2006,128 @@ mod tests {
     }
 
     #[test]
+    fn provider_budgets_and_file_order_support_three_providers() {
+        let source = |tool, name| SourceFile {
+            tool,
+            path: PathBuf::from(name),
+        };
+        let groups = [
+            vec![
+                source(ToolType::Codex, "codex-1"),
+                source(ToolType::Codex, "codex-2"),
+            ],
+            vec![source(ToolType::Claude, "claude-1")],
+            vec![source(ToolType::Gemini, "gemini-1")],
+        ];
+        let limits = provider_event_limits(&groups, 5);
+        assert_eq!(limits[&ToolType::Codex], 2);
+        assert_eq!(limits[&ToolType::Claude], 2);
+        assert_eq!(limits[&ToolType::Gemini], 1);
+
+        let files = interleave_provider_files(groups);
+        let first_round = files
+            .iter()
+            .take(3)
+            .map(|source| source.tool)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            first_round,
+            vec![ToolType::Codex, ToolType::Claude, ToolType::Gemini]
+        );
+        assert_eq!(files[3].path, PathBuf::from("codex-2"));
+    }
+
+    #[test]
+    fn provider_event_cap_does_not_starve_claude_after_large_codex_file() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        let codex = home.path().join(".codex/sessions/session.jsonl");
+        let claude = home.path().join(".claude/projects/project/session.jsonl");
+        write_jsonl(
+            &codex,
+            &[
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-4.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-3.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-2.0),"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1}}}}),
+            ],
+        );
+        write_jsonl(
+            &claude,
+            &[
+                serde_json::json!({"type":"assistant","timestamp":rfc3339(scanned_at-2.0),"message":{"model":"claude-haiku-4-5","usage":{"input_tokens":1}}}),
+                serde_json::json!({"type":"assistant","timestamp":rfc3339(scanned_at-1.0),"message":{"model":"claude-haiku-4-5","usage":{"input_tokens":1}}}),
+            ],
+        );
+        let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
+        let scan = scan_sources(
+            &directory,
+            home.path(),
+            [
+                vec![SourceFile {
+                    tool: ToolType::Codex,
+                    path: codex,
+                }],
+                vec![SourceFile {
+                    tool: ToolType::Claude,
+                    path: claude,
+                }],
+            ],
+            4,
+            1024 * 1024,
+        );
+
+        assert!(scan.truncated);
+        assert_eq!(scan.events.len(), 4);
+        assert_eq!(
+            scan.events
+                .iter()
+                .filter(|event| event.tool == ToolType::Codex)
+                .count(),
+            2
+        );
+        assert_eq!(
+            scan.events
+                .iter()
+                .filter(|event| event.tool == ToolType::Claude)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn zero_event_byte_budget_stops_before_the_next_file() {
+        let home = tempfile::tempdir().unwrap();
+        let first = home.path().join(".claude/projects/first.jsonl");
+        let second = home.path().join(".claude/projects/second.jsonl");
+        fs::create_dir_all(first.parent().unwrap()).unwrap();
+        fs::write(&first, "     ").unwrap();
+        fs::write(&second, "    ").unwrap();
+        let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
+
+        let scan = scan_sources(
+            &directory,
+            home.path(),
+            [vec![
+                SourceFile {
+                    tool: ToolType::Claude,
+                    path: first,
+                },
+                SourceFile {
+                    tool: ToolType::Claude,
+                    path: second,
+                },
+            ]],
+            10,
+            5,
+        );
+
+        assert!(scan.truncated);
+        assert_eq!(scan.scanned_files, 1);
+        assert!(scan.events.is_empty());
+        assert_eq!(scan.malformed_lines, 0);
+    }
+
+    #[test]
     fn deeply_nested_empty_trees_stop_at_the_discovery_budget() {
         let home = tempfile::tempdir().unwrap();
         let mut directory = home.path().join(".codex/sessions");
@@ -2064,6 +2287,23 @@ mod tests {
         assert!(truncated);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_project_below_an_accepted_root_is_truncated() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let projects = home.path().join(".claude/projects");
+        fs::create_dir_all(&projects).unwrap();
+        symlink(outside.path(), projects.join("linked-project")).unwrap();
+
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Claude, &[".claude/projects"], 1);
+        assert!(files.is_empty());
+        assert!(truncated);
+    }
+
     #[test]
     fn oversized_sparse_file_is_truncated_and_not_counted_as_scanned() {
         let home = tempfile::tempdir().unwrap();
@@ -2099,6 +2339,7 @@ mod tests {
         let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
         let mut events = Vec::new();
         let mut malformed_lines = 0;
+        let mut remaining_bytes = MAX_TOTAL_READ_BYTES;
 
         let result = scan_file(
             &directory,
@@ -2110,6 +2351,7 @@ mod tests {
             &mut events,
             &mut malformed_lines,
             MAX_RAW_EVENTS,
+            &mut remaining_bytes,
         );
 
         assert_eq!(result, ScanFileResult::Skipped);
@@ -2132,6 +2374,7 @@ mod tests {
         let directory = crate::paths::open_ambient_dir(home.path()).unwrap();
         let mut events = Vec::new();
         let mut malformed_lines = 0;
+        let mut remaining_bytes = MAX_TOTAL_READ_BYTES;
 
         let result = scan_file(
             &directory,
@@ -2143,6 +2386,7 @@ mod tests {
             &mut events,
             &mut malformed_lines,
             2,
+            &mut remaining_bytes,
         );
 
         assert_eq!(result, ScanFileResult::EventLimit);
