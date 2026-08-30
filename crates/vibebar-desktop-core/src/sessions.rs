@@ -109,12 +109,29 @@ impl SessionsService {
     }
 
     pub fn list(&self, limit: usize) -> SessionListing {
+        self.list_filtered(None, None, None, 0, limit)
+    }
+
+    /// List sessions using only fields present in both the shared index and
+    /// the scanned fallback. Harness values are the display names stored in
+    /// the shared index (for example `Codex` and `Claude Code`).
+    pub fn list_filtered(
+        &self,
+        providers: Option<&[SessionProvider]>,
+        harnesses: Option<&[String]>,
+        since: Option<i64>,
+        offset: usize,
+        limit: usize,
+    ) -> SessionListing {
         match self.open_index() {
             IndexState::Ready(reader) => {
                 let mut rows: Vec<_> = reader
                     .list(&SessionListFilter {
+                        providers: providers.map(<[SessionProvider]>::to_vec),
+                        harnesses: harnesses.map(<[String]>::to_vec),
+                        since,
                         limit,
-                        ..Default::default()
+                        offset,
                     })
                     .unwrap_or_default()
                     .into_iter()
@@ -129,15 +146,27 @@ impl SessionsService {
                     index_note,
                 }
             }
-            IndexState::Unusable(note) => self.scan(limit, Some(note)),
-            IndexState::Absent => self.scan(limit, None),
+            IndexState::Unusable(note) => {
+                self.scan(providers, harnesses, since, offset, limit, Some(note))
+            }
+            IndexState::Absent => self.scan(providers, harnesses, since, offset, limit, None),
         }
     }
 
     pub fn search(&self, query: &str, limit: usize) -> SessionListing {
+        self.search_filtered(query, None, None, limit)
+    }
+
+    pub fn search_filtered(
+        &self,
+        query: &str,
+        providers: Option<&[SessionProvider]>,
+        harnesses: Option<&[String]>,
+        limit: usize,
+    ) -> SessionListing {
         let needle = query.trim();
         if needle.is_empty() {
-            return self.list(limit);
+            return self.list_filtered(providers, harnesses, None, 0, limit);
         }
         match self.open_index() {
             IndexState::Ready(reader) => {
@@ -145,6 +174,8 @@ impl SessionsService {
                     .search(
                         needle,
                         &SessionListFilter {
+                            providers: providers.map(<[SessionProvider]>::to_vec),
+                            harnesses: harnesses.map(<[String]>::to_vec),
                             limit,
                             ..Default::default()
                         },
@@ -172,7 +203,8 @@ impl SessionsService {
                     IndexState::Unusable(note) => Some(note),
                     _ => None,
                 };
-                let mut rows = self.scanned_rows(SCAN_LIMIT);
+                let mut rows = self.scanned_rows();
+                rows.retain(|row| matches_filters(row, providers, harnesses, None));
                 let lowered = needle.to_lowercase();
                 rows.retain(|row| {
                     row.title
@@ -248,8 +280,18 @@ impl SessionsService {
         }
     }
 
-    fn scan(&self, limit: usize, note: Option<String>) -> SessionListing {
-        let mut rows = self.scanned_rows(limit);
+    fn scan(
+        &self,
+        providers: Option<&[SessionProvider]>,
+        harnesses: Option<&[String]>,
+        since: Option<i64>,
+        offset: usize,
+        limit: usize,
+        note: Option<String>,
+    ) -> SessionListing {
+        let mut rows = self.scanned_rows();
+        rows.retain(|row| matches_filters(row, providers, harnesses, since));
+        let mut rows: Vec<_> = rows.into_iter().skip(offset).take(limit).collect();
         self.authorize_rows(&mut rows);
         SessionListing {
             source: SessionSource::Scanned,
@@ -259,11 +301,10 @@ impl SessionsService {
         }
     }
 
-    fn scanned_rows(&self, limit: usize) -> Vec<SessionRow> {
+    fn scanned_rows(&self) -> Vec<SessionRow> {
         let mut discovered = discovery::discover_codex(&self.home, SCAN_LIMIT);
         discovered.extend(discovery::discover_claude(&self.home, SCAN_LIMIT));
         discovered.sort_by_key(|s| std::cmp::Reverse(s.modified_at));
-        discovered.truncate(limit);
         discovered.into_iter().map(scanned_row).collect()
     }
 
@@ -385,6 +426,33 @@ impl SessionsService {
         }
         None
     }
+}
+
+fn matches_filters(
+    row: &SessionRow,
+    providers: Option<&[SessionProvider]>,
+    harnesses: Option<&[String]>,
+    since: Option<i64>,
+) -> bool {
+    if let Some(providers) = providers {
+        if !providers
+            .iter()
+            .any(|provider| provider.raw_value() == row.provider)
+        {
+            return false;
+        }
+    }
+    if let Some(harnesses) = harnesses {
+        if !harnesses.iter().any(|harness| harness == &row.harness) {
+            return false;
+        }
+    }
+    if let Some(since) = since {
+        if !row.last_active_at.is_some_and(|active| active >= since) {
+            return false;
+        }
+    }
+    true
 }
 
 enum IndexState {
@@ -621,6 +689,44 @@ mod tests {
         assert!(service
             .transcript(&listing.rows[0].session_ref, 0, 1)
             .is_ok());
+    }
+
+    #[test]
+    fn indexed_list_passes_provider_harness_since_and_offset_to_the_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let root = DataRoot::at(home.join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+        let conn = rusqlite::Connection::open(root.session_index_file()).unwrap();
+        conn.execute_batch(
+            "PRAGMA user_version = 5;\
+             CREATE TABLE sessions(\
+               id INTEGER PRIMARY KEY, provider TEXT NOT NULL, session_id TEXT NOT NULL,\
+               provider_variant TEXT, harness TEXT, model TEXT, title TEXT, summary TEXT,\
+               project_dir TEXT, created_at INTEGER, last_active_at INTEGER, source_path TEXT NOT NULL,\
+               size_bytes INTEGER, message_count INTEGER\
+             );\
+             INSERT INTO sessions(id, provider, session_id, harness, last_active_at, source_path) VALUES\
+               (1, 'codex', 'older-codex', 'Codex', 250, '/Users/example/older.jsonl'),\
+               (2, 'codex', 'work', 'ChatGPT Work', 300, '/Users/example/work.jsonl'),\
+               (3, 'claude', 'claude', 'Claude Code', 350, '/Users/example/claude.jsonl'),\
+               (4, 'codex', 'newer-codex', 'Codex', 400, '/Users/example/newer.jsonl');",
+        )
+        .unwrap();
+        drop(conn);
+
+        let service = service(root, home);
+        let providers = [SessionProvider::Codex];
+        let harnesses = ["Codex".to_string()];
+        let listing = service.list_filtered(Some(&providers), Some(&harnesses), Some(200), 1, 1);
+        assert_eq!(listing.source, SessionSource::Indexed);
+        assert_eq!(listing.rows.len(), 1);
+        assert_eq!(listing.rows[0].session_id, "older-codex");
+        assert_eq!(listing.indexed_total, Some(4));
+        assert!(service
+            .list_filtered(Some(&[]), None, None, 0, 10)
+            .rows
+            .is_empty());
     }
 
     #[test]

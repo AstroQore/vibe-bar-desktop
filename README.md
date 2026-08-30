@@ -94,6 +94,8 @@ never refreshes providers, scans usage, writes configuration, or connects to
 the native app. Cost and service-status tools are intentionally absent: their
 Desktop snapshots are process-local, so a fresh stdio process could not report
 them truthfully without a new scan or a durable read-only cache contract.
+Session calls accept the native provider and harness filters; listing also
+supports RFC3339 `since`, `offset`, and bounded `limit` pagination.
 
 Verification:
 
