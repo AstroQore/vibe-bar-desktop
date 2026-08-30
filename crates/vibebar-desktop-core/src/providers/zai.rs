@@ -154,6 +154,11 @@ fn parse_snapshot(body: &[u8]) -> Result<Snapshot, QuotaError> {
     if let Some(bucket) = time_limit {
         token_limits.push(bucket);
     }
+    if token_limits.is_empty() {
+        return Err(QuotaError::ParseFailure(
+            "Z.ai response had no recognized quota limits".into(),
+        ));
+    }
     Ok(Snapshot {
         buckets: token_limits,
         plan: data.plan_name(),
@@ -375,6 +380,12 @@ mod tests {
             parse(br#"{"success":true,"code":200}"#),
             Err(QuotaError::ParseFailure(_))
         ));
+        for body in [
+            br#"{"success":true,"code":200,"data":{"limits":[]}}"#.as_slice(),
+            br#"{"success":true,"code":200,"data":{"limits":[{"type":"FUTURE_LIMIT","unit":1,"number":1,"percentage":0}]}}"#.as_slice(),
+        ] {
+            assert!(matches!(parse(body), Err(QuotaError::ParseFailure(_))));
+        }
     }
 
     #[test]

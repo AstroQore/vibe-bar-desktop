@@ -334,11 +334,14 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
                 ("minimax.coding", "5 Hours", "5h", 5 * 3_600)
             };
             let total = number(service.get("limit").or_else(|| service.get("total")));
-            let used = number(service.get("usage").or_else(|| service.get("used"))).unwrap_or(0.0);
+            let used = number(service.get("usage").or_else(|| service.get("used")));
             let percent = number(service.get("percent"));
-            if total.filter(|total| *total > 0.0).is_none() && percent.is_none() {
+            if percent.is_none()
+                && (total.filter(|total| *total > 0.0).is_none() || used.is_none())
+            {
                 return None;
             }
+            let used = used.unwrap_or(0.0);
             let used_percent = percent.map_or_else(
                 || {
                     total
@@ -602,7 +605,7 @@ mod tests {
     }
     #[test]
     fn zero_limit_service_placeholders_do_not_hide_model_rows() {
-        let body = br#"{"data":{"services":[{"service_type":"coding","limit":0}],"model_remains":[{"model_name":"MiniMax-M2","current_interval_total_count":100,"current_interval_usage_count":25}]}}"#;
+        let body = br#"{"data":{"services":[{"service_type":"coding","limit":0},{"service_type":"coding","limit":100}],"model_remains":[{"model_name":"MiniMax-M2","current_interval_total_count":100,"current_interval_usage_count":25}]}}"#;
         let (buckets, _) = parse(body, 1_700_000_000.0).unwrap();
         assert_eq!(buckets.len(), 1);
         assert_eq!(buckets[0].id, "minimax.coding.0.minimax-m2");
