@@ -385,22 +385,21 @@ fn grant(value: &Value) -> Result<BonusGrant, QuotaError> {
 }
 
 fn optional_int(value: Option<&Value>) -> Option<i64> {
-    value
-        .and_then(|value| {
-            value
-                .as_i64()
-                .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
-                .or_else(|| {
-                    value.as_f64().and_then(|number| {
-                        (number.is_finite()
-                            && number.fract() == 0.0
-                            && number >= i64::MIN as f64
-                            && number <= i64::MAX as f64)
-                            .then_some(number as i64)
-                    })
-                })
-                .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
-        })
+    match value? {
+        Value::Number(number) if number.is_i64() => number.as_i64(),
+        Value::Number(number) if number.is_u64() => {
+            number.as_u64().and_then(|value| i64::try_from(value).ok())
+        }
+        Value::Number(number) => number.as_f64().and_then(|value| {
+            (value.is_finite()
+                && value.fract() == 0.0
+                && value >= i64::MIN as f64
+                && value <= i64::MAX as f64)
+                .then_some(value as i64)
+        }),
+        Value::String(value) => value.trim().parse().ok(),
+        _ => None,
+    }
 }
 
 fn error_message(value: &Value) -> Option<String> {
@@ -608,7 +607,11 @@ mod tests {
             Err(QuotaError::ParseFailure(_))
         ));
 
-        for request_limit in [Value::Null, Value::String("not-a-number".into())] {
+        for request_limit in [
+            Value::Null,
+            Value::String("not-a-number".into()),
+            Value::from(i64::MAX as u64 + 1),
+        ] {
             let body = serde_json::to_vec(&serde_json::json!({
                 "data": {"user": {
                     "__typename": "UserOutput",

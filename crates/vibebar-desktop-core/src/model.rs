@@ -286,6 +286,8 @@ pub enum QuotaOrigin {
     DesktopCache,
     /// Read from the shared cache under `~/.vibebar/quotas/`.
     SharedCache,
+    /// Consolidated windows came from more than one of the above sources.
+    Mixed,
 }
 
 /// Tolerance for clock skew between whatever wrote an observation and this
