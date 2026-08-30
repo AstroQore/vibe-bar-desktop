@@ -6,6 +6,7 @@ use std::path::Path;
 use serde_json::{json, Map, Value};
 
 use crate::client_store::ClientStore;
+use crate::cost::effective_model_prices;
 use crate::model::ToolType;
 use crate::paths::{home_directory, DataRoot};
 use crate::refresh::QuotaEngine;
@@ -147,6 +148,33 @@ impl ReadonlyMcp {
                 serde_json::to_value(status_response(status.as_ref(), tools.as_deref()))
                     .map_err(|_| Problem::internal())?
             }
+            "pricing.effective" => {
+                let arguments = object_params(arguments, &["provider", "model"])?;
+                let provider = parse_pricing_provider(arguments.get("provider"))?;
+                let model = arguments
+                    .get("model")
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(|model| model.trim().to_ascii_lowercase())
+                            .ok_or_else(Problem::invalid_params)
+                    })
+                    .transpose()?;
+                let rows = effective_model_prices()
+                    .into_iter()
+                    .filter(|row| provider.is_none_or(|provider| row.provider == provider))
+                    .filter(|row| {
+                        model
+                            .as_deref()
+                            .is_none_or(|model| row.model.to_ascii_lowercase().contains(model))
+                    })
+                    .collect::<Vec<_>>();
+                json!({
+                    "generatedAt": unix_now(),
+                    "unit": "USD per 1M tokens",
+                    "rows": rows,
+                })
+            }
             _ => return Err(Problem::invalid_params()),
         };
         Ok(json!({"content": [{"type": "text", "text": value.to_string()}]}))
@@ -200,6 +228,17 @@ fn tool_catalog() -> Vec<Value> {
             "status.get",
             "Read Desktop's last-good public provider status without refreshing the network",
             schema(&[("tools", tools_schema())], &[]),
+        ),
+        tool(
+            "pricing.effective",
+            "Read the static model prices Desktop actually uses",
+            schema(
+                &[
+                    ("provider", pricing_provider_schema()),
+                    ("model", string_schema()),
+                ],
+                &[],
+            ),
         ),
     ]
 }
@@ -289,6 +328,9 @@ fn string_schema() -> Value {
 fn integer_schema(minimum: usize, maximum: usize) -> Value {
     json!({"type": "integer", "minimum": minimum, "maximum": maximum})
 }
+fn pricing_provider_schema() -> Value {
+    json!({"type": "string", "enum": ["codex", "claude"]})
+}
 
 fn object_params<'a>(
     params: Option<&'a Value>,
@@ -336,6 +378,14 @@ fn parse_tools(value: Option<&Value>) -> Result<Option<Vec<ToolType>>, Problem> 
         .collect::<Result<Vec<_>, _>>()
         .map(Some)
 }
+fn parse_pricing_provider(value: Option<&Value>) -> Result<Option<ToolType>, Problem> {
+    let Some(value) = value else { return Ok(None) };
+    match value.as_str() {
+        Some("codex") => Ok(Some(ToolType::Codex)),
+        Some("claude") => Ok(Some(ToolType::Claude)),
+        _ => Err(Problem::invalid_params()),
+    }
+}
 fn parse_limit(value: Option<&Value>, default: usize, maximum: usize) -> Result<usize, Problem> {
     let Some(value) = value else {
         return Ok(default);
@@ -378,6 +428,12 @@ fn error(id: Value, code: i64, message: &str) -> String {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}).to_string()
 }
 
+fn unix_now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |duration| duration.as_secs_f64())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,7 +469,8 @@ mod tests {
                 "quota.get",
                 "sessions.list",
                 "sessions.search",
-                "status.get"
+                "status.get",
+                "pricing.effective"
             ]
         );
         assert!(tools
@@ -502,6 +559,70 @@ mod tests {
     }
 
     #[test]
+    fn pricing_effective_returns_only_the_static_cost_table_and_filters_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let server = server(&temp);
+        let reply = server.handle_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pricing.effective","arguments":{}}}"#).unwrap();
+        let response: Value = serde_json::from_str(&reply).unwrap();
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        let view: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(view["unit"], "USD per 1M tokens");
+        assert!(view["generatedAt"].as_f64().unwrap() > 0.0);
+        assert_eq!(view["rows"].as_array().unwrap().len(), 34);
+
+        let gpt = view["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["model"] == "gpt-5.4")
+            .unwrap();
+        assert_eq!(gpt["provider"], "codex");
+        assert_eq!(gpt["company"], "OpenAI");
+        assert_eq!(gpt["subProvider"], "ChatGPT Agentic");
+        assert_eq!(gpt["inputPerMillion"], 2.5);
+        assert_eq!(gpt["outputPerMillion"], 15.0);
+        assert_eq!(gpt["cacheReadPerMillion"], 0.25);
+        assert_eq!(gpt["fastMultiplier"], 2.0);
+
+        let sonnet = view["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["model"] == "claude-sonnet-4-5")
+            .unwrap();
+        assert_eq!(sonnet["thresholdTokens"], 200_000);
+        assert_eq!(sonnet["inputAboveThresholdPerMillion"], 6.0);
+        assert_eq!(sonnet["outputAboveThresholdPerMillion"], 22.5);
+        assert_eq!(sonnet["cacheReadAboveThresholdPerMillion"], 0.6);
+        assert_eq!(sonnet["cacheWriteAboveThresholdPerMillion"], 7.5);
+
+        let filtered = server.handle_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"pricing.effective","arguments":{"provider":"claude","model":"OPUS-4-7"}}}"#).unwrap();
+        let response: Value = serde_json::from_str(&filtered).unwrap();
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        let view: Value = serde_json::from_str(text).unwrap();
+        let rows = view["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["model"], "claude-opus-4-7");
+        assert_eq!(rows[0]["cacheWritePerMillion"], 6.25);
+    }
+
+    #[test]
+    fn pricing_effective_rejects_unsupported_providers_and_extra_arguments() {
+        let temp = tempfile::tempdir().unwrap();
+        let server = server(&temp);
+        for arguments in [r#"{"provider":"gemini"}"#, r#"{"refresh":true}"#] {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"pricing.effective","arguments":{arguments}}}}}"#
+            );
+            let reply = server.handle_line(&request).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&reply).unwrap()["error"]["code"],
+                -32602
+            );
+        }
+    }
+
+    #[test]
     fn two_line_framing_and_notification_are_read_only() {
         let temp = tempfile::tempdir().unwrap();
         let server = server(&temp);
@@ -540,7 +661,12 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = DataRoot::at(temp.path().join(".vibebar"));
         let server = ReadonlyMcp::with_home(root.clone(), temp.path());
-        for name in ["quota.get", "sessions.list", "status.get"] {
+        for name in [
+            "quota.get",
+            "sessions.list",
+            "status.get",
+            "pricing.effective",
+        ] {
             let line = format!(
                 r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"{name}","arguments":{{}}}}}}"#
             );

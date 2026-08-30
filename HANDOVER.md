@@ -61,9 +61,10 @@ subscription cycle inference.
 polling, the MCP server (12 tools), remote probe sync.
 
 Desktop has a deliberately smaller read-only MCP stdio entry point:
-`quota.get`, `sessions.list`, `sessions.search`, and `status.get`. Status reads
-only Desktop's fresh private last-good snapshot; it never refreshes a feed or
-writes shared status from a stdio process.
+`quota.get`, `sessions.list`, `sessions.search`, `status.get`, and
+`pricing.effective`. Status reads only Desktop's fresh private last-good
+snapshot; pricing exposes the static table the scanner actually uses. Neither
+tool refreshes a feed, scans usage, or writes shared state from a stdio process.
 
 **Platform.** Sparkle updates, launch at login, the Control Center menu-bar
 watchdog, AppleScript terminal handoff, Liquid Glass.

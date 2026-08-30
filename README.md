@@ -107,10 +107,11 @@ pnpm tauri build    # package
 ### Read-only MCP stdio
 
 Run the Desktop binary with `--mcp-stdio` to serve cached `quota.get`,
-`sessions.list`, `sessions.search`, and `status.get` over JSON-RPC stdin/stdout.
-This mode never refreshes providers, scans usage, writes configuration, or
-connects to the native app. `status.get` returns only Desktop's fresh private
-last-good snapshot, never a network refresh or native shared-status write.
+`sessions.list`, `sessions.search`, `status.get`, and `pricing.effective` over
+JSON-RPC stdin/stdout. This mode never refreshes providers, scans usage, writes
+configuration, or connects to the native app. `status.get` returns only
+Desktop's fresh private last-good snapshot; `pricing.effective` returns the
+static Codex, Claude, and Gemini table used by the local cost scanner.
 
 Verification:
 
