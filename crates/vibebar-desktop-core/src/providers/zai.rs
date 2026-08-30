@@ -215,17 +215,30 @@ struct RawLimit {
 }
 
 impl RawLimit {
-    fn window_seconds(&self) -> Option<i64> {
-        match self.unit {
-            1 => Some(self.number * 86_400),
-            3 => Some(self.number * 3_600),
-            5 => Some(self.number * 30 * 86_400),
-            6 => Some(self.number * 7 * 86_400),
+    fn window_seconds(&self) -> Result<Option<i64>, QuotaError> {
+        let multiplier = match self.unit {
+            1 => Some(86_400),
+            3 => Some(3_600),
+            5 => Some(30 * 86_400),
+            6 => Some(7 * 86_400),
             _ => None,
-        }
+        };
+        multiplier
+            .map(|multiplier| {
+                self.number.checked_mul(multiplier).ok_or_else(|| {
+                    QuotaError::ParseFailure("Z.ai quota limit has invalid window".into())
+                })
+            })
+            .transpose()
     }
 
     fn bucket(&self) -> Result<QuotaBucket, QuotaError> {
+        if self.number <= 0 {
+            return Err(QuotaError::ParseFailure(
+                "Z.ai quota limit has invalid window".into(),
+            ));
+        }
+        let window_seconds = self.window_seconds()?;
         if !(0..=100).contains(&self.percentage) {
             return Err(QuotaError::ParseFailure(
                 "Z.ai quota limit has invalid counters".into(),
@@ -284,7 +297,7 @@ impl RawLimit {
             used_percent,
             self.next_reset_time
                 .map(|milliseconds| milliseconds as f64 / 1_000.0),
-            self.window_seconds(),
+            window_seconds,
             (self.kind == "TOKENS_LIMIT").then_some(title),
         ))
     }
@@ -400,6 +413,15 @@ mod tests {
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"usage":100,"remaining":120,"percentage":0}),
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":101}),
             serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":-1}),
+        ] {
+            assert!(matches!(
+                parse(&payload(vec![invalid])),
+                Err(QuotaError::ParseFailure(_))
+            ));
+        }
+        for invalid in [
+            serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":-1,"percentage":0}),
+            serde_json::json!({"type":"TOKENS_LIMIT","unit":6,"number":i64::MAX,"percentage":0}),
         ] {
             assert!(matches!(
                 parse(&payload(vec![invalid])),
