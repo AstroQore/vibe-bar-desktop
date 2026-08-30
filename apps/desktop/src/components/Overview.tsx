@@ -20,9 +20,9 @@ export function Overview({
   if (accounts.length === 0) {
     return (
       <p className="empty">
-        No quota yet. Sign in with the Codex or Claude CLI, configure a supported
-        provider API key, or launch the macOS app once to populate shared Vibe
-        Bar data.
+        {view.accounts.length > 0
+          ? "All quota providers are hidden by the shared presentation settings."
+          : "No quota yet. Sign in with the Codex or Claude CLI, configure a supported provider API key, or launch the macOS app once to populate shared Vibe Bar data."}
       </p>
     );
   }
