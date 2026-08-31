@@ -152,6 +152,7 @@ impl SharedSettings {
             .and_then(|mini| mini.display_mode.as_deref())
         {
             Some("compact") => "compact",
+            Some("ledger") => "ledger",
             _ => "regular",
         }
     }
@@ -350,8 +351,9 @@ mod tests {
         };
 
         assert_eq!(with_mode("compact"), "compact");
+        assert_eq!(with_mode("ledger"), "ledger");
         assert_eq!(with_mode("regular"), "regular");
-        for unported in ["ledger", "strip", "tile", "focus", "rail", "somethingNewer"] {
+        for unported in ["strip", "tile", "focus", "rail", "somethingNewer"] {
             assert_eq!(with_mode(unported), "regular", "{unported}");
         }
         assert_eq!(
