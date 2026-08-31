@@ -1,6 +1,7 @@
 import type { PresentationSettings, QuotaForecast, QuotaView } from "../api";
 import { bucketLabelFor, companyFor, subProviderFor } from "../naming";
 import {
+  forecastConfidence,
   forecastDetail,
   forecastHeadline,
   forecastSeverity,
@@ -181,6 +182,17 @@ export function Resets({
                               })()}
                             </span>
                           ) : null}
+                          {/* The same qualification the quota card carries.
+                              A verdict is only as good as its evidence
+                              wherever it is read, and this list is where an
+                              "at risk" is most likely to be acted on. */}
+                          {(() => {
+                            const confidence =
+                              event.forecast && forecastConfidence(event.forecast);
+                            return confidence ? (
+                              <span className="verdict-confidence">{confidence}</span>
+                            ) : null;
+                          })()}
                         </div>
                         <div className="reset-when">
                           <strong>{relativeReset(event, now)}</strong>
