@@ -20,7 +20,9 @@ window, on macOS, Windows, and Linux.
   overstates how fresh a number is.
 - **Upcoming resets.** Sorts provider-declared reset times from the current
   quota view, while keeping expired or future-dated observations visibly
-  separate. It does not manufacture history or a forecast.
+  separate, and carries each one's forecast. Nothing is manufactured: a
+  forecast appears only where enough observations have been recorded to
+  support one, and says so when they have not.
 - **Tray.** One line of the fields you picked, with your labels and your
   remaining-vs-used preference — read from the same settings the macOS menu
   bar uses.
