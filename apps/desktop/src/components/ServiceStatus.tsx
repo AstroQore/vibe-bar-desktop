@@ -1,14 +1,18 @@
 import type { ProviderStatus, ServiceStatusView, StatusIncident } from "../api";
 import { formatRelative } from "../api";
+import { companyFor } from "../naming";
 
 const WATCHED_TOOLS = ["codex", "claude", "gemini", "cursor"] as const;
 
 export function ServiceStatus({
   status,
   refreshFailed,
+  company,
 }: {
   status: ServiceStatusView | null;
   refreshFailed: boolean;
+  /** Narrow to the providers this company answers for. */
+  company?: string;
 }) {
   if (!status || status.providers.length === 0) {
     return (
@@ -18,7 +22,11 @@ export function ServiceStatus({
     );
   }
 
-  const watched = WATCHED_TOOLS.map((tool) => status.providers.find((provider) => provider.tool === tool));
+  const tools = company
+    ? WATCHED_TOOLS.filter((tool) => companyFor(tool) === company)
+    : WATCHED_TOOLS;
+  if (tools.length === 0) return null;
+  const watched = tools.map((tool) => status.providers.find((provider) => provider.tool === tool));
   const incident = watched
     .flatMap((provider) => provider?.incidents ?? [])
     .sort(
@@ -34,7 +42,7 @@ export function ServiceStatus({
         {status.updatedAt ? <span className="status-line">updated {formatRelative(status.updatedAt)}</span> : null}
       </div>
       <div className="service-status-providers">
-        {WATCHED_TOOLS.map((tool, index) => (
+        {tools.map((tool, index) => (
           <ProviderPill key={tool} tool={tool} provider={watched[index]} />
         ))}
       </div>

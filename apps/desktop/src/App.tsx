@@ -4,6 +4,7 @@ import type { AppInfo, CostView, PresentationSettings, QuotaView, ServiceStatusV
 import { api, formatRelative } from "./api";
 import { About } from "./components/About";
 import { CostOverview } from "./components/CostOverview";
+import { ProviderTabs } from "./components/ProviderTabs";
 import { Overview } from "./components/Overview";
 import { Resets } from "./components/Resets";
 import { Sessions } from "./components/Sessions";
@@ -15,6 +16,10 @@ type Tab = "overview" | "resets" | "sessions" | "skills" | "settings" | "about";
 
 export function App() {
   const [tab, setTab] = useState<Tab>("overview");
+  /** Which provider page the Quota tab is showing; empty is the overview.
+   *  A second level rather than more top-level tabs, which is how the native
+   *  popover arranges it: the provider row belongs to the quota surface. */
+  const [company, setCompany] = useState("");
   const [view, setView] = useState<QuotaView | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [presentation, setPresentation] = useState<PresentationSettings | null>(null);
@@ -116,12 +121,26 @@ export function App() {
         {tab === "overview" ? (
           view ? (
             <>
+              <ProviderTabs
+                view={view}
+                settings={presentation}
+                selected={company}
+                onSelect={setCompany}
+              />
               <ServiceStatus
                 status={serviceStatus}
                 refreshFailed={statusRefreshFailed}
+                company={company || undefined}
               />
-              <CostOverview cost={cost} />
-              <Overview view={view} settings={presentation} />
+              {/* The cost card is a whole-machine total, so it belongs to the
+                  overview rather than to any one provider's page. */}
+              {company === "" && <CostOverview cost={cost} />}
+              <Overview
+                view={view}
+                settings={presentation}
+                company={company || undefined}
+                detailed={company !== ""}
+              />
             </>
           ) : (
             <p className="empty">Loading quota…</p>
