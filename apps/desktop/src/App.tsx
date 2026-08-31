@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AppInfo, CostView, PresentationSettings, QuotaView, ServiceStatusView } from "./api";
 import { api, formatRelative } from "./api";
 import { About } from "./components/About";
 import { CostOverview } from "./components/CostOverview";
-import { ProviderTabs } from "./components/ProviderTabs";
+import {
+  ProviderTabs,
+  activeCompany,
+  showsProviderDetail,
+  visibleCompanies,
+} from "./components/ProviderTabs";
 import { Overview } from "./components/Overview";
 import { Resets } from "./components/Resets";
 import { Sessions } from "./components/Sessions";
@@ -27,6 +32,16 @@ export function App() {
   const [statusRefreshFailed, setStatusRefreshFailed] = useState(false);
   const [cost, setCost] = useState<CostView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Computed once: the row, the filter, the cost card and the detail flag all
+  // have to agree about which pages exist, or a stale selection leaves the
+  // list empty with no control to escape it.
+  const companies = useMemo(
+    () => (view ? visibleCompanies(view, presentation) : []),
+    [view, presentation],
+  );
+  const page = activeCompany(companies, company);
+  const detailed = showsProviderDetail(companies, company);
+
   const showsQuotaRefresh = tab === "overview" || tab === "resets";
 
   useEffect(() => {
@@ -122,24 +137,23 @@ export function App() {
           view ? (
             <>
               <ProviderTabs
-                view={view}
-                settings={presentation}
+                companies={companies}
                 selected={company}
                 onSelect={setCompany}
               />
               <ServiceStatus
                 status={serviceStatus}
                 refreshFailed={statusRefreshFailed}
-                company={company || undefined}
+                company={page || undefined}
               />
               {/* The cost card is a whole-machine total, so it belongs to the
                   overview rather than to any one provider's page. */}
-              {company === "" && <CostOverview cost={cost} />}
+              {page === "" && <CostOverview cost={cost} />}
               <Overview
                 view={view}
                 settings={presentation}
-                company={company || undefined}
-                detailed={company !== ""}
+                company={page || undefined}
+                detailed={detailed}
               />
             </>
           ) : (
