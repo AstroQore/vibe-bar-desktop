@@ -137,7 +137,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Arrangeable module waterfall | ● 11 | ○ | |
 | Layout editor with presets | ● | ○ | |
 | **Mini window** |
-| Layouts | ● 7 | ◐ 1 | ring, compact, ledger, strip, tile, focus, rail. Desktop has the ring |
+| Layouts | ● 7 | ◐ 2 | regular, compact, ledger, strip, tile, focus, rail. Desktop has regular and compact; it follows the shared `miniWindow.displayMode` and falls back to regular for the rest |
 | Multiple independent windows | ● | ○ | |
 | Translucent surface | ● Liquid Glass | ○ | Planned as a platform blur, deliberately not a copy. The window is currently opaque and undecorated |
 | **Workbench** |

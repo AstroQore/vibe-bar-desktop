@@ -214,6 +214,9 @@ export interface PresentationSettings {
   coreProviderOrder: string[];
   visibleMiscProviders?: string[];
   providerPlanLabels: Record<string, string>;
+  /** The mini-window layout, among the ones this client draws: "regular" or
+   *  "compact". Native's other five fall back to "regular" in the core. */
+  miniDisplayMode: string;
 }
 
 export interface StatusIncident {
