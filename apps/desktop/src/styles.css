@@ -678,3 +678,15 @@ input[type="text"] {
 .about dd {
   margin: 2px 0 0;
 }
+
+/* Brand marks sit on the text baseline of the title they precede, and never
+   grow the row: a card head is a line of type, not an icon strip. */
+.provider-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.provider-icon svg {
+  display: block;
+}
