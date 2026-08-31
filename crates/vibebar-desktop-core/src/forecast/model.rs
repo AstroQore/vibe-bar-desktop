@@ -52,6 +52,15 @@ pub struct CompletedCycle {
     pub window_start: f64,
     /// Unix seconds, the observed refill time.
     pub window_end: f64,
+    /// Unix seconds of the last observation that belonged to this cycle.
+    ///
+    /// Not derivable from the boundaries, and not the same as `window_end`:
+    /// the reading that detected the refill is stamped between them and
+    /// belongs to the cycle it opened. Bounding on time cannot separate the
+    /// two, because the observation is written by a different call with its
+    /// own clock reading.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen_at: Option<f64>,
     pub peak_used_percent: f64,
 }
 

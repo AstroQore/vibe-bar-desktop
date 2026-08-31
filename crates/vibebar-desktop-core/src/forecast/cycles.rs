@@ -315,6 +315,7 @@ pub fn as_forecast_input(cycles: &[CycleSummary]) -> Vec<CompletedCycle> {
         .map(|cycle| CompletedCycle {
             window_start: cycle.window_start.unwrap_or(cycle.first_seen_at),
             window_end: cycle.window_end,
+            last_seen_at: Some(cycle.last_seen_at),
             peak_used_percent: cycle.peak_used_percent,
         })
         .collect()

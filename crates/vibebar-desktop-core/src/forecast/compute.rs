@@ -310,14 +310,18 @@ fn historical_remaining_usage(
                 return None;
             }
             let total = activity_weight(start, cycle.window_end).max(0.001);
-            // Half-open at the end: the observation that detected the refill is
-            // stamped exactly at the end and belongs to the cycle that follows.
-            // Including it put a post-refill reading at progress 1.0 inside the
-            // finished cycle, which is exactly where a nearly-finished current
-            // window looks — a 60% to 5% refill doubled that cycle's answer.
+            // Bounded by the last observation this cycle absorbed, not by its
+            // end. The reading that detected the refill belongs to the cycle it
+            // opened, and it is stamped a shade *before* the recorded end — the
+            // timeline and the history are written by separate calls, each
+            // taking its own clock reading — so no bound on time separates
+            // them. Without this a 60% to 5% refill doubled the answer, because
+            // a nearly-finished window looks for its comparison at exactly the
+            // progress that stray reading occupies.
+            let observation_end = cycle.last_seen_at.unwrap_or(cycle.window_end);
             let matching = observations
                 .iter()
-                .filter(|p| p.sampled_at >= start && p.sampled_at < cycle.window_end)
+                .filter(|p| p.sampled_at >= start && p.sampled_at <= observation_end)
                 .map(|p| {
                     let progress = clamp(activity_weight(start, p.sampled_at) / total, 0.0, 1.0);
                     ((progress - current_progress).abs(), p.used_percent)
@@ -372,8 +376,11 @@ mod cycle_span_tests {
 
         let current = ramp(0.0, 55.0, start, start + week * 23.0 / 24.0, 24);
         let history = ramp(0.0, 60.0, end - week, end - week / 12.0, 12);
+        // Stamped a shade before the cycle's end, which is how it arrives in
+        // production: the timeline and the history are written by separate
+        // calls, each taking its own clock reading.
         let after_refill = Observation {
-            sampled_at: end,
+            sampled_at: end - 0.4,
             used_percent: 5.0,
         };
 
@@ -387,6 +394,7 @@ mod cycle_span_tests {
                 completed_cycles: vec![CompletedCycle {
                     window_start: end - week,
                     window_end: end,
+                    last_seen_at: Some(end - week / 12.0),
                     peak_used_percent: 60.0,
                 }],
             })
