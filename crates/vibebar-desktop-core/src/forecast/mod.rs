@@ -23,12 +23,13 @@
 
 mod attach;
 mod compute;
+pub mod cycles;
 mod model;
 mod timeline;
 
 pub use attach::{
-    attach_cached_forecasts, attach_cached_forecasts_at, attach_forecasts, observations_for,
-    seed_from_native_once,
+    attach_cached_forecasts, attach_cached_forecasts_at, attach_forecasts, cycles_for,
+    observations_for, seed_from_native_once,
 };
 pub use compute::compute;
 pub use model::{Confidence, Diagnostics, ForecastInput, Observation, QuotaPaceForecast, Verdict};

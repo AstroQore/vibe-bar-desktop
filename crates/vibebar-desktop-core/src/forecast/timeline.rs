@@ -224,6 +224,41 @@ impl ObservationStore {
         rows.collect()
     }
 
+    /// Observations with the window each belonged to, for reconstructing
+    /// cycles. Separate from `observations` because the forecast only needs
+    /// the time and the percentage, and this carries more per row.
+    pub fn dated_observations(
+        &self,
+        account_id: &str,
+        bucket_id: &str,
+        since: f64,
+    ) -> Result<Vec<super::cycles::DatedObservation>, rusqlite::Error> {
+        let mut statement = self.connection.prepare(
+            "SELECT sampled_at, used_percent, reset_at, raw_window_seconds FROM observations
+              WHERE account_id = ?1 AND bucket_id = ?2 AND sampled_at >= ?3
+              ORDER BY sampled_at",
+        )?;
+        let rows = statement.query_map(rusqlite::params![account_id, bucket_id, since], |row| {
+            Ok(super::cycles::DatedObservation {
+                sampled_at: row.get(0)?,
+                used_percent: row.get(1)?,
+                reset_at: row.get(2).ok(),
+                raw_window_seconds: row.get(3).ok(),
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Every (account, bucket) pair the store holds, for diagnostics that
+    /// need to walk what is there rather than what a caller expected.
+    pub fn distinct_series(&self) -> Result<Vec<(String, String)>, rusqlite::Error> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT DISTINCT account_id, bucket_id FROM observations ORDER BY 1, 2")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    }
+
     pub fn count(&self) -> Result<i64, rusqlite::Error> {
         self.connection
             .query_row("SELECT COUNT(*) FROM observations", [], |row| row.get(0))

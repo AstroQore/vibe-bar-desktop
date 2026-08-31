@@ -9,6 +9,7 @@
 use crate::model::AccountQuota;
 use crate::paths::DataRoot;
 
+use super::cycles::{self, CycleSummary};
 use super::model::ForecastInput;
 use super::timeline::{ObservationStore, StoredObservation};
 use super::{compute, Observation};
@@ -48,25 +49,7 @@ pub fn attach_forecasts(root: &DataRoot, accounts: &mut [AccountQuota], now: f64
             );
         }
 
-        for bucket in account.buckets.iter_mut() {
-            let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds)
-            else {
-                continue;
-            };
-            let Ok(observations) =
-                store.observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS)
-            else {
-                continue;
-            };
-            bucket.forecast = compute(&ForecastInput {
-                used_percent: bucket.used_percent,
-                reset_at,
-                raw_window_seconds: window,
-                now,
-                observations,
-                completed_cycles: Vec::new(),
-            });
-        }
+        forecast_account(&store, account, now);
     }
 
     let _ = store.prune(now);
@@ -96,26 +79,59 @@ pub fn attach_cached_forecasts_at(root: &DataRoot, accounts: &mut [AccountQuota]
         return;
     };
     for account in accounts.iter_mut() {
-        for bucket in account.buckets.iter_mut() {
-            let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds)
-            else {
-                continue;
-            };
-            let Ok(observations) =
-                store.observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS)
-            else {
-                continue;
-            };
-            bucket.forecast = compute(&ForecastInput {
-                used_percent: bucket.used_percent,
-                reset_at,
-                raw_window_seconds: window,
-                now,
-                observations,
-                completed_cycles: Vec::new(),
-            });
-        }
+        forecast_account(&store, account, now);
     }
+}
+
+/// Forecast every bucket of one account from the history the store holds.
+///
+/// One query per bucket serves both halves of the input: the observations the
+/// projections read, and the cycles they are compared against. Querying twice
+/// would double the cost of the most expensive part of a refresh for nothing.
+fn forecast_account(store: &ObservationStore, account: &mut AccountQuota, now: f64) {
+    for bucket in account.buckets.iter_mut() {
+        let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds) else {
+            continue;
+        };
+        let Ok(history) =
+            store.dated_observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS)
+        else {
+            continue;
+        };
+        let (completed, _) = cycles::summarize(&history);
+        let observations: Vec<Observation> = history
+            .iter()
+            .map(|point| Observation {
+                sampled_at: point.sampled_at,
+                used_percent: point.used_percent,
+            })
+            .collect();
+        bucket.forecast = compute(&ForecastInput {
+            used_percent: bucket.used_percent,
+            reset_at,
+            raw_window_seconds: window,
+            now,
+            observations,
+            completed_cycles: cycles::as_forecast_input(&completed),
+        });
+    }
+}
+
+/// The cycles behind one bucket's history, oldest first, with the open one
+/// last. Backs the reset-history chart.
+pub fn cycles_for(
+    root: &DataRoot,
+    account_id: &str,
+    bucket_id: &str,
+    since: f64,
+) -> (Vec<CycleSummary>, Option<CycleSummary>) {
+    let Some(store) = ObservationStore::open_read_only(root) else {
+        return (Vec::new(), None);
+    };
+    let Ok(history) = store.dated_observations(account_id, bucket_id, since) else {
+        return (Vec::new(), None);
+    };
+    cycles::summarize(&history)
 }
 
 /// Adopt the native app's observation history, once per launch.
