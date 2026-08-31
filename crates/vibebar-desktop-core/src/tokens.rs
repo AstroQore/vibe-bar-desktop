@@ -78,5 +78,52 @@ mod tests {
                 );
             }
         }
+        // Thresholds too: the same hue at a different cut-off is still two
+        // clients disagreeing about the same number.
+        for (mode, key) in [
+            ("remaining", "criticalBelow"),
+            ("remaining", "warningBelow"),
+            ("used", "criticalAtOrAbove"),
+            ("used", "warningAtOrAbove"),
+        ] {
+            let value = bar[mode][key].as_f64().expect("threshold") as i64;
+            assert!(
+                generated.contains(&format!("{key}: {value}")),
+                "tokens.ts is stale for quotaBar.{mode}.{key}. Run `pnpm run tokens`."
+            );
+        }
+        let opacity = bar["trackOpacity"].as_f64().expect("trackOpacity");
+        assert!(
+            generated.contains(&format!("trackOpacity: {opacity}")),
+            "tokens.ts is stale for quotaBar.trackOpacity. Run `pnpm run tokens`."
+        );
+    }
+
+    /// Every bundled mark must be able to take the accent. The marks disagree
+    /// on how they spell their fill — nine say `white`, two say `#FFFFFF` in
+    /// different cases, three carry dark brand hexes — and matching only the
+    /// literal `white` left Grok and Kiro invisible on a light background.
+    #[test]
+    fn every_brand_mark_can_take_the_accent() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/desktop/src/assets/providers");
+        let mut seen = 0usize;
+        for entry in std::fs::read_dir(&dir).expect("provider icons") {
+            let path = entry.expect("entry").path();
+            if path.extension().is_none_or(|extension| extension != "svg") {
+                continue;
+            }
+            seen += 1;
+            let markup = std::fs::read_to_string(&path).expect("read mark");
+            // Mirrors ProviderIcon.tsx, which rewrites every fill that is not
+            // `none` to currentColor.
+            let empty_fill = markup
+                .split("fill=\"")
+                .skip(1)
+                .filter_map(|rest| rest.split('"').next())
+                .any(str::is_empty);
+            assert!(!empty_fill, "{} has an empty fill", path.display());
+        }
+        assert!(seen >= 23, "expected the full mark set, saw {seen}");
     }
 }

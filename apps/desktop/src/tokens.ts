@@ -17,7 +17,7 @@ export const PROVIDER_ACCENT: Record<string, string | { light: string; dark: str
   copilot: "#757575",
   cursor: "#8C8CF5",
   gemini: "#579EF5",
-  grok: { light: "#5C6470", dark: "#ADBFD4" },
+  grok: { light: "#4D6178", dark: "#ADBFD4" },
   iflytek: "#1A5EBF",
   kilo: "#785EED",
   kimi: "#333333",

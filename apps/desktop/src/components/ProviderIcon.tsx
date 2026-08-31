@@ -51,11 +51,15 @@ export function ProviderIcon({
 }) {
   const markup = markupFor(tool);
   if (!markup) return null;
-  // The source marks are `fill="white"`; recolouring through currentColor
-  // keeps one file usable in both appearances.
+  // The marks do not agree on how they spell their fill: nine say `white`,
+  // two say `#FFFFFF` in different cases, three carry dark brand hexes, and
+  // one has no fill at all. Every fill that is not `none` becomes
+  // `currentColor` so the accent reaches all of them — matching only the
+  // literal `white` left Grok and Kiro invisible on a light background and
+  // three others stuck on their own dark hex.
   const tinted = markup
-    .replace(/fill="white"/g, 'fill="currentColor"')
-    .replace(/<svg /, `<svg width="${size}" height="${size}" `);
+    .replace(/fill="(?!none")[^"]*"/g, 'fill="currentColor"')
+    .replace(/<svg /, `<svg width="${size}" height="${size}" fill="currentColor" `);
   return (
     <span
       className="provider-icon"
