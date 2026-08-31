@@ -60,28 +60,7 @@ pub struct StatusIncident {
 pub(crate) struct StoredStatusSnapshot {
     pub schema_version: u32,
     pub saved_at: f64,
-    pub providers: Vec<StoredProviderStatus>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct StoredProviderStatus {
-    pub tool: ToolType,
-    pub indicator: String,
-    pub description: String,
-    pub updated_at: Option<f64>,
-    pub incidents: Vec<StoredStatusIncident>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct StoredStatusIncident {
-    pub id: String,
-    pub name: String,
-    pub status: String,
-    pub impact: String,
-    pub created_at: Option<f64>,
-    pub updated_at: Option<f64>,
+    pub providers: Vec<ProviderStatus>,
 }
 
 impl StoredStatusSnapshot {
@@ -89,11 +68,7 @@ impl StoredStatusSnapshot {
         let snapshot = Self {
             schema_version: STATUS_SNAPSHOT_SCHEMA_VERSION,
             saved_at,
-            providers: view
-                .providers
-                .iter()
-                .map(StoredProviderStatus::from)
-                .collect(),
+            providers: view.providers.clone(),
         };
         snapshot.valid_at(saved_at).then_some(snapshot)
     }
@@ -140,62 +115,8 @@ impl StoredStatusSnapshot {
             .filter_map(|provider| provider.updated_at)
             .max_by(f64::total_cmp);
         ServiceStatusView {
-            providers: self.providers.iter().map(ProviderStatus::from).collect(),
+            providers: self.providers.clone(),
             updated_at,
-        }
-    }
-}
-
-impl From<&ProviderStatus> for StoredProviderStatus {
-    fn from(value: &ProviderStatus) -> Self {
-        Self {
-            tool: value.tool,
-            indicator: value.indicator.clone(),
-            description: value.description.clone(),
-            updated_at: value.updated_at,
-            incidents: value
-                .incidents
-                .iter()
-                .map(StoredStatusIncident::from)
-                .collect(),
-        }
-    }
-}
-
-impl From<&StoredProviderStatus> for ProviderStatus {
-    fn from(value: &StoredProviderStatus) -> Self {
-        Self {
-            tool: value.tool,
-            indicator: value.indicator.clone(),
-            description: value.description.clone(),
-            updated_at: value.updated_at,
-            incidents: value.incidents.iter().map(StatusIncident::from).collect(),
-        }
-    }
-}
-
-impl From<&StatusIncident> for StoredStatusIncident {
-    fn from(value: &StatusIncident) -> Self {
-        Self {
-            id: value.id.clone(),
-            name: value.name.clone(),
-            status: value.status.clone(),
-            impact: value.impact.clone(),
-            created_at: value.created_at,
-            updated_at: value.updated_at,
-        }
-    }
-}
-
-impl From<&StoredStatusIncident> for StatusIncident {
-    fn from(value: &StoredStatusIncident) -> Self {
-        Self {
-            id: value.id.clone(),
-            name: value.name.clone(),
-            status: value.status.clone(),
-            impact: value.impact.clone(),
-            created_at: value.created_at,
-            updated_at: value.updated_at,
         }
     }
 }
@@ -934,12 +855,12 @@ mod tests {
         StoredStatusSnapshot {
             schema_version: STATUS_SNAPSHOT_SCHEMA_VERSION,
             saved_at: now,
-            providers: vec![StoredProviderStatus {
+            providers: vec![ProviderStatus {
                 tool: ToolType::Claude,
                 indicator: "minor".into(),
                 description: "Synthetic incident".into(),
                 updated_at: Some(now - 1.0),
-                incidents: vec![StoredStatusIncident {
+                incidents: vec![StatusIncident {
                     id: "incident-1".into(),
                     name: "Synthetic incident".into(),
                     status: "investigating".into(),

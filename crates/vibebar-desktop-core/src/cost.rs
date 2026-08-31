@@ -225,6 +225,15 @@ impl UsageEvent {
     }
 }
 
+/// How far past the scan clock an event may still be dated.
+///
+/// `now_unix` truncates to milliseconds while a file mtime carries
+/// nanoseconds, so a Gemini record that falls back to its file's mtime reads
+/// as slightly in the future whenever the scan lands in the same millisecond
+/// as the write. That is clock granularity, not implausible data — a genuinely
+/// wrong date is days or years out, and is still rejected.
+const CLOCK_GRANULARITY_SECONDS: f64 = 2.0;
+
 fn now_unix() -> f64 {
     Utc::now().timestamp_millis() as f64 / 1_000.0
 }
@@ -1548,7 +1557,10 @@ fn aggregate(
     let mut unpriced_events = 0_u64;
 
     for event in events {
-        if !event.date.is_finite() || event.date <= 0.0 || event.date > scanned_at {
+        if !event.date.is_finite()
+            || event.date <= 0.0
+            || event.date > scanned_at + CLOCK_GRANULARITY_SECONDS
+        {
             continue;
         }
         let Some(day) = local_day(event.date) else {
@@ -2431,6 +2443,54 @@ mod tests {
             source_key: Arc::from(""),
         };
         assert_eq!(priced_cost_micros(&event), Some(500_003));
+    }
+
+    /// A record dated a hair past the scan clock is granularity, not data
+    /// from the future; a record dated next year is the bug this guard exists
+    /// for. Both directions are pinned so the tolerance cannot quietly grow
+    /// into "accept anything".
+    #[test]
+    fn future_guard_tolerates_clock_granularity_but_not_wrong_dates() {
+        let scanned_at = now_unix();
+        let event = |date: f64| UsageEvent {
+            tool: ToolType::Gemini,
+            date,
+            model: "gemini-3-flash".into(),
+            input: 10,
+            cache_read: 0,
+            output: 5,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            service_tier: None,
+            session_id: None,
+            message_id: None,
+            request_id: None,
+            is_sidechain: false,
+            is_parent_path: true,
+            source_key: Arc::from("synthetic"),
+        };
+        let counted = |date: f64| {
+            aggregate(&[event(date)], 1, 0, false, scanned_at)
+                .all_time
+                .requests
+        };
+
+        assert_eq!(counted(scanned_at - 1.0), 1, "the recent past counts");
+        assert_eq!(
+            counted(scanned_at + 0.001),
+            1,
+            "a millisecond ahead is granularity"
+        );
+        assert_eq!(
+            counted(scanned_at + CLOCK_GRANULARITY_SECONDS / 2.0),
+            1,
+            "inside the tolerance counts"
+        );
+        assert_eq!(
+            counted(scanned_at + 86_400.0),
+            0,
+            "a day ahead is a wrong date, not granularity"
+        );
     }
 
     #[test]

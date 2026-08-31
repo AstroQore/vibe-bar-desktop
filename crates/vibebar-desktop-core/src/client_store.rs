@@ -796,7 +796,7 @@ mod tests {
         let oversized = crate::status::StoredStatusSnapshot {
             schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
             saved_at: now,
-            providers: vec![crate::status::StoredProviderStatus {
+            providers: vec![crate::status::ProviderStatus {
                 tool: ToolType::Claude,
                 indicator: "none".into(),
                 description: "x".repeat(crate::status::STATUS_SNAPSHOT_MAX_BYTES),
