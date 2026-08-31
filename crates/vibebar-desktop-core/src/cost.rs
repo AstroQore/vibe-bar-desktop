@@ -50,6 +50,27 @@ pub struct DailyCost {
     pub requests: u64,
 }
 
+/// One tool's spend across the windows the MCP reports.
+///
+/// The quota axis' L2: a tool is one product (Codex, Claude Code, Gemini CLI),
+/// and `company` is the L1 it bills under. Kept as its own list rather than
+/// folded into `providers`, which is the company total.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCost {
+    pub tool: String,
+    pub company: String,
+    pub sub_provider: String,
+    pub today: CostTotals,
+    pub last_7_days: CostTotals,
+    pub last_30_days: CostTotals,
+    pub all_time: CostTotals,
+    /// Session files read for this tool. Zero means nothing was found, which
+    /// is not the same as found and free.
+    pub files_found: u64,
+}
+
+
 /// Spend grouped by the company that bills for it.
 ///
 /// A separate axis from `ModelCost`'s harness, and deliberately not mixed with
@@ -114,6 +135,10 @@ pub struct CostView {
     /// rather than being discarded as unreadable.
     #[serde(default)]
     pub providers: Vec<ProviderCost>,
+    /// Per-tool windows, for `cost.snapshot`. Defaulted for the same reason
+    /// `providers` is: a snapshot written before it existed still loads.
+    #[serde(default)]
+    pub tools: Vec<ToolCost>,
     pub unpriced_events: u64,
     pub scanned_files: u64,
     pub malformed_lines: u64,
@@ -210,6 +235,7 @@ impl CostEngine {
 
         let view = aggregate(
             &events,
+            &scan.files_by_tool,
             scan.scanned_files,
             scan.malformed_lines,
             scan.truncated,
@@ -547,6 +573,10 @@ fn provider_event_limits<const N: usize>(
 struct RawScan {
     events: Vec<UsageEvent>,
     scanned_files: u64,
+    /// Files actually read, per tool. Reported as `jsonlFilesFound`, which is
+    /// how a caller tells "this provider has no sessions here" from "this
+    /// provider has sessions and they cost nothing".
+    files_by_tool: HashMap<ToolType, u64>,
     malformed_lines: u64,
     truncated: bool,
 }
@@ -592,7 +622,10 @@ fn scan_sources<const N: usize>(
         );
         *provider_counts.entry(source.tool).or_default() += scan.events.len() - before;
         match result {
-            ScanFileResult::Scanned => scan.scanned_files += 1,
+            ScanFileResult::Scanned => {
+                scan.scanned_files += 1;
+                *scan.files_by_tool.entry(source.tool).or_default() += 1;
+            }
             ScanFileResult::Skipped | ScanFileResult::TooLarge => scan.truncated = true,
             ScanFileResult::EventLimit => scan.truncated = true,
             ScanFileResult::ByteLimit => {
@@ -1587,6 +1620,7 @@ fn claude_pricing_exact_base(model: &str) -> bool {
 
 fn aggregate(
     events: &[UsageEvent],
+    files_by_tool: &HashMap<ToolType, u64>,
     scanned_files: u64,
     malformed_lines: u64,
     truncated: bool,
@@ -1609,6 +1643,8 @@ fn aggregate(
     let mut daily: BTreeMap<String, CostTotals> = BTreeMap::new();
     let mut models: HashMap<ToolType, HashMap<String, ModelCost>> = HashMap::new();
     let mut provider_costs: HashMap<&'static str, ProviderCost> = HashMap::new();
+    // Windows per tool, the shape `cost.snapshot` reports.
+    let mut tool_windows: HashMap<ToolType, [CostTotals; 4]> = HashMap::new();
     let mut unpriced_events = 0_u64;
 
     for event in events {
@@ -1639,6 +1675,18 @@ fn aggregate(
             add_totals(&mut month_totals, tokens, cost);
         }
         add_totals(daily.entry(day.to_string()).or_default(), tokens, cost);
+
+        let windows = tool_windows.entry(event.tool).or_default();
+        add_totals(&mut windows[3], tokens, cost);
+        if age_days == 0 {
+            add_totals(&mut windows[0], tokens, cost);
+        }
+        if age_days < 7 {
+            add_totals(&mut windows[1], tokens, cost);
+        }
+        if age_days < 30 {
+            add_totals(&mut windows[2], tokens, cost);
+        }
 
         // Who bills for this, as opposed to where it ran. Keyed by the
         // company itself so two harnesses of one company land in one row —
@@ -1711,6 +1759,30 @@ fn aggregate(
             .then_with(|| left.harness.cmp(&right.harness))
             .then_with(|| left.model.cmp(&right.model))
     });
+    let mut tools = tool_windows
+        .into_iter()
+        .map(|(tool, windows)| {
+            let [today, last_7_days, last_30_days, all_time] = windows;
+            ToolCost {
+                tool: tool.raw_value().to_string(),
+                company: tool.hierarchy().vendor.to_string(),
+                sub_provider: tool.hierarchy().product.to_string(),
+                today,
+                last_7_days,
+                last_30_days,
+                all_time,
+                files_found: files_by_tool.get(&tool).copied().unwrap_or(0),
+            }
+        })
+        .collect::<Vec<_>>();
+    tools.sort_by(|left, right| {
+        right
+            .all_time
+            .priced_cost_micros
+            .cmp(&left.all_time.priced_cost_micros)
+            .then_with(|| left.tool.cmp(&right.tool))
+    });
+
     let mut providers = provider_costs.into_values().collect::<Vec<_>>();
     providers.sort_by(|left, right| {
         right
@@ -1736,6 +1808,7 @@ fn aggregate(
             .collect(),
         models,
         providers,
+        tools,
         privacy_suppressed: false,
         unpriced_events,
         scanned_files,
@@ -1831,6 +1904,7 @@ mod tests {
                 event(ToolType::Antigravity, "gemini-2.5-pro"),
                 event(ToolType::Codex, "gpt-5"),
             ],
+            &HashMap::new(),
             3,
             0,
             false,
@@ -1886,6 +1960,7 @@ mod tests {
                 event(ToolType::Gemini, "gemini-2.5-pro", 10),
                 event(ToolType::Codex, "gpt-5", 100_000),
             ],
+            &HashMap::new(),
             2,
             0,
             false,
@@ -2004,7 +2079,7 @@ mod tests {
             .collect::<Vec<_>>();
         events.push(event("x".repeat(MAX_RETAINED_MODEL_BYTES + 1)));
 
-        let view = aggregate(&events, 1, 0, false, scanned_at);
+        let view = aggregate(&events, &HashMap::new(), 1, 0, false, scanned_at);
         assert_eq!(view.models.len(), MAX_MODEL_GROUPS_PER_HARNESS);
         assert!(view
             .models
@@ -2214,7 +2289,7 @@ mod tests {
             is_parent_path: true,
             source_key: Arc::from(""),
         };
-        let view = aggregate(&[event(0), event(8), event(31)], 3, 0, false, scanned_at);
+        let view = aggregate(&[event(0), event(8), event(31)], &HashMap::new(), 3, 0, false, scanned_at);
         assert_eq!(view.today.requests, 1);
         assert_eq!(view.last_7_days.requests, 1);
         assert_eq!(view.last_30_days.requests, 2);
@@ -2556,6 +2631,7 @@ mod tests {
         assert_eq!(scan.events.len(), 2);
         let view = aggregate(
             &scan.events,
+            &scan.files_by_tool,
             scan.scanned_files,
             scan.malformed_lines,
             scan.truncated,
@@ -2659,7 +2735,7 @@ mod tests {
             source_key: Arc::from("synthetic"),
         };
         let counted = |date: f64| {
-            aggregate(&[event(date)], 1, 0, false, scanned_at)
+            aggregate(&[event(date)], &HashMap::new(), 1, 0, false, scanned_at)
                 .all_time
                 .requests
         };
