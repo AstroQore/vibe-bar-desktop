@@ -139,6 +139,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | **Mini window** |
 | Layouts | ● 7 | ◐ 5 | regular, compact, ledger, tile, focus ported; strip and rail not. Follows the shared `miniWindow.displayMode`, falling back to regular for the rest |
 | Multiple independent windows | ● | ○ | |
+| Window fits the layout | ● | ● | Both size the mini window to what it is drawing and clamp it to the screen. A layout wider than the monitor is cropped on both, which is the limit rather than a choice |
 | Translucent surface | ● Liquid Glass | ○ | Planned as a platform blur, deliberately not a copy. The window is currently opaque and undecorated |
 | **Workbench** |
 | Usage charts, donuts, breakdown tables | ● | ○ | Desktop draws the reset-history strip but no usage charts |

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PresentationSettings, QuotaBucket, QuotaForecast, QuotaView } from "../api";
 import { api, formatRemaining, quotaBarColor } from "../api";
@@ -86,6 +86,7 @@ export function MiniQuota() {
         loading={view === null}
         layout={settings?.miniDisplayMode}
         order={fields.slice(0, MAX_CELLS)}
+        onContentSize={api.resizeMini}
       />
     </main>
   );
@@ -102,18 +103,23 @@ export function MiniQuotaBody({
   loading = false,
   layout = "regular",
   order,
+  onContentSize,
 }: {
   companies: Company[];
   loading?: boolean;
   /** The field ids in the order they were chosen, for the layouts that page or
    *  tile through buckets rather than drawing the tree. */
   order?: string[];
+  /** Called with the size the content needs, so the shell can fit the window
+   *  to it. Absent in the preview page, which is a page and not a window. */
+  onContentSize?: (width: number, height: number) => void;
   /** Which of native's layouts to draw: regular, compact, ledger, tile or
    *  focus. The two not ported fall back to regular in the core, so only
    *  these five arrive here. */
   layout?: string;
 }) {
   const dark = useDarkMode();
+  const measured = useContentSize(onContentSize);
   const drawn =
     !loading && companies.length > 0 && layout === "ledger" ? (
       <MiniLedger companies={companies} dark={dark} />
@@ -125,10 +131,16 @@ export function MiniQuotaBody({
   if (drawn) {
     // One wrapper for every layout so the size report has a single element to
     // watch, whichever one is drawn.
-    return drawn;
+    // One wrapper for every layout, laid out at its content's size so the
+    // measurement is the layout's and not the window's.
+    return (
+      <div ref={measured} style={{ width: "max-content" }}>
+        {drawn}
+      </div>
+    );
   }
   return (
-    <>
+    <div ref={measured} style={{ width: "max-content" }}>
       {loading ? (
         <p className="mini-empty">Loading quota…</p>
       ) : companies.length === 0 ? (
@@ -179,7 +191,7 @@ export function MiniQuotaBody({
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -192,6 +204,81 @@ export function MiniQuotaBody({
  * needs a square. The forecast marker is a line across the bar rather than a
  * notch on an arc, for the same reason.
  */
+/**
+ * Report the size the whole window needs, whenever it changes.
+ *
+ * Measured from the content's intrinsic size, and from nothing the current
+ * window size can influence. Both obvious shortcuts are viewport-bound and
+ * fail in opposite directions:
+ *
+ * - the wrapper's border box is its *container's* width, so it reads 244 in a
+ *   272 window and stays 244 while a 284 ledger overflows — the window can
+ *   never grow;
+ * - `documentElement.scrollWidth` is floored by the viewport, so once tiles
+ *   have widened the window to 525, focus still reads 525 — it can never
+ *   shrink.
+ *
+ * So the wrapper is laid out at `max-content`, which makes its box the
+ * layout's own size, and the surface's padding and title are added
+ * explicitly.
+ *
+ * Reported after every render as well as from the observer: a
+ * `ResizeObserver` fires on its target's border box, and content that grows
+ * only in overflow does not move it — a tile grid going from one bucket to
+ * four stays one row. The observer stays for what a render does not cause,
+ * such as the window's own resize or a font change.
+ */
+function useContentSize(report?: (width: number, height: number) => void) {
+  const node = useRef<HTMLDivElement | null>(null);
+  const observer = useRef<ResizeObserver | null>(null);
+  const lastSent = useRef<[number, number] | null>(null);
+
+  const send = useCallback(() => {
+    const content = node.current;
+    const surface = content?.parentElement;
+    if (!report || !content || !surface) return;
+
+    const style = getComputedStyle(surface);
+    const chromeWidth = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    let chromeHeight = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    // Everything in the surface that is not the layout — the title, and its
+    // margins. Summed rather than read off the surface's own box, which is the
+    // viewport's. Heights only: the title stretches to whatever width the
+    // layout asks for, so its width says nothing about what is needed.
+    for (const sibling of surface.children) {
+      if (sibling === content) continue;
+      const siblingStyle = getComputedStyle(sibling);
+      chromeHeight +=
+        sibling.getBoundingClientRect().height +
+        parseFloat(siblingStyle.marginTop) +
+        parseFloat(siblingStyle.marginBottom);
+    }
+
+    const width = content.scrollWidth + chromeWidth;
+    const height = content.scrollHeight + chromeHeight;
+    if (width <= 0 || height <= 0) return;
+    const [lastWidth, lastHeight] = lastSent.current ?? [0, 0];
+    if (Math.abs(width - lastWidth) < 1 && Math.abs(height - lastHeight) < 1) return;
+    lastSent.current = [width, height];
+    report(width, height);
+  }, [report]);
+
+  useEffect(send);
+
+  return useCallback(
+    (next: HTMLDivElement | null) => {
+      observer.current?.disconnect();
+      observer.current = null;
+      node.current = next;
+      if (!next || !report) return;
+      const watcher = new ResizeObserver(send);
+      watcher.observe(next);
+      observer.current = watcher;
+    },
+    [report, send],
+  );
+}
+
 /** One bucket with the tiers above it carried along, for the layouts that
  *  draw a flat list rather than a tree. */
 export interface Entry {

@@ -16,6 +16,16 @@ struct MiniState {
     geometry: Mutex<MiniWindowGeometry>,
 }
 
+/// Smallest the window will be made, so a render that measures nothing cannot
+/// produce a window too small to find. There is deliberately no fixed upper
+/// bound: the ceiling is the monitor, the way it is in the native client. A
+/// permitted twelve-field regular layout is wider than any round number worth
+/// picking, and cropping it to keep the window tidy would hide quotas the user
+/// asked for.
+const MIN_SIZE: (f64, f64) = (200.0, 120.0);
+/// Native keeps this much between the window and the screen edge.
+const SCREEN_MARGIN: f64 = 8.0;
+
 pub fn install<R: Runtime>(app: &AppHandle<R>, root: DataRoot) -> tauri::Result<()> {
     let store = ClientStore::new(root.clone());
     let geometry = store.load_mini_window_geometry();
@@ -25,8 +35,13 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, root: DataRoot) -> tauri::Result<
     });
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?mini=1".into()))
         .title("Vibe Bar Mini")
+        // A starting size only: the first render measures its layout and the
+        // window is fitted to it. The minimum is the one `resize_to_content`
+        // clamps to — two constants disagreeing about the same thing meant the
+        // platform floor silently won, and the smallest layouts stayed padded
+        // to a width nothing had asked for.
         .inner_size(272.0, 190.0)
-        .min_inner_size(272.0, 150.0)
+        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
@@ -57,6 +72,82 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
         hide(app);
     } else {
         show(app);
+    }
+}
+
+/// Fit the window to the layout it is drawing.
+///
+/// A fixed 272x190 fitted the ring layout and nothing else: the ledger is 284
+/// wide, four columns of tiles are wider still, and focus is 210 tall, so all
+/// three were cropped by the window rather than by any decision.
+pub fn resize_to_content<R: Runtime>(app: &AppHandle<R>, width: f64, height: f64) {
+    let Some(window) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    if !width.is_finite() || !height.is_finite() {
+        return;
+    }
+    let scale = window.scale_factor().unwrap_or(1.0);
+    // The work area, not the display: `size()` is the whole panel, so a
+    // ceiling taken from it puts the bottom of the window under the Dock or
+    // the taskbar and the top under the menu bar. This is what the native
+    // client's `NSScreen.visibleFrame` gives it.
+    let (max_width, max_height) = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .map(|monitor| {
+            let area = monitor.work_area().size.to_logical::<f64>(scale);
+            (
+                (area.width - 2.0 * SCREEN_MARGIN).max(MIN_SIZE.0),
+                (area.height - 2.0 * SCREEN_MARGIN).max(MIN_SIZE.1),
+            )
+        })
+        .unwrap_or((f64::MAX, f64::MAX));
+
+    let _ = window.set_size(tauri::LogicalSize::new(
+        width.clamp(MIN_SIZE.0, max_width),
+        height.clamp(MIN_SIZE.1, max_height),
+    ));
+    keep_on_screen(&window);
+}
+
+/// Pull the window back onto its monitor after it has changed size.
+///
+/// `set_size` keeps the origin, so a window parked against the right or bottom
+/// edge grows off the screen — and what leaves is the area just added, which
+/// is the quota the user changed layout to see.
+fn keep_on_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let (Ok(Some(monitor)), Ok(position), Ok(size)) = (
+        window.current_monitor(),
+        window.outer_position(),
+        window.outer_size(),
+    ) else {
+        return;
+    };
+    // Same reason as the ceiling above: the usable area, so the window is not
+    // tucked under the menu bar or the Dock.
+    let area = monitor.work_area();
+    let screen = area.position;
+    let bounds = area.size;
+    let margin = (SCREEN_MARGIN * monitor.scale_factor()).round() as i32;
+    // Native's order: clamp to the far edge first, then to the near one, so a
+    // window larger than the screen ends up against the top-left rather than
+    // pushed off the opposite side.
+    let max_x = screen
+        .x
+        .saturating_add(bounds.width as i32)
+        .saturating_sub(size.width as i32)
+        .saturating_sub(margin);
+    let max_y = screen
+        .y
+        .saturating_add(bounds.height as i32)
+        .saturating_sub(size.height as i32)
+        .saturating_sub(margin);
+    let x = position.x.min(max_x).max(screen.x.saturating_add(margin));
+    let y = position.y.min(max_y).max(screen.y.saturating_add(margin));
+    if x != position.x || y != position.y {
+        let _ = window.set_position(PhysicalPosition::new(x, y));
     }
 }
 
