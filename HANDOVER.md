@@ -19,7 +19,7 @@ shared-writer, analysis, surface, platform, and release lanes remain open.
 | Desktop feature PR queue | No open feature PRs; the earlier stacked PRs were verified as included and closed as superseded |
 | Native baseline | `AstroQore/vibe-bar` `v1.4.1-dev.56`, commit `25b5b6959827c27cad20217ed9b3ba6af72b99b6` |
 | Session kit | `AstroQore/agent-session-kit` `main` at `0419098d549bebdc67c63dc93f6be5d67929bdc4` |
-| Desktop kit pin | `agent-session-core` pinned to reviewed commit `1959fbea750337e2c1ebf9ad6065d71d834861f2`; no new tag was created |
+| Desktop kit pin | `agent-session-core` pinned to release tag `0.7.0` |
 | Release state | No Desktop tag, package, installer release, signing, or update feed was produced |
 
 The native baseline moved from dev.52 to dev.56 during this work. Those native
@@ -62,8 +62,10 @@ been installed.
 - PR [#14](https://github.com/AstroQore/agent-session-kit/pull/14) merged as
   `0419098d549bebdc67c63dc93f6be5d67929bdc4`: indexed transcript cursor
   compatibility and slash-command title follow-ups.
-- Desktop deliberately pins `1959fbea...`, the reviewed PR #14 head. Tagging
-  and switching the dependency to a release tag remain separate release work.
+- PR [#15](https://github.com/AstroQore/agent-session-kit/pull/15) merged and
+  released as `0.7.0`: Swift and Rust became peer implementation lanes under
+  `implementations/`, with `contracts/` holding the facts both must honour.
+  Desktop now pins that tag.
 
 ### vibe-bar-desktop
 
@@ -111,11 +113,12 @@ scan root from the shape of the path it was given, so a synthetic
 `<home>/.vibebar` scans that synthetic home while an explicit real data root
 scans the user's actual home.
 
-GitHub Actions on the final PR did not execute a single step. Every job ended
-in about two seconds with the GitHub annotation that the job was not started
-because account payments failed or the spending limit must be increased.
-There was no admin bypass. Before relying on hosted cross-platform evidence,
-fix the account billing/spending state and rerun the final workflows.
+Hosted CI was blocked at the time of the pause: every job ended in about two
+seconds because the account's Actions spending had to be raised. The
+repository is public now, so CI runs, and the first real cross-platform run
+immediately found three things the macOS-only evidence had hidden — a Windows
+fail-closed bug in the cost scanner, two assertions that only held on Unix,
+and a float round-trip in a test fixture. All are fixed on `main`.
 
 For any future data-layer change, also repeat the real-root immutability check
 from [AGENTS.md](AGENTS.md). The only tolerated read-only side effect remains
