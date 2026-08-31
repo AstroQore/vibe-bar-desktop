@@ -1,9 +1,13 @@
-//! Read-only view of the shared `settings.json`.
+//! Reading the shared `settings.json`.
 //!
 //! Only the fields this client actually renders are typed. Everything else is
-//! kept verbatim in `unknown` so nothing is ever lost in a round trip — a
-//! precondition for the day Desktop is allowed to write this file, and the
-//! reason this struct must never be used to re-serialize a partial view.
+//! kept verbatim in `unknown` so nothing is ever lost in a round trip, and
+//! this struct must never be used to re-serialize a partial view: that is what
+//! would delete the keys it does not know.
+//!
+//! Writing goes through [`super::settings_writer`], which never builds a
+//! document from this type — it puts the changed keys onto the raw object the
+//! file holds at that moment.
 
 use std::collections::BTreeMap;
 

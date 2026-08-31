@@ -25,7 +25,7 @@ export function Settings({
 
   const fieldLabel = (fieldId: string) => settings.customLabels[fieldId] || fieldId;
   return (
-    <section className="settings-readonly">
+    <section className="settings-pane">
       {saveError ? (
         <div className="banner banner-warning">
           <div>

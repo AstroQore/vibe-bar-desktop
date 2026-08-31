@@ -30,14 +30,18 @@ window, on macOS, Windows, and Linux.
   index when one exists (every harness it covers, full-text search), and falls
   back to scanning Codex and Claude Code logs directly when it does not.
 - **Presentation settings.** Applies the shared used/remaining mode, provider
-  visibility/order, plan labels, and menu-bar field labels. A read-only
-  Settings page shows the effective values; Desktop does not save them yet.
+  visibility/order, plan labels, and menu-bar field labels. The Settings page
+  shows the effective values, and the three it presents — percent shown,
+  refresh interval, menu-bar colour basis — are editable and save to the shared
+  `settings.json` under a lock, keeping every key this build does not know.
+  When the native app replaces a choice made here, the page says so.
 - **Service status.** Reads cached native status immediately, then refreshes
   OpenAI-wide, Claude, Google AI, and Cursor status from public feeds without credentials.
   A fresh Desktop last-good snapshot is private to `client/desktop/`; shared
   `service_status.json` remains read-only.
 - **Local usage and cost.** Scans bounded Codex, Claude, and Gemini CLI session JSONL files
-  into a priced-usage view. A completed aggregate snapshot persists only under
+  into a priced-usage view, broken down by harness, by model, and by the company
+  that bills for it. A completed aggregate snapshot persists only under
   `client/desktop/`; unknown models stay visibly unpriced and no shared ledger
   or history is written.
 - **Skills inventory.** Lists skills from the fixed local SSOT and harness
@@ -134,8 +138,9 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | **Cost and usage** |
 | Local usage scan | ● 7 harnesses | ◐ 3 | Codex, Claude Code, Gemini CLI. Counts harnesses with a local scanner: Cursor's usage comes from dashboard events and Grok Bot has no usage source at all, so neither is a local scan on either side |
 | Per-request ledger, multi-source pricing, history | ● | ○ | Desktop keeps an in-memory aggregate |
+| Spend by billing company | ● | ● | Both group by company rather than by harness: two harnesses can bill one company |
 | **Settings** |
-| Writable | ● | ○ | Shared writes need the cross-client storage contract |
+| Writable | ● | ◐ 3 | The cross-client write contract is in place (`docs/contracts/settings-write-v1.md`): a lock, a merge that keeps every key the writer does not know, and a notice when the other client replaces a choice made here. Desktop writes the three settings its own Settings presents |
 | Provider credential panes | ● 25 | ○ | |
 | **Platform** |
 | MCP tools | ● 12 | ◐ 5 | Read-only subset |
