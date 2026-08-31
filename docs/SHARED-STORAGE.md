@@ -73,29 +73,22 @@ Before either client may write shared state:
 - `flushPendingWrites` on exit for every coalesced store (the native app
   currently flushes only settings).
 
-## Settings v1 patch foundation (not a product writer)
+## Settings writes are not implemented
 
-`shared::settings_document` now supplies a pure, product-disabled v1 document
-parser and top-level three-way patch engine for the native expected
-`settings.json` location. It has no file-write or lease acquisition API. The
-manifest remains `json_unversioned` and `legacy_unsafe`; production
-`SharedStoreLeaseBatch::acquire_writer` continues to reject Settings.
+Desktop reads `settings.json` and writes nothing to it. There is no patch
+engine, no lease, and no transaction in this repository: those existed as a
+product-disabled foundation and were removed once it was clear neither client
+could reach them, since carrying an unreachable protocol is worse than
+carrying none. See [contracts/README.md](contracts/README.md) for the design
+record and the git paths that recover both implementations.
 
-The diagnostic-only transaction foundation fingerprints the exact settings
-source it read (existence, length, SHA-256) and re-reads it through the same
-directory capability immediately before rename. A cooperative writer that
-changes the file in that window receives `SourceChangedBeforeCommit`; Desktop
-cleans its temp sibling and never reports success. No user-space check can
-close a hostile, non-cooperating replacement between that final check and the
-OS rename; the future enabled protocol therefore still requires the shared
-lease and joint interop testing before this path becomes product authority.
-
-The prospective v1 envelope is `schemaVersion: 1` plus an unsigned `revision`.
-Legacy objects with neither key read as v0 / revision 0. A patch preserves raw
-unknown values, changes only the documented Desktop first-batch whitelist, and
-fails without partial changes on an unknown version or a per-key conflict. See
-[settings-document-v1.md](contracts/settings-document-v1.md) for the synthetic
-fixture, conflict table, and enablement boundary.
+What that foundation established is still worth knowing before the work is
+picked up again. No user-space check can close a hostile replacement between a
+final fingerprint read and the OS rename, so a cooperative fingerprint is a
+safety net rather than authority; real authority needs the shared lease and
+joint interop testing with the native writer. And the merge cannot normalise
+numbers — two clients must not disagree about whether `1e-400` and `0` are the
+same value, which is why the design compares numeric tokens exactly.
 
 ## Reading the session index safely
 

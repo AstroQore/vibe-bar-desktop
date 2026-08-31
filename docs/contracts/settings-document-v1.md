@@ -46,6 +46,8 @@ future product gate, not permission granted by these fixtures.
 - `settings-document-vectors.json` — one non-conflicting merge and one same-key
   conflict shared by Swift and Rust.
 
-The adjacent SHA-256 sidecars authenticate exact fixture bytes. The native
-directory is the source of truth; other implementations copy these files
-byte-for-byte and verify them before decoding.
+These fixtures are a design record: nothing in this repository reads or
+validates them today, and the SHA-256 sidecars that once pinned their exact
+bytes were removed along with the implementations that checked them. If this
+work is picked up again, the native directory becomes the source of truth once
+more and both lanes verify the bytes before decoding.

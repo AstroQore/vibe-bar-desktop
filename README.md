@@ -89,9 +89,9 @@ docs/                          Architecture, the shared-storage rules, and
                                the design record for cross-client writes
 ```
 
-Every job in CI runs on macOS, Linux, and Windows, so the core is checked on
-all three on every pull request. The GUI itself has had its end-to-end pass on
-macOS only so far.
+The `core` crate is tested on macOS, Linux, and Windows on every pull request.
+The app job — workspace tests, frontend build, and the Tauri build — runs on
+macOS only, and the GUI has had its end-to-end pass there only.
 
 Session reading comes from [`agent-session-core`](https://github.com/AstroQore/agent-session-kit),
 the Rust lane of `agent-session-kit` — the same kit the native app's Swift
