@@ -1,4 +1,5 @@
 import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
+import { ProviderIcon } from "./ProviderIcon";
 import {
   describeError,
   formatCountdown,
@@ -63,6 +64,7 @@ function QuotaCard({
   return (
     <article className="card">
       <div className="card-head">
+        <ProviderIcon tool={account.tool} />
         <span className="card-title">{product}</span>
         {plan ? <span className="pill">{plan}</span> : null}
         {account.origin === "sharedCache" ? (
