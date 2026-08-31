@@ -68,6 +68,24 @@ mod tests {
             }
         }
 
+        // The chart palette is separate from providerAccent — Claude is coral
+        // in one and orange in the other — so it needs its own check.
+        let reset_history = doc["resetHistoryAccent"]
+            .as_object()
+            .expect("resetHistoryAccent is an object");
+        for (tool, value) in reset_history {
+            let hex = value.as_str().expect("reset-history accent");
+            assert!(
+                generated.contains(&format!("{tool}: \"{hex}\"")),
+                "tokens.ts is stale for resetHistoryAccent.{tool}: expected {hex}. \
+                 Run `pnpm run tokens`."
+            );
+        }
+        assert!(
+            reset_history.contains_key("default"),
+            "an unlisted provider must have a defined colour in both clients"
+        );
+
         let bar = &doc["quotaBar"];
         for mode in ["remaining", "used"] {
             for level in ["critical", "warning", "ok"] {

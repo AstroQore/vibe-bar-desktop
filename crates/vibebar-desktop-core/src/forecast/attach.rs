@@ -118,13 +118,17 @@ fn forecast_account(store: &ObservationStore, account: &mut AccountQuota, now: f
 }
 
 /// The cycles behind one bucket's history, oldest first, with the open one
-/// last. Backs the reset-history chart.
+/// returned separately. Backs the reset-history chart.
+///
+/// Read-only: the chart is drawn from what a refresh already recorded, so
+/// opening a card can never create or mutate the store.
 pub fn cycles_for(
     root: &DataRoot,
     account_id: &str,
     bucket_id: &str,
-    since: f64,
+    lookback_seconds: f64,
 ) -> (Vec<CycleSummary>, Option<CycleSummary>) {
+    let since = crate::providers::now_unix() - lookback_seconds;
     let Some(store) = ObservationStore::open_read_only(root) else {
         return (Vec::new(), None);
     };
@@ -289,6 +293,46 @@ mod tests {
             .unwrap()
             .len();
         assert_eq!(before, after, "a read must not grow the store");
+    }
+
+    /// The chart reads; it must not write. `cycles_for` backs an IPC call the
+    /// UI makes whenever a card is drawn, so a store created here would mean
+    /// merely looking at the app mutates persistent state.
+    #[test]
+    fn asking_for_cycles_creates_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+
+        let (completed, current) = cycles_for(&root, "acct", "five_hour", 45.0 * 86_400.0);
+
+        assert!(completed.is_empty());
+        assert!(current.is_none());
+        assert!(!root.client_dir().join("observations.sqlite3").exists());
+    }
+
+    #[test]
+    fn cycles_for_reads_what_refreshes_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let now = crate::providers::now_unix();
+        // Two windows: one that ends, then a fresh one after the reset.
+        for (offset, used, reset) in [
+            (-7_200.0, 20.0, 1_800.0),
+            (-6_600.0, 45.0, 1_800.0),
+            (-1_800.0, 3.0, 19_800.0),
+            (-600.0, 9.0, 19_800.0),
+        ] {
+            let at = now + offset;
+            attach_forecasts(&root, &mut [account(at, used, Some(now + reset))], at);
+        }
+
+        let (completed, current) = cycles_for(&root, "acct", "five_hour", 45.0 * 86_400.0);
+
+        assert_eq!(completed.len(), 1, "the window that reset");
+        assert_eq!(completed[0].peak_used_percent, 45.0);
+        let current = current.expect("the window still open");
+        assert_eq!(current.peak_used_percent, 9.0);
+        assert_eq!(current.observation_count, 2);
     }
 
     #[test]
