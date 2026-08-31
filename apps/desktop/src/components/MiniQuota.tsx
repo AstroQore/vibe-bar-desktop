@@ -112,6 +112,7 @@ export function MiniQuotaBody({
   if (!loading && companies.length > 0) {
     if (layout === "ledger") return <MiniLedger companies={companies} dark={dark} />;
     if (layout === "tile") return <MiniTiles entries={flatten(companies)} dark={dark} />;
+    if (layout === "focus") return <MiniFocus entries={flatten(companies)} dark={dark} />;
   }
   return (
     <>
@@ -215,6 +216,120 @@ function flatten(companies: Company[]): Entry[] {
     }
   }
   return entries;
+}
+
+/**
+ * One selected bucket at a time, large.
+ *
+ * A page per bucket in the order the fields were chosen — not a per-company
+ * "most critical" of the layout's own choosing, which is native's stated rule
+ * and the reason the pager is a plain index rather than anything clever.
+ *
+ * (Native's own doc comment above `MiniFocusLayout` says it pages by company;
+ * the code below it says bucket, and the code is what this follows.)
+ */
+function MiniFocus({ entries, dark }: { entries: Entry[]; dark: boolean }) {
+  const [page, setPage] = useState(0);
+  // A refresh can drop the bucket that was open, so an index outliving its
+  // page would show nothing at all.
+  const index = Math.min(page, entries.length - 1);
+  const headline = entries[index];
+  // The rest of this SubProvider's buckets, which is the context a single
+  // large dial loses.
+  const others = entries
+    .filter(
+      (entry) =>
+        entry !== headline &&
+        entry.tool === headline.tool &&
+        entry.subProvider === headline.subProvider,
+    )
+    .slice(0, 3);
+
+  const { cell } = headline;
+  const colour = quotaBarColor(cell.value, cell.showsUsed);
+  const forecast = cell.bucket.forecast;
+  const verdictColour = forecast ? FORECAST_VERDICT[forecast.verdict] : undefined;
+  const line = forecast ? forecastLine(forecast) : formatRemaining(cell.bucket.resetAt) || "—";
+  const label = headline.groupLabel ? `${headline.groupLabel} · ${cell.label}` : cell.label;
+
+  return (
+    <div className="mini-focus">
+      <div className="mini-focus-company">
+        <span
+          className="mini-company-dot"
+          style={{ background: providerAccent(headline.tool, dark) }}
+          aria-hidden
+        />
+        {headline.company}
+      </div>
+      <div className="mini-focus-sub">
+        {headline.subProvider} · {label}
+      </div>
+      <RingGauge
+        percent={cell.value}
+        expected={forecast ? plannedFor(forecast, cell.showsUsed) : undefined}
+        color={colour}
+        markerColor={verdictColour}
+        size={84}
+        lineWidth={7}
+      >
+        <span className="mini-focus-value" style={{ color: colour }}>
+          {Math.round(cell.value)}%
+        </span>
+      </RingGauge>
+      <div className="mini-focus-others">
+        {others.map((entry) => (
+          <span className="mini-focus-other" key={entry.cell.id}>
+            <span className="mini-focus-other-label">{entry.cell.label}</span>
+            <span
+              style={{ color: quotaBarColor(entry.cell.value, entry.cell.showsUsed) }}
+            >
+              {Math.round(entry.cell.value)}%
+            </span>
+          </span>
+        ))}
+      </div>
+      <div className="mini-focus-line" style={verdictColour ? { color: verdictColour } : undefined}>
+        {line}
+      </div>
+      <div className="mini-focus-pager">
+        {/* Dots up to eight, a counter beyond: nine dots in 252 points stop
+            being separable, which is native's cut-off too. */}
+        {entries.length <= 8 ? (
+          entries.map((entry, dot) => (
+            <button
+              type="button"
+              key={entry.cell.id}
+              className="mini-focus-dot"
+              aria-label={`Show ${entry.company} ${entry.cell.label}`}
+              aria-current={dot === index}
+              onClick={() => setPage(dot)}
+              style={{
+                background:
+                  dot === index
+                    ? providerAccent(entry.tool, dark)
+                    : "color-mix(in srgb, currentColor 18%, transparent)",
+              }}
+            />
+          ))
+        ) : (
+          <span className="mini-focus-count">
+            {index + 1}/{entries.length}
+          </span>
+        )}
+        {entries.length > 1 ? (
+          <button
+            type="button"
+            className="mini-focus-next"
+            onClick={() => setPage((current) => (Math.min(current, entries.length - 1) + 1) % entries.length)}
+            aria-label="Next quota"
+          >
+            ›
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 /**
