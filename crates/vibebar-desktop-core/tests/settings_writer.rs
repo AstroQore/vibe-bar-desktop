@@ -229,3 +229,25 @@ fn a_save_that_writes_nothing_leaves_their_change_to_be_polled() {
 
     assert!(writer.poll().is_some(), "their change was consumed by a save that wrote nothing");
 }
+
+/// When this client is the one writing the contested setting, its value is the
+/// one that reaches the file. Telling the user their change was replaced puts
+/// the notice in front of the person whose change won.
+#[test]
+fn no_notice_when_our_own_save_is_the_value_that_wins() {
+    let fixture = Fixture::new(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 600 }));
+    let mut writer = fixture.writer();
+
+    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 })));
+    fixture.write_externally(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 120 }));
+
+    // Ours again, before polling: this save is the one that lands.
+    let applied = writer.apply(&object(json!({ "refreshIntervalSeconds": 1800 })));
+
+    assert_eq!(fixture.on_disk()["refreshIntervalSeconds"], json!(1800));
+    assert!(
+        applied.folded.replaced.is_none(),
+        "reported a loss for the setting this save had just won: {:?}",
+        applied.folded.replaced
+    );
+}

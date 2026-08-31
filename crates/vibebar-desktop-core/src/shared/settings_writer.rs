@@ -188,15 +188,20 @@ impl SettingsWriter {
 
     /// Which of the settings the other writer just changed had been chosen
     /// here, and now hold their value instead.
+    ///
+    /// `writing` is excluded: where this save is applying its own value, that
+    /// is the value that reaches the file, so nothing here was replaced.
+    /// Saying otherwise puts the notice in front of the person whose change
+    /// won.
     fn replaced_among(
         &self,
         their_changes: &BTreeSet<String>,
         theirs: &Object,
-        ours: &BTreeSet<String>,
+        writing: &BTreeSet<String>,
     ) -> Option<ReplacedByAnotherWriter> {
         let keys: Vec<String> = their_changes
-            .iter()
-            .filter(|key| self.edited_keys.contains(*key) || ours.contains(*key))
+            .difference(writing)
+            .filter(|key| self.edited_keys.contains(*key))
             .filter(|key| match (self.last_mine.get(*key), theirs.get(*key)) {
                 (Some(ours), Some(theirs)) => !settings_document::values_equal(ours, theirs),
                 (None, None) => false,
