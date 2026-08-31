@@ -24,7 +24,10 @@ pub async fn fetch(home: &Path, client: &reqwest::Client) -> Result<AccountQuota
         request = request.header("ChatGPT-Account-Id", id);
     }
 
-    let response = request.send().await.map_err(|e| super::classify_transport(&e))?;
+    let response = request
+        .send()
+        .await
+        .map_err(|e| super::classify_transport(&e))?;
     if let Some(error) = super::classify_status(response.status()) {
         return Err(error);
     }
@@ -53,8 +56,8 @@ pub async fn fetch(home: &Path, client: &reqwest::Client) -> Result<AccountQuota
 /// are prefixed with a slug of their limit name and carry a group title, so
 /// they render as their own section rather than colliding with the headline.
 pub fn parse(body: &[u8]) -> Result<Vec<QuotaBucket>, QuotaError> {
-    let root: Value =
-        serde_json::from_slice(body).map_err(|_| QuotaError::ParseFailure("invalid json".into()))?;
+    let root: Value = serde_json::from_slice(body)
+        .map_err(|_| QuotaError::ParseFailure("invalid json".into()))?;
     let rate_limit = root
         .get("rate_limit")
         .ok_or_else(|| QuotaError::ParseFailure("missing rate_limit".into()))?;
@@ -67,7 +70,10 @@ pub fn parse(body: &[u8]) -> Result<Vec<QuotaBucket>, QuotaError> {
         buckets.push(make_bucket(window, "secondary", None, None, None));
     }
 
-    if let Some(entries) = root.get("additional_rate_limits").and_then(|v| v.as_array()) {
+    if let Some(entries) = root
+        .get("additional_rate_limits")
+        .and_then(|v| v.as_array())
+    {
         for entry in entries {
             let Some(nested) = entry.get("rate_limit") else {
                 continue;
@@ -122,7 +128,11 @@ fn make_bucket(
     let reset_at = number(window.get("reset_at"));
 
     let (base_id, base_title, base_short) = match window_seconds {
-        Some(18_000) => ("five_hour".to_string(), "5 Hours".to_string(), "5h".to_string()),
+        Some(18_000) => (
+            "five_hour".to_string(),
+            "5 Hours".to_string(),
+            "5h".to_string(),
+        ),
         Some(604_800) => ("weekly".to_string(), "Weekly".to_string(), "wk".to_string()),
         Some(seconds) if seconds >= 86_400 => {
             let days = seconds / 86_400;
@@ -272,7 +282,10 @@ mod tests {
         );
         assert_eq!(buckets[0].used_percent, 23.5);
         assert_eq!(buckets[0].reset_at, Some(1_788_038_405.0));
-        assert_eq!(buckets[2].group_title.as_deref(), Some("GPT-5.3 Codex Spark"));
+        assert_eq!(
+            buckets[2].group_title.as_deref(),
+            Some("GPT-5.3 Codex Spark")
+        );
         assert_eq!(buckets[2].short_label, "Spark 5 Hours");
         assert_eq!(plan_type(&payload()).as_deref(), Some("pro"));
     }
@@ -339,7 +352,10 @@ mod tests {
     #[test]
     fn slug_and_display_name_round_trip_the_spark_limit() {
         assert_eq!(slug("GPT-5.3-Codex-Spark"), "gpt_5_3_codex_spark");
-        assert_eq!(display_limit_name("GPT-5.3-Codex-Spark"), "GPT-5.3 Codex Spark");
+        assert_eq!(
+            display_limit_name("GPT-5.3-Codex-Spark"),
+            "GPT-5.3 Codex Spark"
+        );
         assert_eq!(short_limit_name("GPT-5.3-Codex-Spark"), "Spark");
         assert_eq!(display_limit_name("Reserve-Pool"), "Reserve Pool");
     }

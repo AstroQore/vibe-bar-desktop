@@ -64,7 +64,7 @@ impl Region {
 /// Fetch the Coding Plan quota. Regions are tried in native order; only an
 /// authentication-style failure advances to the other region.
 pub async fn fetch(_home: &Path, client: &Client) -> Result<AccountQuota, QuotaError> {
-    let environment: HashMap<String, String> = std::env::vars().collect();
+    let environment = super::read_env(&["ALIBABA_API_KEY", "DASHSCOPE_API_KEY"]);
     let key = api_key(&environment).ok_or(QuotaError::NoCredential)?;
     let queried_at = super::now_unix();
     let mut last_error = None;

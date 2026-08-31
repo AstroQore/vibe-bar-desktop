@@ -263,7 +263,12 @@ mod tests {
     fn an_observation_from_the_future_never_wins() {
         // Found on a real data root: an entry stamped five months ahead,
         // which a naive "newest wins" rule shows forever.
-        let future = account("bogus-claude", ToolType::Claude, NOW + 86_400.0 * 150.0, 1.0);
+        let future = account(
+            "bogus-claude",
+            ToolType::Claude,
+            NOW + 86_400.0 * 150.0,
+            1.0,
+        );
         let real = account("web-claude", ToolType::Claude, NOW - 600.0, 34.0);
 
         let settings = settings_with(&["claude.weekly"], &[]);
@@ -277,7 +282,10 @@ mod tests {
         );
         // With nothing believable left, the field is dropped rather than
         // rendered from a broken timestamp.
-        assert_eq!(render_title_at(&settings, &view(vec![future]), NOW), "Vibe Bar");
+        assert_eq!(
+            render_title_at(&settings, &view(vec![future]), NOW),
+            "Vibe Bar"
+        );
     }
 
     #[test]
@@ -326,7 +334,10 @@ mod tests {
             buckets: Vec::new(),
             ..account("x", ToolType::Claude, NOW - 1.0, 0.0)
         };
-        assert_eq!(render_title_at(&settings, &view(vec![failed]), NOW), "Vibe Bar · sign in");
+        assert_eq!(
+            render_title_at(&settings, &view(vec![failed]), NOW),
+            "Vibe Bar · sign in"
+        );
     }
 
     #[test]

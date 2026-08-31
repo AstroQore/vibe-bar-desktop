@@ -107,9 +107,9 @@ fn parse_credits(body: &[u8]) -> Result<Credits, QuotaError> {
     let envelope: CreditsEnvelope = serde_json::from_slice(body).map_err(|_| {
         QuotaError::ParseFailure("OpenRouter credits response not parseable".into())
     })?;
-    let credits = envelope
-        .data
-        .ok_or_else(|| QuotaError::ParseFailure("OpenRouter credits response missing data".into()))?;
+    let credits = envelope.data.ok_or_else(|| {
+        QuotaError::ParseFailure("OpenRouter credits response missing data".into())
+    })?;
     if !credits.total_credits.is_finite()
         || !credits.total_usage.is_finite()
         || credits.total_credits < 0.0
@@ -265,7 +265,10 @@ mod tests {
             br#"{"data":{"total_credits":-1,"total_usage":0}}"#.as_slice(),
             br#"{"data":{"total_credits":20,"total_usage":-5}}"#.as_slice(),
         ] {
-            assert!(matches!(parse_credits(body), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse_credits(body),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
         assert!(safe_label(Some("sk-or-v1-abcdef123456")).is_none());
         assert!(safe_label(Some("aaaabbbbbcc.cccccddddde.eeeeefffff")).is_none());

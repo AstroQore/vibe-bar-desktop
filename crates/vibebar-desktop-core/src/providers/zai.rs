@@ -440,7 +440,10 @@ mod tests {
         ]))
         .unwrap();
         assert_eq!(
-            buckets.iter().map(|bucket| bucket.id.as_str()).collect::<Vec<_>>(),
+            buckets
+                .iter()
+                .map(|bucket| bucket.id.as_str())
+                .collect::<Vec<_>>(),
             ["zai.tokens.6.1", "zai.tokens.1.1"]
         );
         for invalid in [

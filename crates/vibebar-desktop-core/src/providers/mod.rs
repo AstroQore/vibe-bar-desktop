@@ -49,7 +49,7 @@ pub async fn fetch(
             ToolType::Minimax => minimax::fetch(client).await,
             ToolType::Kilo => kilo::fetch(client, home).await,
             ToolType::Kiro => {
-                let environment: Vec<(String, String)> = std::env::vars().collect();
+                let environment: Vec<(String, String)> = read_env(&["PATH"]).into_iter().collect();
                 kiro::fetch(home, &environment).await
             }
             ToolType::OpenRouter => openrouter::fetch(client).await,
@@ -150,5 +150,39 @@ mod tests {
             &["openrouter.ai"]
         )
         .is_none());
+    }
+
+    /// `read_env` exists because `std::env::vars()` panics on any non-UTF-8
+    /// variable anywhere in the environment — including variables that have
+    /// nothing to do with Vibe Bar. Four adapters once called it directly and
+    /// the doc comment alone did not stop them, so the rule is enforced here.
+    #[test]
+    fn no_adapter_enumerates_the_whole_environment() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/providers");
+        let mut offenders = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("providers dir") {
+            let path = entry.expect("entry").path();
+            if path.extension().is_none_or(|ext| ext != "rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("read source");
+            // Only production code is checked: the `#[cfg(test)]` tail of each
+            // file legitimately names the forbidden call in prose and asserts.
+            let production = source.split("\n#[cfg(test)]").next().unwrap_or(&source);
+            for (number, line) in production.lines().enumerate() {
+                if line.contains("env::vars()") && !line.trim_start().starts_with("//") {
+                    offenders.push(format!(
+                        "{}:{}",
+                        path.file_name().unwrap_or_default().to_string_lossy(),
+                        number + 1
+                    ));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "use providers::read_env with an explicit allowlist instead of \
+             std::env::vars(), which panics on unrelated non-UTF-8 variables: {offenders:?}"
+        );
     }
 }

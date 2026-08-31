@@ -5,8 +5,8 @@ use tauri::{AppHandle, State};
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::{SessionListing, TranscriptCursor};
-use vibebar_desktop_core::skills::SkillsInventoryView;
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
+use vibebar_desktop_core::skills::SkillsInventoryView;
 use vibebar_desktop_core::status::ServiceStatusView;
 
 use crate::native_app::{self, NativeAppPresence};

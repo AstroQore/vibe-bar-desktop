@@ -13,8 +13,6 @@ pub mod field_registry;
 pub mod quota_cache;
 pub mod service_status;
 pub mod settings;
-pub mod settings_document;
-pub mod settings_transaction;
 
 /// Seconds between the Apple reference date (2001-01-01) and the Unix epoch.
 /// Swift's `JSONEncoder` writes `Date` as reference-date seconds by default,

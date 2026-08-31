@@ -273,12 +273,7 @@ fn weekly_bucket(row: &Value, now: f64) -> Option<QuotaBucket> {
     if remaining.is_none() && (total <= 0 || used.is_none()) {
         return None;
     }
-    let (used_percent, group) = usage(
-        total,
-        used,
-        remaining,
-        "weekly",
-    );
+    let (used_percent, group) = usage(total, used, remaining, "weekly");
     Some(QuotaBucket::new(
         "minimax.weekly",
         "Weekly",
@@ -341,8 +336,8 @@ fn service_buckets(services: Option<&Vec<Value>>, now: f64) -> Vec<QuotaBucket> 
                 .filter(|total| *total >= 0.0);
             let used_count = number(service.get("usage").or_else(|| service.get("used")))
                 .filter(|used| *used >= 0.0);
-            let percent = number(service.get("percent"))
-                .filter(|percent| (0.0..=100.0).contains(percent));
+            let percent =
+                number(service.get("percent")).filter(|percent| (0.0..=100.0).contains(percent));
             if percent.is_none()
                 && (total.filter(|total| *total > 0.0).is_none() || used_count.is_none())
             {
@@ -456,12 +451,13 @@ fn window_label(start: Option<&Value>, end: Option<&Value>) -> Option<String> {
 }
 
 fn number(value: Option<&Value>) -> Option<f64> {
-    value.and_then(|value| {
-        value
-            .as_f64()
-            .or_else(|| value.as_str()?.trim().parse().ok())
-    })
-    .filter(|value| value.is_finite())
+    value
+        .and_then(|value| {
+            value
+                .as_f64()
+                .or_else(|| value.as_str()?.trim().parse().ok())
+        })
+        .filter(|value| value.is_finite())
 }
 
 fn int(value: Option<&Value>) -> Option<i64> {
@@ -716,7 +712,10 @@ mod tests {
                 }]}
             }))
             .unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
         for usage in ["NaN", "Infinity"] {
             let body = serde_json::to_vec(&serde_json::json!({
@@ -727,7 +726,10 @@ mod tests {
                 }]}
             }))
             .unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
         for key in [
             "current_interval_total_count",
@@ -743,7 +745,10 @@ mod tests {
                 "data": {"model_remains": [row]}
             }))
             .unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
         assert!(matches!(
             parse(

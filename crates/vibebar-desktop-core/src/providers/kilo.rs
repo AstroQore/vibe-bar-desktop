@@ -79,7 +79,7 @@ fn urlencoding(input: &str) -> String {
 }
 
 pub async fn fetch(client: &reqwest::Client, home: &Path) -> Result<AccountQuota, QuotaError> {
-    let env: HashMap<String, String> = std::env::vars().collect();
+    let env = super::read_env(&["KILO_API_KEY", "KILO_API_URL"]);
     let token = resolve_token(home, &env, true).ok_or(QuotaError::NoCredential)?;
     let base = api_base_url(&env);
     let response = client
@@ -378,10 +378,7 @@ mod tests {
         assert!(batch_url("https://app.kilo.ai/api/trpc")
             .unwrap()
             .contains("batch=1&input="));
-        env.insert(
-            "KILO_API_URL".into(),
-            "https://example.test/steal".into(),
-        );
+        env.insert("KILO_API_URL".into(), "https://example.test/steal".into());
         assert_eq!(api_base_url(&env), "https://app.kilo.ai/api/trpc");
     }
     #[test]

@@ -32,18 +32,60 @@ const fn spec(
     window_seconds: i64,
     group: Option<&'static str>,
 ) -> BucketSpec {
-    BucketSpec { key, id, title, short_label, window_seconds, group }
+    BucketSpec {
+        key,
+        id,
+        title,
+        short_label,
+        window_seconds,
+        group,
+    }
 }
 
 /// Legacy top-level keys, in the order they render.
 const KNOWN_BUCKETS: &[BucketSpec] = &[
     spec("five_hour", "five_hour", "5 Hours", "5h", 18_000, None),
     spec("seven_day", "weekly", "Weekly", "All models", 604_800, None),
-    spec("seven_day_sonnet", "weekly_sonnet", "Weekly", "Sonnet wk", 604_800, Some("Sonnet")),
-    spec("seven_day_omelette", "weekly_design", "Weekly", "Designs", 604_800, Some("Designs")),
-    spec("seven_day_opus", "weekly_opus", "Weekly", "Opus wk", 604_800, Some("Opus")),
-    spec("seven_day_fable", "weekly_fable", "Weekly", "Fable wk", 604_800, Some("Fable")),
-    spec("seven_day_oauth_apps", "weekly_oauth_apps", "Weekly", "OAuth wk", 604_800, Some("OAuth Apps")),
+    spec(
+        "seven_day_sonnet",
+        "weekly_sonnet",
+        "Weekly",
+        "Sonnet wk",
+        604_800,
+        Some("Sonnet"),
+    ),
+    spec(
+        "seven_day_omelette",
+        "weekly_design",
+        "Weekly",
+        "Designs",
+        604_800,
+        Some("Designs"),
+    ),
+    spec(
+        "seven_day_opus",
+        "weekly_opus",
+        "Weekly",
+        "Opus wk",
+        604_800,
+        Some("Opus"),
+    ),
+    spec(
+        "seven_day_fable",
+        "weekly_fable",
+        "Weekly",
+        "Fable wk",
+        604_800,
+        Some("Fable"),
+    ),
+    spec(
+        "seven_day_oauth_apps",
+        "weekly_oauth_apps",
+        "Weekly",
+        "OAuth wk",
+        604_800,
+        Some("OAuth Apps"),
+    ),
 ];
 
 /// Aliases the API has used for the same logical key.
@@ -98,8 +140,8 @@ pub async fn fetch(home: &Path, client: &reqwest::Client) -> Result<AccountQuota
 /// display name, so a brand-new model surfaces with no code change
 /// (`Fable` → `weekly_fable`). Legacy keys win on conflict.
 pub fn parse(body: &[u8]) -> Result<Vec<QuotaBucket>, QuotaError> {
-    let root: Value =
-        serde_json::from_slice(body).map_err(|_| QuotaError::ParseFailure("invalid json".into()))?;
+    let root: Value = serde_json::from_slice(body)
+        .map_err(|_| QuotaError::ParseFailure("invalid json".into()))?;
     if !root.is_object() {
         return Err(QuotaError::ParseFailure("root is not an object".into()));
     }
@@ -115,7 +157,9 @@ pub fn parse(body: &[u8]) -> Result<Vec<QuotaBucket>, QuotaError> {
             .chain(aliases.iter().copied())
             .find_map(|candidate| root.get(candidate).filter(|v| v.is_object()));
         let Some(entry) = entry else { continue };
-        let Some(used) = utilization(entry) else { continue };
+        let Some(used) = utilization(entry) else {
+            continue;
+        };
         out.push(QuotaBucket::new(
             spec.id,
             spec.title,
@@ -144,7 +188,8 @@ fn append_limits_array(root: &Value, out: &mut Vec<QuotaBucket>) {
     let mut seen: std::collections::HashSet<String> = out.iter().map(|b| b.id.clone()).collect();
 
     for entry in entries {
-        let Some(percent) = number(entry.get("percent")).or_else(|| number(entry.get("utilization")))
+        let Some(percent) =
+            number(entry.get("percent")).or_else(|| number(entry.get("utilization")))
         else {
             continue;
         };
@@ -191,7 +236,15 @@ fn append_limits_array(root: &Value, out: &mut Vec<QuotaBucket>) {
                 continue;
             }
             let short = if is_session { "5h" } else { "All models" };
-            QuotaBucket::new(id, title, short, percent, reset_at(entry), Some(window), None)
+            QuotaBucket::new(
+                id,
+                title,
+                short,
+                percent,
+                reset_at(entry),
+                Some(window),
+                None,
+            )
         } else {
             continue;
         };
@@ -294,7 +347,10 @@ mod tests {
         let ids: Vec<&str> = buckets.iter().map(|b| b.id.as_str()).collect();
         // Legacy five_hour wins over the limits[] session entry; the weekly
         // headline and both scoped models come from limits[].
-        assert_eq!(ids, vec!["five_hour", "weekly", "weekly_fable", "weekly_opus_4_8"]);
+        assert_eq!(
+            ids,
+            vec!["five_hour", "weekly", "weekly_fable", "weekly_opus_4_8"]
+        );
         assert_eq!(buckets[0].used_percent, 3.0);
         assert_eq!(buckets[2].group_title.as_deref(), Some("Fable"));
         assert_eq!(buckets[2].short_label, "Fable Weekly");

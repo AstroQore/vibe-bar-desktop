@@ -113,11 +113,7 @@ impl SharedSettings {
     /// labels. Empty when the shared settings are absent — the caller then
     /// picks its own default set.
     pub fn menu_bar_fields(&self) -> (Vec<String>, BTreeMap<String, String>) {
-        let Some(item) = self
-            .menu_bar_items
-            .as_ref()
-            .and_then(|items| items.first())
-        else {
+        let Some(item) = self.menu_bar_items.as_ref().and_then(|items| items.first()) else {
             return (Vec::new(), BTreeMap::new());
         };
         (

@@ -614,11 +614,7 @@ fn collect_jsonl(
     }
 }
 
-fn mark_discovery_error(
-    error: &std::io::Error,
-    optional_root: bool,
-    budget: &mut DiscoveryBudget,
-) {
+fn mark_discovery_error(error: &std::io::Error, optional_root: bool, budget: &mut DiscoveryBudget) {
     if error.kind() != std::io::ErrorKind::NotFound || !optional_root {
         budget.mark_incomplete();
     }
@@ -723,9 +719,7 @@ fn scan_file(
                 &source_key,
                 &mut parsed_events,
             ),
-            ToolType::Claude => {
-                parse_claude(&value, &source.path, &source_key, &mut parsed_events)
-            }
+            ToolType::Claude => parse_claude(&value, &source.path, &source_key, &mut parsed_events),
             ToolType::Gemini => parse_gemini(
                 &value,
                 gemini_fallback_time,
@@ -1277,22 +1271,26 @@ const GEMINI_PRICES: &[PricingEntry] = &[
         ModelPricing::simple(1.25, 10.0, Some(0.31))
             .above_threshold(200_000, 2.5, 15.0, 0.625, 2.5),
     ),
-    ("gemini-2.5-flash", ModelPricing::simple(0.3, 2.5, Some(0.075))),
+    (
+        "gemini-2.5-flash",
+        ModelPricing::simple(0.3, 2.5, Some(0.075)),
+    ),
     (
         "gemini-2.5-flash-lite",
         ModelPricing::simple(0.1, 0.4, Some(0.025)),
     ),
     (
         "gemini-3-pro",
-        ModelPricing::simple(2.0, 12.0, Some(0.5))
-            .above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
+        ModelPricing::simple(2.0, 12.0, Some(0.5)).above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
     ),
     (
         "gemini-3-pro-preview",
-        ModelPricing::simple(2.0, 12.0, Some(0.5))
-            .above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
+        ModelPricing::simple(2.0, 12.0, Some(0.5)).above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
     ),
-    ("gemini-3-flash", ModelPricing::simple(0.35, 2.8, Some(0.0875))),
+    (
+        "gemini-3-flash",
+        ModelPricing::simple(0.35, 2.8, Some(0.0875)),
+    ),
     (
         "gemini-3-flash-lite",
         ModelPricing::simple(0.125, 0.5, Some(0.031)),
@@ -1862,12 +1860,7 @@ mod tests {
         let mut events = Vec::new();
         let source_path = Path::new("/Users/example/.claude/projects/session.jsonl");
         let source_key: Arc<str> = source_path.to_string_lossy().into_owned().into();
-        parse_claude(
-            &value,
-            source_path,
-            &source_key,
-            &mut events,
-        );
+        parse_claude(&value, source_path, &source_key, &mut events);
 
         assert_eq!(events.len(), 1);
         assert!(Arc::ptr_eq(&events[0].source_key, &source_key));
@@ -2365,7 +2358,10 @@ mod tests {
         assert_eq!(view.all_time.tokens, 145);
         assert_eq!(view.unpriced_events, 1);
         assert!(view.all_time.priced_cost_micros > 0);
-        assert!(view.models.iter().all(|model| model.harness == "Gemini CLI"));
+        assert!(view
+            .models
+            .iter()
+            .all(|model| model.harness == "Gemini CLI"));
     }
 
     #[test]
@@ -2518,7 +2514,9 @@ mod tests {
         );
 
         let root = DataRoot::at_non_demo(home.path().join(".vibebar"));
-        let view = CostEngine::new(root.clone(), home.path()).refresh().unwrap();
+        let view = CostEngine::new(root.clone(), home.path())
+            .refresh()
+            .unwrap();
         assert!(view.truncated);
         assert_eq!(view.scanned_files, 1);
         assert_eq!(view.all_time.requests, 1);

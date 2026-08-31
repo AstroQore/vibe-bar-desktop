@@ -23,7 +23,11 @@ fn main() {
     println!(
         "\nshared settings: refresh {}s, shows {}, {} menu-bar fields, {} custom labels",
         settings.refresh_interval().as_secs(),
-        if settings.shows_remaining() { "remaining" } else { "used" },
+        if settings.shows_remaining() {
+            "remaining"
+        } else {
+            "used"
+        },
         fields.len(),
         labels.len()
     );
@@ -64,7 +68,11 @@ fn main() {
     println!(
         "\nservice status: {} providers cached, degraded: {}",
         status.len(),
-        if degraded.is_empty() { "none".to_string() } else { degraded.join(", ") }
+        if degraded.is_empty() {
+            "none".to_string()
+        } else {
+            degraded.join(", ")
+        }
     );
 
     let scan_home = if root.is_demo() {
@@ -77,7 +85,7 @@ fn main() {
     };
     // Keep this diagnostic read-only even on a real root. Re-wrapping the
     // exact path as demo suppresses only Desktop snapshot persistence.
-    let cost = CostEngine::new(DataRoot::at(root.shared()), scan_home)
+    let cost = CostEngine::new(DataRoot::at(root.shared()), scan_home.clone())
         .refresh()
         .unwrap_or_default();
     println!(
@@ -89,7 +97,9 @@ fn main() {
         cost.truncated
     );
 
-    let sessions = SessionsService::new(root);
+    // Same scan root as the cost engine above: with a demo root this must
+    // never fall back to the real home's session logs.
+    let sessions = SessionsService::with_home(root, scan_home);
     let listing = sessions.list(5);
     println!(
         "\nsessions: source={:?}{}",
@@ -106,7 +116,12 @@ fn main() {
         println!(
             "  [{}] {}",
             row.harness,
-            row.title.as_deref().unwrap_or("<untitled>").chars().take(60).collect::<String>()
+            row.title
+                .as_deref()
+                .unwrap_or("<untitled>")
+                .chars()
+                .take(60)
+                .collect::<String>()
         );
     }
     if listing.source == SessionSource::Indexed {
