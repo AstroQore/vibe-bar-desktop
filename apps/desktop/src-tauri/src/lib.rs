@@ -67,7 +67,6 @@ pub fn run() {
             commands::refresh_cost,
             commands::refresh_quota,
             commands::hide_mini,
-            commands::resize_mini,
             commands::session_list,
             commands::session_search,
             commands::session_transcript,

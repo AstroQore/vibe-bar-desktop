@@ -60,65 +60,6 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Bounds for what the window will resize itself to.
-///
-/// The content decides the size — the layouts are different shapes, and native
-/// sizes its window per layout too — but a render bug must not be able to
-/// produce a window that covers the screen or one too small to see.
-const MIN_SIZE: (f64, f64) = (200.0, 120.0);
-const MAX_SIZE: (f64, f64) = (720.0, 640.0);
-
-/// Resize to fit the layout the mini window is currently drawing.
-///
-/// A fixed 272x190 fitted the ring layout and nothing else: the ledger is 284
-/// wide, four columns of tiles are wider still, and focus is 210 tall. All
-/// three were being cropped by the window rather than by any decision.
-pub fn resize_to_content<R: Runtime>(app: &AppHandle<R>, width: f64, height: f64) {
-    let Some(window) = app.get_webview_window(LABEL) else {
-        return;
-    };
-    if !width.is_finite() || !height.is_finite() {
-        return;
-    }
-    let _ = window.set_size(tauri::LogicalSize::new(
-        width.clamp(MIN_SIZE.0, MAX_SIZE.0),
-        height.clamp(MIN_SIZE.1, MAX_SIZE.1),
-    ));
-    keep_on_screen(&window);
-}
-
-/// Pull the window back onto its monitor after it has grown.
-///
-/// `set_size` keeps the origin, so a window parked against the right or bottom
-/// edge grows off the screen — and the part that leaves is the part that was
-/// just added, which is the quota the user switched layouts to see.
-fn keep_on_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    let (Ok(Some(monitor)), Ok(position), Ok(size)) = (
-        window.current_monitor(),
-        window.outer_position(),
-        window.outer_size(),
-    ) else {
-        return;
-    };
-    let screen = monitor.position();
-    let bounds = monitor.size();
-    // Only ever pulled back towards the origin: a window larger than the
-    // monitor would otherwise be pushed off the opposite edge instead.
-    let max_x = screen
-        .x
-        .saturating_add(bounds.width as i32)
-        .saturating_sub(size.width as i32);
-    let max_y = screen
-        .y
-        .saturating_add(bounds.height as i32)
-        .saturating_sub(size.height as i32);
-    let x = position.x.min(max_x).max(screen.x);
-    let y = position.y.min(max_y).max(screen.y);
-    if x != position.x || y != position.y {
-        let _ = window.set_position(PhysicalPosition::new(x, y));
-    }
-}
-
 pub fn persist<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<MiniState>();
     let Ok(geometry) = state.geometry.lock() else {

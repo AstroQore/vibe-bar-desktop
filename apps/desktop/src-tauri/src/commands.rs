@@ -133,17 +133,6 @@ pub async fn refresh_quota(state: State<'_, AppState>) -> Result<QuotaView, Stri
 
 /// Hide the borderless Mini through the same state/persistence path as the
 /// tray toggle. The Mini's own close button is the user-reachable close path.
-/// The mini window reports the size its content needs.
-///
-/// Measured in the window rather than computed here: the layouts are React,
-/// their heights depend on how many buckets and how the text wraps, and a
-/// second implementation of that arithmetic in Rust would drift from the one
-/// that draws.
-#[tauri::command]
-pub fn resize_mini(app: AppHandle, width: f64, height: f64) {
-    crate::mini_window::resize_to_content(&app, width, height);
-}
-
 #[tauri::command]
 pub fn hide_mini(app: AppHandle) {
     crate::mini_window::hide(&app);
