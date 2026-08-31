@@ -3,11 +3,16 @@
 //! that is worth checking rather than assuming.
 
 use std::path::Path;
+#[cfg(unix)]
 use std::process::Command;
 
 use vibebar_desktop_core::shared::file_lock;
 
 /// Ask a process that is not this one to take the same lock, without blocking.
+///
+/// Unix only, like its callers: the lock has no Windows implementation, since
+/// the writer it would exclude is the macOS app.
+#[cfg(unix)]
 fn foreign_attempt(lock_path: &Path) -> String {
     let output = Command::new("python3")
         .arg("-c")
