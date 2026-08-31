@@ -60,6 +60,32 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Bounds for what the window will resize itself to.
+///
+/// The content decides the size — the layouts are different shapes, and native
+/// sizes its window per layout too — but a render bug must not be able to
+/// produce a window that covers the screen or one too small to see.
+const MIN_SIZE: (f64, f64) = (200.0, 120.0);
+const MAX_SIZE: (f64, f64) = (720.0, 640.0);
+
+/// Resize to fit the layout the mini window is currently drawing.
+///
+/// A fixed 272x190 fitted the ring layout and nothing else: the ledger is 284
+/// wide, four columns of tiles are wider still, and focus is 210 tall. All
+/// three were being cropped by the window rather than by any decision.
+pub fn resize_to_content<R: Runtime>(app: &AppHandle<R>, width: f64, height: f64) {
+    let Some(window) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    if !width.is_finite() || !height.is_finite() {
+        return;
+    }
+    let _ = window.set_size(tauri::LogicalSize::new(
+        width.clamp(MIN_SIZE.0, MAX_SIZE.0),
+        height.clamp(MIN_SIZE.1, MAX_SIZE.1),
+    ));
+}
+
 pub fn persist<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<MiniState>();
     let Ok(geometry) = state.geometry.lock() else {

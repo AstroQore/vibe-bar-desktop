@@ -323,6 +323,11 @@ export const api = {
    *  and a value it changed in between wins over a stale idea of it here. */
   saveSharedSettings: (changes: Record<string, unknown>) =>
     invoke<PresentationSettings>("save_shared_settings", { changes }),
+  /** Tell the shell how large the mini window's content is. Measured in the
+   *  window because the layouts are React and their size depends on how many
+   *  buckets there are and how the text wraps. */
+  resizeMini: (width: number, height: number) =>
+    invoke<void>("resize_mini", { width, height }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
   /** The shared settings file changed. The payload names the settings chosen

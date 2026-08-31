@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AccountQuota, PresentationSettings, QuotaForecast, QuotaView } from "../api";
-import { arrange, forecastLine } from "./MiniQuota";
+import { arrange, flatten, forecastLine } from "./MiniQuota";
 
 const NOW = 1_800_000_000;
 
@@ -207,5 +207,53 @@ describe("the one line under a dial", () => {
     expect(
       forecastLine(forecast({ verdict: "enough", projectedUsedPercent: 180 }), NOW),
     ).toBe("0% left");
+  });
+});
+
+describe("flattening the tree for the layouts that page or tile", () => {
+  const data = view(
+    account("codex", [bucket("five_hour", "5 Hours", "5 Hours"), bucket("weekly", "Weekly", "Weekly")]),
+    account("claude", [
+      bucket("weekly", "Weekly", "Weekly"),
+      bucket("weekly_opus", "Weekly", "Opus Weekly", "Opus"),
+    ]),
+  );
+
+  /// `arrange` gathers each company's buckets together, so the tree cannot be
+  /// walked to recover the order the user picked. Focus pages through these in
+  /// that order, which is native's rule.
+  it("follows the order the fields were chosen in, not the tree's", () => {
+    const fields = ["codex.weekly", "claude.weekly", "codex.five_hour"];
+    const companies = arrange(data, settings, fields);
+
+    expect(flatten(companies).map((entry) => entry.cell.id)).toEqual([
+      "codex.weekly",
+      "codex.five_hour",
+      "claude.weekly",
+    ]);
+    expect(flatten(companies, fields).map((entry) => entry.cell.id)).toEqual(fields);
+  });
+
+  /// A bucket the order does not mention — a field found at runtime that the
+  /// saved selection predates — still has to appear.
+  it("keeps a bucket the order does not name, after the ones it does", () => {
+    const fields = ["codex.weekly", "claude.weekly"];
+    const companies = arrange(data, settings, [...fields, "claude.weekly_opus"]);
+
+    expect(flatten(companies, fields).map((entry) => entry.cell.id)).toEqual([
+      "codex.weekly",
+      "claude.weekly",
+      "claude.weekly_opus",
+    ]);
+  });
+
+  /// Without the group the flat layouts show two of a SubProvider's buckets
+  /// as the same "Weekly".
+  it("carries the model group, which the tree keeps in its heading", () => {
+    const companies = arrange(data, settings, ["claude.weekly", "claude.weekly_opus"]);
+    const entries = flatten(companies);
+
+    expect(entries.map((entry) => entry.groupLabel)).toEqual(["All", "Opus"]);
+    expect(entries.map((entry) => entry.subProvider)).toEqual(["Claude", "Claude"]);
   });
 });
