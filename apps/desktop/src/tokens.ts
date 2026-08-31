@@ -35,6 +35,19 @@ export const PROVIDER_ACCENT: Record<string, string | { light: string; dark: str
   zai: "#42BD8C",
 };
 
+/** What each forecast verdict is coloured. `enough` and `surplus` differ on
+ *  purpose: "it will last" and "you have paid for capacity you will not use"
+ *  are different pieces of news, and collapsing them into one severity says
+ *  less than the native app does. `learning` is absent — it takes the
+ *  secondary text colour, because a verdict with nothing behind it should not
+ *  look like one. */
+export const FORECAST_VERDICT: Record<string, string> = {
+  atRisk: "#F25252",
+  enough: "#33B37A",
+  surplus: "#338FE0",
+  watch: "#F59E33",
+};
+
 export const QUOTA_BAR = {
   remaining: {
     criticalBelow: 10,

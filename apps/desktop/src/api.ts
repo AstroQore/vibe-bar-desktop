@@ -317,7 +317,6 @@ export function formatRelative(unixSeconds?: number): string {
   return `${Math.floor(deltaSeconds / 86400)}d ago`;
 }
 
-/** "resets in 3h 12m", or empty when the bucket states no reset. */
 /** `3d 2h`, `5h 39m`, `12m` — the same shape the reset countdown uses, and
  *  the same the native app prints beside a run-out estimate. */
 export function formatDuration(seconds: number): string {
@@ -332,18 +331,25 @@ export function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
+/**
+ * How long until a moment, with no lead-in.
+ *
+ * Separate from `formatCountdown` because the mini window puts this under a
+ * dial where "resets in" would not fit, and reads it again after "out" for a
+ * run-out time — where "resets in" would be the wrong words entirely. Empty
+ * once the moment has passed, so a caller can fall back rather than print a
+ * countdown to something already over.
+ */
+export function formatRemaining(until?: number, now = Date.now() / 1000): string {
+  if (!until) return "";
+  const remaining = until - now;
+  return remaining > 0 ? formatDuration(remaining) : "";
+}
+
 export function formatCountdown(resetAt?: number): string {
   if (!resetAt) return "";
-  const remaining = Math.round(resetAt - Date.now() / 1000);
-  if (remaining <= 0) return "resetting";
-  const hours = Math.floor(remaining / 3600);
-  const minutes = Math.floor((remaining % 3600) / 60);
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    return `resets in ${days}d ${hours % 24}h`;
-  }
-  if (hours > 0) return `resets in ${hours}h ${minutes}m`;
-  return `resets in ${minutes}m`;
+  const spelled = formatRemaining(resetAt);
+  return spelled ? `resets in ${spelled}` : "resetting";
 }
 
 const API_KEY_ENV: Record<string, string> = {

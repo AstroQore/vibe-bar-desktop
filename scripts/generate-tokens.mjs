@@ -24,6 +24,11 @@ const accents = Object.keys(doc.providerAccent)
   })
   .join("\n");
 
+const verdicts = Object.keys(doc.forecastVerdict)
+  .sort()
+  .map((verdict) => `  ${verdict}: "${doc.forecastVerdict[verdict]}",`)
+  .join("\n");
+
 const bar = doc.quotaBar;
 const out = `// Generated from docs/contracts/design-tokens-v1.json — do not edit by hand.
 // The contract is generated from the native Theme.swift and checked against it
@@ -36,6 +41,16 @@ const out = `// Generated from docs/contracts/design-tokens-v1.json — do not e
  *  providers as far as the reader is concerned. */
 export const PROVIDER_ACCENT: Record<string, string | { light: string; dark: string }> = {
 ${accents}
+};
+
+/** What each forecast verdict is coloured. \`enough\` and \`surplus\` differ on
+ *  purpose: "it will last" and "you have paid for capacity you will not use"
+ *  are different pieces of news, and collapsing them into one severity says
+ *  less than the native app does. \`learning\` is absent — it takes the
+ *  secondary text colour, because a verdict with nothing behind it should not
+ *  look like one. */
+export const FORECAST_VERDICT: Record<string, string> = {
+${verdicts}
 };
 
 export const QUOTA_BAR = {
