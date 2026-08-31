@@ -85,6 +85,7 @@ export function MiniQuota() {
         companies={companies}
         loading={view === null}
         layout={settings?.miniDisplayMode}
+        order={fields.slice(0, MAX_CELLS)}
       />
     </main>
   );
@@ -100,18 +101,31 @@ export function MiniQuotaBody({
   companies,
   loading = false,
   layout = "regular",
+  order,
 }: {
   companies: Company[];
   loading?: boolean;
-  /** "regular" draws ring gauges; "compact" the same arrangement as vertical
-   *  bars, sized for a corner. Native's other five fall back to regular in the
-   *  core, so only these two arrive here. */
+  /** The field ids in the order they were chosen, for the layouts that page or
+   *  tile through buckets rather than drawing the tree. */
+  order?: string[];
+  /** Which of native's layouts to draw: regular, compact, ledger, tile or
+   *  focus. The two not ported fall back to regular in the core, so only
+   *  these five arrive here. */
   layout?: string;
 }) {
   const dark = useDarkMode();
-  if (!loading && companies.length > 0) {
-    if (layout === "ledger") return <MiniLedger companies={companies} dark={dark} />;
-    if (layout === "tile") return <MiniTiles entries={flatten(companies)} dark={dark} />;
+  const drawn =
+    !loading && companies.length > 0 && layout === "ledger" ? (
+      <MiniLedger companies={companies} dark={dark} />
+    ) : !loading && companies.length > 0 && layout === "tile" ? (
+      <MiniTiles entries={flatten(companies, order)} dark={dark} />
+    ) : !loading && companies.length > 0 && layout === "focus" ? (
+      <MiniFocus entries={flatten(companies, order)} dark={dark} />
+    ) : null;
+  if (drawn) {
+    // One wrapper for every layout so the size report has a single element to
+    // watch, whichever one is drawn.
+    return drawn;
   }
   return (
     <>
@@ -180,7 +194,7 @@ export function MiniQuotaBody({
  */
 /** One bucket with the tiers above it carried along, for the layouts that
  *  draw a flat list rather than a tree. */
-interface Entry {
+export interface Entry {
   cell: Cell;
   company: string;
   tool: string;
@@ -191,11 +205,16 @@ interface Entry {
 /**
  * The arranged tree as a flat list, parents kept.
  *
- * Tiles are one per bucket with no headers, so each one has to say whose
- * quota it is — a bare "All · Weekly" says nothing about that. The order is
- * the tree's, which is the order the fields were chosen in.
+ * Tiles and focus pages are one per bucket with no headers, so each has to say
+ * whose quota it is — a bare "All · Weekly" says nothing about that.
+ *
+ * `order` restores the sequence the fields were chosen in. The tree does not
+ * preserve it: `arrange` gathers each company's buckets together, so fields
+ * picked as codex, claude, codex come back as both Codex buckets and then
+ * Claude. Focus pages through these in the user's order, which is native's
+ * stated rule, so walking the tree is not enough.
  */
-function flatten(companies: Company[]): Entry[] {
+export function flatten(companies: Company[], order?: string[]): Entry[] {
   const entries: Entry[] = [];
   for (const company of companies) {
     for (const subProvider of company.subProviders) {
@@ -214,7 +233,149 @@ function flatten(companies: Company[]): Entry[] {
       }
     }
   }
-  return entries;
+  if (!order) return entries;
+  const rank = new Map(order.map((field, index) => [field, index]));
+  // A bucket the order does not mention keeps its tree position, after the
+  // ones it does — the order is the user's selection, which a runtime-found
+  // field may not be in yet.
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort(
+      (left, right) =>
+        (rank.get(left.entry.cell.id) ?? order.length + left.index) -
+        (rank.get(right.entry.cell.id) ?? order.length + right.index),
+    )
+    .map((ranked) => ranked.entry);
+}
+
+/**
+ * One selected bucket at a time, large.
+ *
+ * A page per bucket in the order the fields were chosen — not a per-company
+ * "most critical" of the layout's own choosing, which is native's stated rule
+ * and the reason the pager is a plain index rather than anything clever.
+ *
+ * (Native's own doc comment above `MiniFocusLayout` says it pages by company;
+ * the code below it says bucket, and the code is what this follows.)
+ */
+/** The bucket's name with its model group, where it has one. `arrange` moves
+ *  the group out of the label, so without it Claude's ordinary weekly and its
+ *  Opus weekly both read "Weekly". */
+function entryLabel(entry: Entry): string {
+  return entry.groupLabel ? `${entry.groupLabel} · ${entry.cell.label}` : entry.cell.label;
+}
+
+function MiniFocus({ entries, dark }: { entries: Entry[]; dark: boolean }) {
+  const [page, setPage] = useState(0);
+  // A refresh can drop the bucket that was open, so an index outliving its
+  // page would show nothing at all.
+  const index = Math.min(page, entries.length - 1);
+  const headline = entries[index];
+  // The rest of this SubProvider's buckets, which is the context a single
+  // large dial loses.
+  const others = entries
+    .filter(
+      (entry) =>
+        entry !== headline &&
+        entry.tool === headline.tool &&
+        entry.subProvider === headline.subProvider,
+    )
+    .slice(0, 3);
+
+  const { cell } = headline;
+  const colour = quotaBarColor(cell.value, cell.showsUsed);
+  const forecast = cell.bucket.forecast;
+  const verdictColour = forecast ? FORECAST_VERDICT[forecast.verdict] : undefined;
+  const line = forecast ? forecastLine(forecast) : formatRemaining(cell.bucket.resetAt) || "—";
+  const label = entryLabel(headline);
+
+  return (
+    <div className="mini-focus">
+      <div className="mini-focus-company">
+        <span
+          className="mini-company-dot"
+          style={{ background: providerAccent(headline.tool, dark) }}
+          aria-hidden
+        />
+        {headline.company}
+      </div>
+      <div className="mini-focus-sub">
+        {headline.subProvider} · {label}
+      </div>
+      <RingGauge
+        percent={cell.value}
+        expected={forecast ? plannedFor(forecast, cell.showsUsed) : undefined}
+        color={colour}
+        markerColor={verdictColour}
+        size={84}
+        lineWidth={7}
+      >
+        <span className="mini-focus-value" style={{ color: colour }}>
+          {Math.round(cell.value)}%
+        </span>
+      </RingGauge>
+      <div className="mini-focus-others">
+        {others.map((entry) => (
+          <span className="mini-focus-other" key={entry.cell.id}>
+            <span className="mini-focus-other-label">{entryLabel(entry)}</span>
+            <span
+              style={{ color: quotaBarColor(entry.cell.value, entry.cell.showsUsed) }}
+            >
+              {Math.round(entry.cell.value)}%
+            </span>
+          </span>
+        ))}
+      </div>
+      <div className="mini-focus-line" style={verdictColour ? { color: verdictColour } : undefined}>
+        {line}
+      </div>
+      <div className="mini-focus-pager">
+        {/* Dots up to eight, a counter beyond: nine dots in 252 points stop
+            being separable, which is native's cut-off too. */}
+        {entries.length <= 8 ? (
+          entries.map((entry, dot) => (
+            <button
+              type="button"
+              key={entry.cell.id}
+              className="mini-focus-dot"
+              // The group-qualified label, like the heading: two of a
+              // SubProvider's groups otherwise announce as the same "Weekly".
+              aria-label={`Show ${entry.company} ${entryLabel(entry)}`}
+              aria-current={dot === index}
+              onClick={() => setPage(dot)}
+            >
+              {/* The button is the target; this is the 5px dot. A transparent
+                  box-shadow paints a larger circle but is not hit-tested, so
+                  it made the dots look bigger than they were to click. */}
+              <span
+                className="mini-focus-dot-mark"
+                style={{
+                  background:
+                    dot === index
+                      ? providerAccent(entry.tool, dark)
+                      : "color-mix(in srgb, currentColor 18%, transparent)",
+                }}
+              />
+            </button>
+          ))
+        ) : (
+          <span className="mini-focus-count">
+            {index + 1}/{entries.length}
+          </span>
+        )}
+        {entries.length > 1 ? (
+          <button
+            type="button"
+            className="mini-focus-next"
+            onClick={() => setPage((current) => (Math.min(current, entries.length - 1) + 1) % entries.length)}
+            aria-label="Next quota"
+          >
+            ›
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -240,7 +401,7 @@ function MiniTiles({ entries, dark }: { entries: Entry[]; dark: boolean }) {
 function MiniTile({ entry, dark }: { entry: Entry; dark: boolean }) {
   const { cell } = entry;
   const colour = quotaBarColor(cell.value, cell.showsUsed);
-  const label = entry.groupLabel ? `${entry.groupLabel} · ${cell.label}` : cell.label;
+  const label = entryLabel(entry);
 
   return (
     // Native shrinks the caption to fit and still carries a tooltip with the
