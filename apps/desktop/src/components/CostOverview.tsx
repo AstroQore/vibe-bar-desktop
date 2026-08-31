@@ -32,18 +32,24 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
     );
   }
 
-  const models = [...cost.models]
+  const models = (cost.privacySuppressed ? [] : [...cost.models])
     .sort((left, right) => right.pricedCostMicros - left.pricedCostMicros || right.tokens - left.tokens)
     .slice(0, 3);
   // Already ordered by spend in the core; sliced here for the same reason the
   // model list is.
-  const providers = cost.providers.slice(0, 4);
+  const providers = cost.privacySuppressed ? [] : cost.providers.slice(0, 4);
   return (
     <section className="cost-overview">
       <div className="cost-head">
         <span className="cost-title">Usage &amp; cost</span>
         <span className="status-line">scanned {formatRelative(cost.scannedAt)}</span>
       </div>
+      {cost.privacySuppressed ? (
+        <p className="banner">
+          Cost data is hidden: privacy mode is on in Vibe Bar’s Settings → Cost
+          Data. Nothing was read — this is not a report of zero spend.
+        </p>
+      ) : null}
       <div className="cost-totals">
         <CostPeriod label="Today" total={cost.today} />
         <CostPeriod label="7 days" total={cost.last7Days} />

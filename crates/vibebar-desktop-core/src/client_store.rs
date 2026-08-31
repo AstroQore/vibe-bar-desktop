@@ -328,6 +328,15 @@ impl ClientStore {
         Some(snapshot.view)
     }
 
+    /// Delete this client's saved cost data.
+    ///
+    /// For privacy mode: the native client erases its own persisted cost when
+    /// the setting goes on, and leaving a copy of the user's spend behind here
+    /// would make turning it on mean less than it says.
+    pub(crate) fn erase_cost_snapshot(&self) {
+        let _ = std::fs::remove_file(self.root.client_cost_snapshot_file());
+    }
+
     pub(crate) fn save_cost_snapshot(&self, view: &crate::cost::CostView) -> Result<(), CoreError> {
         if !valid_cost_view(view, view.scanned_at) {
             return Err(CoreError::InvalidClientSnapshot(

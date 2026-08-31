@@ -13,6 +13,22 @@ use crate::paths::DataRoot;
 
 const MAX_SETTINGS_BYTES: u64 = 8 * 1024 * 1024;
 
+/// The native app's Settings → Cost Data pane.
+///
+/// One setting here is not a preference about presentation: privacy mode
+/// stops that client scanning local sessions for spend at all. It is a
+/// statement about the machine, so this client honours it too — otherwise
+/// turning it on hides spend in one window and leaves it on show in the
+/// other, which is not privacy.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CostDataSettings {
+    #[serde(default)]
+    pub privacy_mode_enabled: bool,
+    #[serde(flatten)]
+    pub unknown: BTreeMap<String, serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedSettings {
@@ -36,6 +52,8 @@ pub struct SharedSettings {
     pub visible_misc_providers: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_plan_labels: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_data: Option<CostDataSettings>,
 
     /// Every key this build does not model, preserved byte-for-byte.
     #[serde(flatten)]
@@ -99,6 +117,14 @@ impl SharedSettings {
 
     /// Refresh cadence, honoring the native app's floor of 60 s. Defaults to
     /// 10 minutes, matching the native default.
+    /// Whether the user has asked, in either client, that local spend not be
+    /// read. Absent settings mean off, which is the native default.
+    pub fn cost_privacy_mode(&self) -> bool {
+        self.cost_data
+            .as_ref()
+            .is_some_and(|cost| cost.privacy_mode_enabled)
+    }
+
     pub fn refresh_interval(&self) -> std::time::Duration {
         let seconds = self.refresh_interval_seconds.unwrap_or(600.0).max(60.0);
         std::time::Duration::from_secs_f64(seconds)

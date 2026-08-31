@@ -120,11 +120,18 @@ pub struct CostView {
     pub truncated: bool,
     pub scanned_at: f64,
     pub pricing_version: String,
+    /// The user asked, in either client's Settings, that local spend not be
+    /// read. Every window is then empty because nothing was looked at — not
+    /// because nothing was spent, which is a different statement and the one a
+    /// reader would otherwise take from a row of zeroes.
+    #[serde(default)]
+    pub privacy_suppressed: bool,
 }
 
 #[derive(Clone)]
 pub struct CostEngine {
     home: PathBuf,
+    root: crate::paths::DataRoot,
     store: crate::client_store::ClientStore,
     is_demo: bool,
     cached: Arc<RwLock<CostView>>,
@@ -134,11 +141,17 @@ pub struct CostEngine {
 impl CostEngine {
     pub fn new(root: crate::paths::DataRoot, home: impl Into<PathBuf>) -> Self {
         let store = crate::client_store::ClientStore::new(root.clone());
-        let cached = store
-            .load_cost_snapshot()
-            .unwrap_or_else(|| empty_view(0.0));
+        // Before the snapshot is read, not after: a saved view is the user's
+        // spend, and privacy mode is a statement about reading it at all.
+        let cached = if crate::shared::settings::SharedSettings::load(&root).cost_privacy_mode() {
+            store.erase_cost_snapshot();
+            suppressed_view(0.0)
+        } else {
+            store.load_cost_snapshot().unwrap_or_else(|| empty_view(0.0))
+        };
         Self {
             home: home.into(),
+            root: root.clone(),
             store,
             is_demo: root.is_demo(),
             cached: Arc::new(RwLock::new(cached)),
@@ -158,6 +171,18 @@ impl CostEngine {
             .refresh_gate
             .lock()
             .map_err(|_| "cost refresh lock poisoned".to_string())?;
+        // Checked before anything is opened. Not "scan and then hide": the
+        // native client stops before reading, and reading someone's sessions
+        // in order to throw the result away is the part they asked not to
+        // happen.
+        if crate::shared::settings::SharedSettings::load(&self.root).cost_privacy_mode() {
+            self.store.erase_cost_snapshot();
+            let view = suppressed_view(now_unix());
+            if let Ok(mut cached) = self.cached.write() {
+                *cached = view.clone();
+            }
+            return Ok(view);
+        }
         let home = crate::paths::open_ambient_dir(&self.home)
             .map_err(|_| "cost scan home is not readable".to_string())?;
         let (codex_files, codex_truncated) = collect_provider_files(
@@ -207,6 +232,14 @@ fn empty_view(scanned_at: f64) -> CostView {
         scanned_at,
         pricing_version: PRICING_VERSION.to_string(),
         ..Default::default()
+    }
+}
+
+/// Empty because nothing was read, and saying so.
+fn suppressed_view(scanned_at: f64) -> CostView {
+    CostView {
+        privacy_suppressed: true,
+        ..empty_view(scanned_at)
     }
 }
 
@@ -1703,6 +1736,7 @@ fn aggregate(
             .collect(),
         models,
         providers,
+        privacy_suppressed: false,
         unpriced_events,
         scanned_files,
         malformed_lines,
