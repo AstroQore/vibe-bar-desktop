@@ -279,6 +279,10 @@ export interface CostView {
   truncated: boolean;
   scannedAt: number;
   pricingVersion: string;
+  /** Privacy mode is on, so nothing was read. Empty windows here mean "not
+   *  looked at", not "nothing was spent" — a different statement, and the one
+   *  a reader would otherwise take from a row of zeroes. */
+  privacySuppressed: boolean;
 }
 
 export const QUOTA_EVENT = "vibebar://quota-updated";
