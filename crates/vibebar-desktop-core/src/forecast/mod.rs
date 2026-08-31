@@ -23,9 +23,11 @@
 
 mod compute;
 mod model;
+mod timeline;
 
 pub use compute::compute;
 pub use model::{Confidence, Diagnostics, ForecastInput, Observation, QuotaPaceForecast, Verdict};
+pub use timeline::{ObservationStore, StoredObservation};
 
 /// Uniform activity weight between two instants, in hours.
 ///
