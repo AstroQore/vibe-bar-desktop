@@ -308,6 +308,26 @@ input[type="text"] {
   font-weight: 600;
 }
 
+/* Losing a setting the user chose is the one thing here worth an accent.
+   Justified between the message and the control that clears it. */
+.banner-warning {
+  justify-content: space-between;
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--hairline));
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-raised));
+}
+.banner-warning p {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.setting-row select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
 .vendor-group {
   margin-bottom: 22px;
 }

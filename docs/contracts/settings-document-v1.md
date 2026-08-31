@@ -1,3 +1,10 @@
+> **Superseded** by [settings-write-v1.md](settings-write-v1.md), which is
+> the rule both clients actually implement. Kept for the reasoning behind
+> the parts that were not carried over — the `schemaVersion` / `revision`
+> envelope, and leaving a contested key to the first writer. Its size cap
+> and its writer whitelist were carried over. The fixtures below are still
+> a design record and are not read by anything.
+
 # Settings document v1
 
 This is the cross-client, product-disabled document contract for

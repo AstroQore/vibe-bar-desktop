@@ -51,4 +51,10 @@ pub enum CoreError {
     ClientDocumentUnavailable(&'static str),
     #[error("invalid Desktop client snapshot: {0}")]
     InvalidClientSnapshot(String),
+    /// The shared settings file exists but cannot be read as an object —
+    /// malformed, not an object, or past its size cap. A save must fail here
+    /// rather than replace it: rebuilding the file from the keys this client
+    /// happens to be submitting would delete every setting in it.
+    #[error("the shared settings file cannot be read, so it will not be replaced")]
+    SharedSettingsUnreadable,
 }

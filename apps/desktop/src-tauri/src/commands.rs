@@ -1,12 +1,13 @@
 //! IPC surface for the web UI.
 
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::forecast::cycles::CycleSummary;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::{SessionListing, TranscriptCursor};
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
+use vibebar_desktop_core::shared::settings_writer::WRITABLE_KEYS as SETTINGS_WRITABLE_KEYS;
 use vibebar_desktop_core::skills::SkillsInventoryView;
 use vibebar_desktop_core::status::ServiceStatusView;
 
@@ -45,6 +46,54 @@ pub fn quota_view(state: State<'_, AppState>) -> QuotaView {
 #[tauri::command]
 pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings {
     SharedSettings::load(state.data_root()).presentation()
+}
+
+/// Save one or more shared settings.
+///
+/// Returns the settings as they read afterwards, which is not necessarily
+/// what was asked for: the file is shared, and a value the native app changed
+/// in between wins over a stale idea of it here.
+#[tauri::command]
+pub fn save_shared_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    changes: serde_json::Map<String, serde_json::Value>,
+) -> Result<PresentationSettings, String> {
+    let refused: Vec<&str> = changes
+        .keys()
+        .map(String::as_str)
+        .filter(|key| !SETTINGS_WRITABLE_KEYS.contains(key))
+        .collect();
+    if !refused.is_empty() {
+        // Not a permission failure to report to the user: Desktop's own UI is
+        // the only caller, so this is a bug in it.
+        return Err(format!("not a setting Vibe Bar Desktop presents: {refused:?}"));
+    }
+    let applied = state
+        .settings()
+        .lock()
+        .map_err(|_| "the settings writer is unavailable".to_string())?
+        .apply(&changes)
+        // The window has to hear about this: without it the control snaps
+        // back to its old value and nothing says why.
+        .map_err(|error| error.to_string())?;
+
+    // A save re-reads, so it can be the first to see the native app's change.
+    // Reported down the same channel the watch uses, or the watch would find
+    // a file that already matches what this save recorded, and say nothing.
+    if let Some(replaced) = applied.folded.replaced {
+        let _ = app.emit(crate::SETTINGS_EVENT, Some(replaced.replaced_keys));
+    }
+    // The menu bar renders from these, and nothing else would redraw it until
+    // the next quota refresh — which, if the cadence is what just changed, is
+    // exactly the wait this save was meant to shorten.
+    if applied.written.iter().any(|key| key == "displayMode" || key == "menuBarColorBasis") {
+        crate::tray::update(&app, &state.engine().cached_view());
+    }
+    if applied.written.iter().any(|key| key == "refreshIntervalSeconds") {
+        state.cadence_changed().notify_one();
+    }
+    Ok(SharedSettings::load(state.data_root()).presentation())
 }
 
 #[tauri::command]

@@ -2,8 +2,14 @@
 //!
 //! Every reader here is tolerant by construction: a store written by a newer
 //! native build must degrade to "not available" rather than fail the app, and
-//! nothing in this module ever writes, deletes, migrates, or rebuilds a
-//! shared file. That is not politeness — the shared stores have no
+//! nothing in this module deletes, migrates, or rebuilds a shared file.
+//!
+//! One store is written: `settings.json`, through [`settings_writer`], and
+//! only because the conditions `docs/SHARED-STORAGE.md` sets out for a shared
+//! writer are met for it — an advisory lock both clients take, a merge that
+//! preserves every key this build does not know, and cases verified against
+//! the native implementation from one shared file. Nothing else here writes,
+//! and the reasoning below is why. That is not politeness — the shared stores have no
 //! cross-process locking yet, and several of them (`session_index`,
 //! `usage_events`, `scan_cache`) respond to a schema mismatch by dropping
 //! data. A second implementation that "helpfully" repairs one would destroy
@@ -12,7 +18,10 @@
 pub mod field_registry;
 pub mod quota_cache;
 pub mod service_status;
+pub mod file_lock;
 pub mod settings;
+pub mod settings_document;
+pub mod settings_writer;
 
 /// Seconds between the Apple reference date (2001-01-01) and the Unix epoch.
 /// Swift's `JSONEncoder` writes `Date` as reference-date seconds by default,

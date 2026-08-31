@@ -1,0 +1,489 @@
+{
+  "antigravityUsageMode" : "auto",
+  "claudeUsageMode" : "auto",
+  "codexUsageMode" : "auto",
+  "coreProviderOrder" : [
+    "codex",
+    "claude",
+    "gemini",
+    "grok"
+  ],
+  "costChartMetric" : "cost",
+  "costData" : {
+    "privacyModeEnabled" : false,
+    "retentionDays" : 0
+  },
+  "displayMode" : "remaining",
+  "geminiUsageMode" : "webOnly",
+  "keyFromTheOtherClient" : "desktop",
+  "launchAtLogin" : false,
+  "mcpServer" : {
+    "allowRefreshTools" : true,
+    "allowSkillInstall" : true,
+    "enabled" : true
+  },
+  "menuBarAutoRepairEnabled" : false,
+  "menuBarBlockAlertSuppressed" : false,
+  "menuBarColorBasis" : "forecast",
+  "menuBarItems" : [
+    {
+      "customLabels" : {
+
+      },
+      "fieldStyles" : {
+
+      },
+      "isVisible" : true,
+      "kind" : "compact",
+      "layout" : "iconOnly",
+      "selectedFieldIds" : [
+        "codex.five_hour",
+        "codex.weekly",
+        "claude.five_hour",
+        "claude.weekly"
+      ],
+      "showTitle" : false
+    }
+  ],
+  "menuBarTextEnabled" : true,
+  "miniWindow" : {
+    "compactSelectedFieldIds" : [
+      "codex.five_hour",
+      "codex.weekly",
+      "codex.gpt_5_3_codex_spark_five_hour",
+      "codex.gpt_5_3_codex_spark_weekly",
+      "claude.five_hour",
+      "claude.weekly",
+      "claude.weekly_sonnet",
+      "claude.weekly_design",
+      "claude.daily_routines",
+      "claude.weekly_opus",
+      "claude.weekly_fable",
+      "claude.weekly_oauth_apps",
+      "gemini.five_hour",
+      "gemini.weekly",
+      "antigravity.gemini_five_hour",
+      "antigravity.gemini_weekly",
+      "antigravity.claude_gpt_five_hour",
+      "antigravity.claude_gpt_weekly",
+      "grok.weekly",
+      "cursor.models",
+      "cursor.other_models",
+      "cursor.grok_bot_weekly"
+    ],
+    "customLabels" : {
+
+    },
+    "displayMode" : "regular",
+    "groupLabels" : {
+
+    },
+    "hiddenStaleFieldIds" : [
+
+    ],
+    "selectedFieldIds" : [
+      "codex.five_hour",
+      "codex.weekly",
+      "codex.gpt_5_3_codex_spark_five_hour",
+      "codex.gpt_5_3_codex_spark_weekly",
+      "claude.five_hour",
+      "claude.weekly",
+      "claude.weekly_sonnet",
+      "claude.weekly_design",
+      "claude.daily_routines",
+      "claude.weekly_opus",
+      "claude.weekly_fable",
+      "claude.weekly_oauth_apps",
+      "gemini.five_hour",
+      "gemini.weekly",
+      "antigravity.gemini_five_hour",
+      "antigravity.gemini_weekly",
+      "antigravity.claude_gpt_five_hour",
+      "antigravity.claude_gpt_weekly",
+      "grok.weekly",
+      "cursor.models",
+      "cursor.other_models",
+      "cursor.grok_bot_weekly"
+    ],
+    "wasOpen" : false,
+    "windows" : [
+      {
+        "customLabels" : {
+
+        },
+        "cycleModes" : [
+
+        ],
+        "displayMode" : "regular",
+        "fieldIds" : [
+          "codex.five_hour",
+          "codex.weekly",
+          "codex.gpt_5_3_codex_spark_five_hour",
+          "codex.gpt_5_3_codex_spark_weekly",
+          "claude.five_hour",
+          "claude.weekly",
+          "claude.weekly_sonnet",
+          "claude.weekly_design",
+          "claude.daily_routines",
+          "claude.weekly_opus",
+          "claude.weekly_fable",
+          "claude.weekly_oauth_apps",
+          "gemini.five_hour",
+          "gemini.weekly",
+          "antigravity.gemini_five_hour",
+          "antigravity.gemini_weekly",
+          "antigravity.claude_gpt_five_hour",
+          "antigravity.claude_gpt_weekly",
+          "grok.weekly",
+          "cursor.models",
+          "cursor.other_models",
+          "cursor.grok_bot_weekly"
+        ],
+        "groupLabels" : {
+
+        },
+        "id" : "9B1D6A64-11A7-4D6E-8B7A-2F60C7E1A001",
+        "modeCustomLabels" : {
+
+        },
+        "modeGroupLabels" : {
+
+        },
+        "name" : "Mini",
+        "stripDensity" : "roomy",
+        "wasOpen" : false
+      }
+    ]
+  },
+  "miscCookieAutoImportEnabled" : false,
+  "miscProviderInstances" : [
+    {
+      "id" : "alibaba",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "alibaba"
+    },
+    {
+      "id" : "alibabaTokenPlan",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "alibabaTokenPlan"
+    },
+    {
+      "id" : "copilot",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "copilot"
+    },
+    {
+      "id" : "zai",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "zai"
+    },
+    {
+      "id" : "minimax",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "minimax"
+    },
+    {
+      "id" : "kimi",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "kimi"
+    },
+    {
+      "id" : "mimo",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "mimo"
+    },
+    {
+      "id" : "iflytek",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "iflytek"
+    },
+    {
+      "id" : "tencentHunyuan",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "tencentHunyuan"
+    },
+    {
+      "id" : "tencentTokenPlan",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "tencentTokenPlan"
+    },
+    {
+      "id" : "volcengine",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "volcengine"
+    },
+    {
+      "id" : "volcengineAgentPlan",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "volcengineAgentPlan"
+    },
+    {
+      "id" : "baiduQianfan",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "baiduQianfan"
+    },
+    {
+      "id" : "openCodeGo",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "openCodeGo"
+    },
+    {
+      "id" : "kilo",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "kilo"
+    },
+    {
+      "id" : "kiro",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "kiro"
+    },
+    {
+      "id" : "ollama",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "ollama"
+    },
+    {
+      "id" : "openRouter",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "openRouter"
+    },
+    {
+      "id" : "warp",
+      "isVisible" : true,
+      "settings" : {
+        "cookieSource" : "auto",
+        "sourceMode" : "auto"
+      },
+      "tool" : "warp"
+    }
+  ],
+  "miscProviderOrder" : [
+    "alibaba",
+    "alibabaTokenPlan",
+    "copilot",
+    "zai",
+    "minimax",
+    "kimi",
+    "mimo",
+    "iflytek",
+    "tencentHunyuan",
+    "tencentTokenPlan",
+    "volcengine",
+    "volcengineAgentPlan",
+    "baiduQianfan",
+    "openCodeGo",
+    "kilo",
+    "kiro",
+    "ollama",
+    "openRouter",
+    "warp"
+  ],
+  "miscProviders" : {
+    "alibaba" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "alibabaTokenPlan" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "baiduQianfan" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "copilot" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "iflytek" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "kilo" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "kimi" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "kiro" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "mimo" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "minimax" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "ollama" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "openCodeGo" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "openRouter" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "tencentHunyuan" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "tencentTokenPlan" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "volcengine" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "volcengineAgentPlan" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "warp" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    },
+    "zai" : {
+      "cookieSource" : "auto",
+      "sourceMode" : "auto"
+    }
+  },
+  "mockEnabled" : false,
+  "modelPricingOverrides" : [
+
+  ],
+  "overviewQuotaHistoryHiddenCurveIds" : [
+
+  ],
+  "pageLayoutPresets" : {
+
+  },
+  "pageLayouts" : {
+
+  },
+  "popoverDensity" : "regular",
+  "popoverOpenRefreshCooldownSeconds" : 60,
+  "preferredTerminal" : "terminal",
+  "pricingRefreshIntervalSeconds" : 21600,
+  "providerPlanLabels" : {
+
+  },
+  "refreshIntervalSeconds" : 120,
+  "refreshOnPopoverOpen" : false,
+  "remoteCostIncludedMachineIDs" : [
+
+  ],
+  "sessionBodyIndexingEnabled" : true,
+  "settingFromAFutureBuild" : {
+    "keepMe" : true
+  },
+  "skillsSyncMethod" : "auto",
+  "updateChannel" : "main",
+  "visibleCoreProviders" : [
+    "codex",
+    "claude",
+    "gemini",
+    "grok"
+  ],
+  "visibleMiscProviders" : [
+    "alibaba",
+    "alibabaTokenPlan",
+    "copilot",
+    "zai",
+    "minimax",
+    "kimi",
+    "mimo",
+    "iflytek",
+    "tencentHunyuan",
+    "tencentTokenPlan",
+    "volcengine",
+    "volcengineAgentPlan",
+    "baiduQianfan",
+    "openCodeGo",
+    "kilo",
+    "kiro",
+    "ollama",
+    "openRouter",
+    "warp"
+  ]
+}
