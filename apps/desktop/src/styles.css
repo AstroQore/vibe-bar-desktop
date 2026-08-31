@@ -500,7 +500,7 @@ input[type="text"] {
   font-size: 12px;
 }
 
-.settings-readonly > .banner {
+.settings-pane > .banner {
   margin-top: 0;
 }
 .settings-group {

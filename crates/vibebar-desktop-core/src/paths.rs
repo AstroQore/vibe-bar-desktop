@@ -77,8 +77,10 @@ impl DataRoot {
         self.demo
     }
 
-    /// The shared data root. **Read-only for this client** — use
-    /// [`DataRoot::client_dir`] for anything this client writes.
+    /// The shared data root. **Read-only for this client except
+    /// `settings.json`**, which `shared::settings_writer` writes under the
+    /// contract in `docs/contracts/settings-write-v1.md`. Everything else this
+    /// client writes goes under [`DataRoot::client_dir`].
     pub fn shared(&self) -> &Path {
         &self.root
     }
