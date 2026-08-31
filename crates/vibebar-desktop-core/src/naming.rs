@@ -89,17 +89,28 @@ mod tests {
             "the generator refused to run: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        // Compared without line endings. A Windows checkout can hand back CRLF
+        // while the generator writes LF, which is a difference in how the file
+        // arrived rather than in what it says — and it would report every
+        // generated file on that runner as stale.
         assert_eq!(
-            regenerated, committed,
+            normalized(&regenerated),
+            normalized(&committed),
             "naming.ts is stale — the contract changed without it being \
              regenerated, which leaves this client grouping providers the way \
              the native app used to. Run `pnpm run naming`."
         );
     }
 
+    fn normalized(text: &str) -> String {
+        text.replace("\r\n", "\n")
+    }
+
     /// Every tool and group label present, for the case where the generator
     /// cannot be run.
     fn assert_fallback(generated: &str, doc: &Value) {
+        // Same exposure: the substrings this looks for span line breaks.
+        let generated = &normalized(generated);
         for (tool, entry) in doc["hierarchy"].as_object().expect("hierarchy") {
             let company = entry["company"].as_str().expect("company");
             let sub = entry["subProvider"].as_str().expect("subProvider");
