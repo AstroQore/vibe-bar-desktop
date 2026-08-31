@@ -387,17 +387,45 @@ input[type="text"] {
   border-radius: 999px;
 }
 
-/* Where usage is projected to land when the provider resets. A hairline, not
-   a second bar: it marks a position, it does not encode a magnitude. */
-.projection {
+/* What a forecast adds to the bar. Three marks with three jobs, all inside the
+   bar's own height — a forecast annotates the quota, it does not become a
+   second bar, and nothing here may make the bar look thicker. */
+
+/* The confidence interval: where the number is expected to land, as a range.
+   Inset so the track never shows through the bar's rounded ends. */
+.forecast-band {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 999px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* The wall clock: where an evenly spent window would be by now. Neutral and
+   inset, because it is a reference and not a prediction — giving it a verdict
+   colour would make two different kinds of claim look alike. */
+.pace-tick {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
   width: 2px;
   margin-left: -1px;
   border-radius: 1px;
   background: var(--text);
-  opacity: 0.55;
+  opacity: 0.45;
+}
+
+/* The forecast's median, in the verdict's own colour. Full height and the
+   most definite mark on the bar, because it is the one the reader acts on. */
+.forecast-tick {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text);
 }
 
 /* The verdict, which is the thing the bar cannot say on its own. */

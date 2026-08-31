@@ -308,6 +308,44 @@ export function quotaBarColor(percent: number, showsUsed: boolean): string {
   return ok;
 }
 
+/**
+ * Where a used-percentage sits along the bar, in whichever direction it is
+ * drawn.
+ *
+ * Every mark on the bar goes through this one transform. The forecast supplies
+ * everything as *used*, and a surface showing what is left is the same numbers
+ * mirrored — computing that per mark is how a median ends up outside its own
+ * confidence band.
+ */
+export function barPosition(usedPercent: number, showsUsed: boolean): number {
+  const used = Number.isFinite(usedPercent) ? usedPercent : 0;
+  return Math.min(100, Math.max(0, showsUsed ? used : 100 - used));
+}
+
+/**
+ * The three marks a forecast puts on the bar, already in bar coordinates.
+ *
+ * `low` and `high` come back in drawing order however the bar is mirrored, and
+ * the median is held inside them: a marker outside its own interval is a claim
+ * the forecast never made.
+ */
+export function forecastMarks(
+  forecast: QuotaForecast,
+  showsUsed: boolean,
+): { pace: number; median: number; low: number; high: number } {
+  const median = barPosition(forecast.projectedUsedPercent, showsUsed);
+  const first = barPosition(forecast.projectedUsedLowerPercent, showsUsed);
+  const second = barPosition(forecast.projectedUsedUpperPercent, showsUsed);
+  const low = Math.min(first, second);
+  const high = Math.max(first, second);
+  return {
+    pace: barPosition(forecast.plannedUsedPercent, showsUsed),
+    median: Math.min(high, Math.max(low, median)),
+    low,
+    high,
+  };
+}
+
 export function formatRelative(unixSeconds?: number): string {
   if (!unixSeconds) return "never";
   const deltaSeconds = Math.round(Date.now() / 1000 - unixSeconds);
