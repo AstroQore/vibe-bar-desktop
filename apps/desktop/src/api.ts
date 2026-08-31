@@ -1,3 +1,4 @@
+import { QUOTA_BAR } from "./tokens";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -245,9 +246,31 @@ export function hierarchyFor(tool: string) {
 }
 
 export function severityFor(remainingPercent: number): "ok" | "warning" | "critical" {
-  if (remainingPercent < 10) return "critical";
-  if (remainingPercent < 30) return "warning";
+  if (remainingPercent < QUOTA_BAR.remaining.criticalBelow) return "critical";
+  if (remainingPercent < QUOTA_BAR.remaining.warningBelow) return "warning";
   return "ok";
+}
+
+/**
+ * The quota bar's fill colour, from the shared token contract.
+ *
+ * The two display modes have different thresholds *and* different palettes —
+ * `used` is teal at rest where `remaining` is green — so a bar coloured by the
+ * remaining rule while showing a used percentage is the wrong colour twice.
+ */
+export function quotaBarColor(percent: number, showsUsed: boolean): string {
+  if (showsUsed) {
+    const { criticalAtOrAbove, warningAtOrAbove, critical, warning, ok } =
+      QUOTA_BAR.used;
+    if (percent >= criticalAtOrAbove) return critical;
+    if (percent >= warningAtOrAbove) return warning;
+    return ok;
+  }
+  const { criticalBelow, warningBelow, critical, warning, ok } =
+    QUOTA_BAR.remaining;
+  if (percent < criticalBelow) return critical;
+  if (percent < warningBelow) return warning;
+  return ok;
 }
 
 export function formatRelative(unixSeconds?: number): string {

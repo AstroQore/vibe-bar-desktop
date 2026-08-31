@@ -1,10 +1,11 @@
 import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
+import { ProviderIcon } from "./ProviderIcon";
 import {
   describeError,
   formatCountdown,
   formatRelative,
   hierarchyFor,
-  severityFor,
+  quotaBarColor,
 } from "../api";
 
 /** Quota grouped the way Vibe Bar names things: L1 company → L2 SubProvider
@@ -63,6 +64,7 @@ function QuotaCard({
   return (
     <article className="card">
       <div className="card-head">
+        <ProviderIcon tool={account.tool} />
         <span className="card-title">{product}</span>
         {plan ? <span className="pill">{plan}</span> : null}
         {account.origin === "sharedCache" ? (
@@ -101,7 +103,6 @@ function QuotaCard({
         account.buckets.map((bucket) => {
           const remaining = Math.max(0, 100 - bucket.usedPercent);
           const shown = showsUsed ? bucket.usedPercent : remaining;
-          const severity = severityFor(remaining);
           const countdown = formatCountdown(bucket.resetAt);
           return (
             <div className="bucket" key={bucket.id}>
@@ -127,8 +128,11 @@ function QuotaCard({
                 aria-label={`${product} ${bucket.title} ${showsUsed ? "used" : "remaining"}`}
               >
                 <div
-                  className={`fill ${severity}`}
-                  style={{ width: `${shown}%` }}
+                  className="fill"
+                  style={{
+                    width: `${shown}%`,
+                    background: quotaBarColor(shown, showsUsed),
+                  }}
                 />
               </div>
             </div>
