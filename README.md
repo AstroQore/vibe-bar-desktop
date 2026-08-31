@@ -37,7 +37,9 @@ window, on macOS, Windows, and Linux.
   A fresh Desktop last-good snapshot is private to `client/desktop/`; shared
   `service_status.json` remains read-only.
 - **Local usage and cost.** Scans bounded Codex, Claude, and Gemini CLI session JSONL files
-  into a priced-usage view. A completed aggregate snapshot persists only under
+  into a priced-usage view. Honours the shared Cost Data privacy setting: with
+  it on, nothing is scanned, any snapshot this client saved is deleted, and the
+  window says the data is hidden rather than showing zeroes. A completed aggregate snapshot persists only under
   `client/desktop/`; unknown models stay visibly unpriced and no shared ledger
   or history is written.
 - **Skills inventory.** Lists skills from the fixed local SSOT and harness
