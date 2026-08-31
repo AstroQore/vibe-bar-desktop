@@ -1,9 +1,9 @@
 import type { PresentationSettings, QuotaForecast, QuotaView } from "../api";
+import { companyFor, subProviderFor } from "../naming";
 import {
   forecastDetail,
   forecastHeadline,
   forecastSeverity,
-  hierarchyFor,
   quotaBarColor,
 } from "../api";
 import { orderedVisibleAccounts } from "./Overview";
@@ -40,7 +40,8 @@ export function collectResetEvents(
       futureDated += account.buckets.length;
       continue;
     }
-    const { vendor, product } = hierarchyFor(account.tool);
+    const vendor = companyFor(account.tool);
+    const product = subProviderFor(account.tool);
     for (const bucket of account.buckets) {
       if (bucket.resetAt === undefined) {
         missing += 1;

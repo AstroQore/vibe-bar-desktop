@@ -1,4 +1,5 @@
 import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
+import { companyFor, subProviderFor } from "../naming";
 import { ProviderIcon } from "./ProviderIcon";
 import { ResetHistory } from "./ResetHistory";
 import {
@@ -8,7 +9,6 @@ import {
   forecastSeverity,
   formatCountdown,
   formatRelative,
-  hierarchyFor,
   quotaBarColor,
 } from "../api";
 
@@ -34,7 +34,7 @@ export function Overview({
 
   const vendors = new Map<string, AccountQuota[]>();
   for (const account of accounts) {
-    const vendor = hierarchyFor(account.tool).vendor;
+    const vendor = companyFor(account.tool);
     const list = vendors.get(vendor) ?? [];
     list.push(account);
     vendors.set(vendor, list);
@@ -61,7 +61,7 @@ function QuotaCard({
   account: AccountQuota;
   settings: PresentationSettings | null;
 }) {
-  const { product } = hierarchyFor(account.tool);
+  const product = subProviderFor(account.tool);
   const plan = settings?.providerPlanLabels[account.tool] ?? account.plan;
   const showsUsed = settings?.displayMode === "used";
 

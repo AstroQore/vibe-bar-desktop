@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import type { PresentationSettings, QuotaBucket, QuotaView } from "../api";
-import { api, formatCountdown, hierarchyFor, quotaBarColor } from "../api";
+import { api, formatCountdown, quotaBarColor } from "../api";
+import { subProviderFor } from "../naming";
 
 const DEFAULT_FIELDS = ["codex.weekly", "claude.weekly", "claude.five_hour"];
 
@@ -72,7 +73,7 @@ function resolveField(view: QuotaView, settings: PresentationSettings | null, fi
   const bucketLabel = bucket.groupTitle ? `${bucket.groupTitle} ${bucket.title}` : bucket.title;
   return [{
     id: field,
-    label: settings?.customLabels[field] || `${hierarchyFor(tool).product} ${bucketLabel}`,
+    label: settings?.customLabels[field] || `${subProviderFor(tool, bucketId)} ${bucketLabel}`,
     bucket,
     value: used ? bucket.usedPercent : remaining,
     showsUsed: used,

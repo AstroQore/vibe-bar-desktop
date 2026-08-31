@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { PresentationSettings } from "../api";
-import { hierarchyFor } from "../api";
+import { subProviderFor } from "../naming";
 
 export function Settings({ settings }: { settings: PresentationSettings | null }) {
   if (!settings) return <p className="empty">Loading shared presentation settings…</p>;
@@ -52,7 +52,7 @@ export function Settings({ settings }: { settings: PresentationSettings | null }
           <ul className="settings-list">
             {Object.entries(settings.providerPlanLabels).map(([tool, label]) => (
               <li key={tool}>
-                <span>{hierarchyFor(tool).product}</span>
+                <span>{subProviderFor(tool)}</span>
                 <span className="pill">{label}</span>
               </li>
             ))}
@@ -90,5 +90,5 @@ function formatInterval(seconds: number): string {
 }
 
 function providerList(tools: string[]): string {
-  return tools.length ? tools.map((tool) => hierarchyFor(tool).product).join(", ") : "None";
+  return tools.length ? tools.map((tool) => subProviderFor(tool)).join(", ") : "None";
 }
