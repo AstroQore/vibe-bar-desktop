@@ -36,6 +36,12 @@ const NATIVE_SCHEMA_VERSION: i64 = 1;
 /// widest thing forecast, so sixty days is roughly two of them.
 const RETENTION_SECONDS: f64 = 60.0 * 86_400.0;
 
+/// Tolerance for a source clock running slightly ahead. Anything past it is
+/// not an observation of the present: a future-dated row would become the
+/// freshest sample, steer the slope and confidence, and — far enough out —
+/// keep the seed threshold satisfied forever.
+const CLOCK_SKEW_SECONDS: f64 = 120.0;
+
 /// One observation, keyed the way both stores key them.
 #[derive(Debug, Clone, Copy)]
 pub struct StoredObservation {
@@ -43,6 +49,27 @@ pub struct StoredObservation {
     pub used_percent: f64,
     pub reset_at: Option<f64>,
     pub raw_window_seconds: Option<i64>,
+}
+
+/// True when `path` resolves outside the client namespace, including through
+/// a symlinked ancestor. Compares canonical paths, so a link anywhere in the
+/// chain is caught rather than only a link at the leaf.
+fn path_escapes_namespace(root: &DataRoot, path: &Path) -> bool {
+    let client = root.client_dir();
+    let anchor = std::fs::canonicalize(&client).unwrap_or(client);
+    // The file itself may not exist yet; its parent must.
+    let parent = match path.parent() {
+        Some(parent) => std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf()),
+        None => return true,
+    };
+    if !parent.starts_with(&anchor) {
+        return true;
+    }
+    // An existing leaf must not be a link out of the namespace either.
+    matches!(
+        std::fs::symlink_metadata(path),
+        Ok(metadata) if metadata.file_type().is_symlink()
+    )
 }
 
 pub struct ObservationStore {
@@ -58,6 +85,14 @@ impl ObservationStore {
         let path = root.client_dir().join("observations.sqlite3");
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
+        }
+        // SQLite opens by path, so the capability handles used elsewhere in
+        // this crate cannot be handed to it. Refuse the escape explicitly
+        // instead: a symlinked client directory or store file would let a
+        // WAL switch and a schema rebuild land outside the namespace this
+        // client is allowed to write.
+        if path_escapes_namespace(root, &path) {
+            return Err(rusqlite::Error::InvalidPath(path));
         }
         let connection = Connection::open(&path)?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
@@ -153,9 +188,21 @@ impl ObservationStore {
     /// rather than propagating, because a seed that cannot be read is a
     /// missing convenience, not a broken client.
     pub fn seed_from_native(&self, native_timeline: &Path, now: f64) -> usize {
+        // `immutable=1` promises SQLite the file will not change under it,
+        // which is what stops it from creating or touching the -shm sidecar
+        // of a WAL database. The repository's read-only audit tolerates that
+        // side effect for `session_index.sqlite3` alone; the native timeline
+        // is a second file and must stay untouched. A native app writing
+        // concurrently is exactly why this is a seed and not a live source.
+        let uri = format!(
+            "file:{}?mode=ro&immutable=1",
+            native_timeline.to_string_lossy().replace('?', "%3f")
+        );
         let Ok(source) = Connection::open_with_flags(
-            native_timeline,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            &uri,
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | OpenFlags::SQLITE_OPEN_URI,
         ) else {
             return 0;
         };
@@ -168,12 +215,12 @@ impl ObservationStore {
         }
         let Ok(mut statement) = source.prepare(
             "SELECT account_id, bucket_id, sampled_at, used_percent, reset_at, raw_window_seconds
-               FROM fill_points WHERE sampled_at >= ?1 ORDER BY sampled_at",
+               FROM fill_points WHERE sampled_at >= ?1 AND sampled_at <= ?2 ORDER BY sampled_at",
         ) else {
             return 0;
         };
         let cutoff = now - RETENTION_SECONDS;
-        let Ok(rows) = statement.query_map([cutoff], |row| {
+        let Ok(rows) = statement.query_map([cutoff, now + CLOCK_SKEW_SECONDS], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -272,6 +319,55 @@ mod tests {
         let removed = store.prune(now).unwrap();
         assert_eq!(removed, 2);
         assert_eq!(store.count().unwrap(), 3);
+    }
+
+    #[test]
+    fn a_symlinked_store_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+
+        // A link where the store belongs would let the WAL switch and the
+        // schema rebuild land outside the namespace this client may write.
+        let outside = dir.path().join("outside.sqlite3");
+        std::fs::write(&outside, b"").unwrap();
+        std::os::unix::fs::symlink(&outside, root.client_dir().join("observations.sqlite3"))
+            .unwrap();
+
+        assert!(ObservationStore::open(&root).is_err());
+    }
+
+    #[test]
+    fn seeding_ignores_observations_from_the_future() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+        let store = ObservationStore::open(&root).unwrap();
+        let native = dir.path().join("fill_timeline.sqlite3");
+        let now = 1_000_000.0;
+
+        let source = Connection::open(&native).unwrap();
+        source
+            .execute_batch(
+                "PRAGMA user_version = 1;
+                 CREATE TABLE fill_points (
+                     account_id TEXT NOT NULL, tool TEXT NOT NULL, bucket_id TEXT NOT NULL,
+                     slot_start REAL NOT NULL, used_percent REAL NOT NULL, sampled_at REAL NOT NULL,
+                     reset_at REAL, raw_window_seconds INTEGER,
+                     PRIMARY KEY(account_id, bucket_id, slot_start));
+                 INSERT INTO fill_points VALUES
+                     ('a','claude','five_hour', 1.0, 10.0, 999000.0, NULL, NULL),
+                     ('a','claude','five_hour', 2.0, 99.0, 2000000.0, NULL, NULL);",
+            )
+            .unwrap();
+        drop(source);
+
+        // The past row is adopted; the one dated a fortnight ahead is not,
+        // because it would become the freshest sample and steer the slope.
+        assert_eq!(store.seed_from_native(&native, now), 1);
+        let got = store.observations("a", "five_hour", 0.0).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].used_percent, 10.0);
     }
 
     #[test]

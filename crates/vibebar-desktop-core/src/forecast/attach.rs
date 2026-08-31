@@ -72,6 +72,54 @@ pub fn attach_forecasts(root: &DataRoot, accounts: &mut [AccountQuota], now: f64
     let _ = store.prune(now);
 }
 
+/// Attach forecasts from the history that already exists, recording nothing.
+///
+/// This is what a *read* gets: the inspect diagnostic, MCP `quota.get`, and
+/// the first tray paint all go through here. Recording on a read would make
+/// merely looking at cached data mutate persistent state, and would break the
+/// before/after audit that proves this client leaves the data root alone.
+pub fn attach_cached_forecasts(root: &DataRoot, accounts: &mut [AccountQuota]) {
+    attach_cached_forecasts_at(root, accounts, crate::providers::now_unix());
+}
+
+/// `attach_cached_forecasts` with an explicit clock, so a test can evaluate a
+/// synthetic window without waiting for one.
+pub fn attach_cached_forecasts_at(root: &DataRoot, accounts: &mut [AccountQuota], now: f64) {
+    if root.is_demo() {
+        return;
+    }
+    // Opening the store creates it, so a read only forecasts when a store is
+    // already there. A client that has never refreshed shows no forecast,
+    // which is honest: it has observed nothing.
+    if !root.client_dir().join("observations.sqlite3").is_file() {
+        return;
+    }
+    let Ok(store) = ObservationStore::open(root) else {
+        return;
+    };
+    for account in accounts.iter_mut() {
+        for bucket in account.buckets.iter_mut() {
+            let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds)
+            else {
+                continue;
+            };
+            let Ok(observations) =
+                store.observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS)
+            else {
+                continue;
+            };
+            bucket.forecast = compute(&ForecastInput {
+                used_percent: bucket.used_percent,
+                reset_at,
+                raw_window_seconds: window,
+                now,
+                observations,
+                completed_cycles: Vec::new(),
+            });
+        }
+    }
+}
+
 /// Adopt the native app's observation history, once per launch.
 ///
 /// Returns how many observations were adopted, for the diagnostic to report.
@@ -175,6 +223,51 @@ mod tests {
         let mut accounts = vec![account(now, 10.0, None)];
         attach_forecasts(&root, &mut accounts, now);
         assert!(accounts[0].buckets[0].forecast.is_none());
+    }
+
+    /// Reading must not write. This regressed once: routing the cached view
+    /// through the recording path made `inspect`, MCP `quota.get` and the
+    /// first tray paint create and mutate the store.
+    #[test]
+    fn a_cached_read_creates_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let now = 1_000_000.0;
+        let mut accounts = vec![account(now, 10.0, Some(now + 9_000.0))];
+
+        attach_cached_forecasts(&root, &mut accounts);
+
+        assert!(!root.client_dir().join("observations.sqlite3").exists());
+        // No history means no forecast, rather than one invented from a
+        // single live value.
+        assert!(accounts[0].buckets[0].forecast.is_none());
+    }
+
+    #[test]
+    fn a_cached_read_uses_history_a_refresh_already_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let reset = 1_020_000.0;
+        for (i, used) in [2.0, 4.0, 6.0].iter().enumerate() {
+            let now = 1_003_000.0 + i as f64 * 600.0;
+            attach_forecasts(&root, &mut [account(now, *used, Some(reset))], now);
+        }
+        let before = std::fs::metadata(root.client_dir().join("observations.sqlite3"))
+            .unwrap()
+            .len();
+
+        let mut accounts = vec![account(1_004_800.0, 8.0, Some(reset))];
+        attach_cached_forecasts_at(&root, &mut accounts, 1_004_800.0);
+
+        let forecast = accounts[0].buckets[0].forecast.as_ref().expect("forecast");
+        assert_eq!(
+            forecast.current_observation_count, 3,
+            "reads the recorded history"
+        );
+        let after = std::fs::metadata(root.client_dir().join("observations.sqlite3"))
+            .unwrap()
+            .len();
+        assert_eq!(before, after, "a read must not grow the store");
     }
 
     #[test]

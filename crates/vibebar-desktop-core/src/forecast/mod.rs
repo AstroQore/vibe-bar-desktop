@@ -26,7 +26,10 @@ mod compute;
 mod model;
 mod timeline;
 
-pub use attach::{attach_forecasts, observations_for, seed_from_native_once};
+pub use attach::{
+    attach_cached_forecasts, attach_cached_forecasts_at, attach_forecasts, observations_for,
+    seed_from_native_once,
+};
 pub use compute::compute;
 pub use model::{Confidence, Diagnostics, ForecastInput, Observation, QuotaPaceForecast, Verdict};
 pub use timeline::{ObservationStore, StoredObservation};

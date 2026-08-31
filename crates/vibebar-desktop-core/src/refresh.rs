@@ -70,7 +70,17 @@ impl QuotaEngine {
         let own = self.store.load_quotas();
         let (shared, has_shared_data) = self.load_shared(&own);
         let accounts = merge(own, shared);
-        self.view(accounts, has_shared_data, self.data_root().is_demo())
+        // Reading must not write. This backs the inspect diagnostic, MCP
+        // `quota.get` and the first tray paint, so it attaches forecasts from
+        // whatever history already exists and records nothing.
+        let mut view = Self::view_at(
+            accounts,
+            has_shared_data,
+            self.data_root().is_demo(),
+            crate::providers::now_unix(),
+        );
+        crate::forecast::attach_cached_forecasts(self.data_root(), &mut view.accounts);
+        view
     }
 
     /// Read the shared cache, naming as many accounts as we can.
@@ -157,14 +167,21 @@ impl QuotaEngine {
                 accounts.push(failure);
             }
         }
-        self.view(accounts, has_shared_data, self.data_root().is_demo())
+        self.recorded_view(accounts, has_shared_data, self.data_root().is_demo())
     }
 
-    fn view(&self, accounts: Vec<AccountQuota>, has_shared_data: bool, is_demo: bool) -> QuotaView {
+    /// Used by `refresh`, which is the only caller allowed to record: a
+    /// refresh is a new observation, a read is not.
+    fn recorded_view(
+        &self,
+        accounts: Vec<AccountQuota>,
+        has_shared_data: bool,
+        is_demo: bool,
+    ) -> QuotaView {
         let now = crate::providers::now_unix();
         let mut view = Self::view_at(accounts, has_shared_data, is_demo, now);
-        // Records this refresh and answers the question the bars cannot:
-        // whether the quota lasts. Never allowed to fail a refresh.
+        // Never allowed to fail a refresh: a lost forecast costs a line of
+        // text, a failed refresh costs the numbers.
         crate::forecast::attach_forecasts(self.data_root(), &mut view.accounts, now);
         view
     }
