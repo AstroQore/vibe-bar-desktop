@@ -1,5 +1,5 @@
 import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
-import { companyFor, subProviderFor } from "../naming";
+import { bucketLabelFor, companyFor, subProviderFor } from "../naming";
 import { ProviderIcon } from "./ProviderIcon";
 import { ResetHistory } from "./ResetHistory";
 import {
@@ -61,7 +61,15 @@ function QuotaCard({
   account: AccountQuota;
   settings: PresentationSettings | null;
 }) {
-  const product = subProviderFor(account.tool);
+  // A bucket can belong to a SubProvider its account does not, so the card
+  // header only speaks for the account when every bucket agrees with it.
+  const subProviders = new Set(
+    account.buckets.map((bucket) => subProviderFor(account.tool, bucket.id)),
+  );
+  const product =
+    subProviders.size === 1
+      ? [...subProviders][0]
+      : subProviderFor(account.tool);
   const plan = settings?.providerPlanLabels[account.tool] ?? account.plan;
   const showsUsed = settings?.displayMode === "used";
 
@@ -112,9 +120,14 @@ function QuotaCard({
             <div className="bucket" key={bucket.id}>
               <div className="bucket-head">
                 <span className="bucket-label">
-                  {bucket.groupTitle
-                    ? `${bucket.groupTitle} · ${bucket.title}`
-                    : bucket.title}
+                  {bucketLabelFor(
+                    account.tool,
+                    bucket.id,
+                    bucket.title,
+                    bucket.shortLabel,
+                    bucket.groupTitle,
+                    " · ",
+                  )}
                 </span>
                 {countdown ? (
                   <span className="bucket-reset">{countdown}</span>

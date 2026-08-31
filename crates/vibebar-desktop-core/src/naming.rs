@@ -56,14 +56,50 @@ mod tests {
         );
     }
 
-    /// The generated `naming.ts` still matches the contract it came from. The
-    /// generator runs by hand, so this is what stops a contract update from
-    /// leaving the UI grouping providers the way the native app used to.
+    /// The generated `naming.ts` is exactly what the generator produces from
+    /// the current contract.
+    ///
+    /// This checked selected substrings first, which was not a freshness
+    /// check at all: a contract change to the group-key rules, the stem
+    /// suffixes, the SubProvider overrides or the ungrouped list leaves the
+    /// behaviour different and every substring still present. Re-running the
+    /// generator and diffing covers whatever the contract grows next, without
+    /// this test having to learn about it.
     #[test]
     fn the_generated_typescript_is_current() {
-        let generated = include_str!("../../../apps/desktop/src/naming.ts");
-        let doc = contract();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let generated = root.join("apps/desktop/src/naming.ts");
+        let committed = std::fs::read_to_string(&generated).expect("naming.ts");
 
+        let Ok(output) = std::process::Command::new("node")
+            .arg(root.join("scripts/generate-naming.mjs"))
+            .output()
+        else {
+            // No node on this machine: the substring fallback below is weaker
+            // but better than no check at all.
+            assert_fallback(&committed, &contract());
+            return;
+        };
+        // Restore whatever was committed before asserting, so a failing test
+        // never leaves the working tree modified.
+        let regenerated = std::fs::read_to_string(&generated).expect("naming.ts");
+        std::fs::write(&generated, &committed).expect("restore naming.ts");
+        assert!(
+            output.status.success(),
+            "the generator refused to run: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            regenerated, committed,
+            "naming.ts is stale — the contract changed without it being \
+             regenerated, which leaves this client grouping providers the way \
+             the native app used to. Run `pnpm run naming`."
+        );
+    }
+
+    /// Every tool and group label present, for the case where the generator
+    /// cannot be run.
+    fn assert_fallback(generated: &str, doc: &Value) {
         for (tool, entry) in doc["hierarchy"].as_object().expect("hierarchy") {
             let company = entry["company"].as_str().expect("company");
             let sub = entry["subProvider"].as_str().expect("subProvider");
@@ -81,22 +117,52 @@ mod tests {
                 "naming.ts is stale for group {key}. Run `pnpm run naming`."
             );
         }
-        // The rule that decides whether a bucket is its own group. Without it
-        // the client has to guess, and the guess was wrong for every bucket
-        // discovered at runtime.
-        let branch = &doc["groupKey"]["branchStyle"];
-        for bucket in branch["buckets"].as_array().expect("branch buckets") {
-            let bucket = bucket.as_str().expect("bucket id");
-            assert!(
-                generated.contains(&format!("\"{bucket}\"")),
-                "naming.ts is stale: {bucket} is missing from the branch-style rule."
-            );
+    }
+
+    /// The adapters shorten their own bucket names, which the UI prefers over
+    /// the contract's label. Two shortenings of one thing is one too many, so
+    /// where both have an opinion they have to agree — otherwise a bucket
+    /// reads as "Spark" in the native app and something else here.
+    #[test]
+    fn adapter_short_names_agree_with_the_contract() {
+        let doc = contract();
+        let labels = doc["groupLabels"].as_object().expect("groupLabels");
+        let source = include_str!("providers/codex.rs");
+        let block = source
+            .split("fn short_limit_name")
+            .nth(1)
+            .expect("short_limit_name");
+        let block = &block[..block.find("\n}").expect("end of fn")];
+
+        // `spark` -> "Spark", which has to be what codex.spark is called.
+        for (needle, shortened) in
+            regex_like_pairs(block)
+        {
+            let key = format!("codex.{needle}");
+            if let Some(expected) = labels.get(&key).and_then(Value::as_str) {
+                assert_eq!(
+                    shortened, expected,
+                    "codex.rs shortens {needle} to {shortened:?} where the \
+                     contract calls it {expected:?}"
+                );
+            }
         }
-        for tool in branch["alwaysTools"].as_array().expect("always tools") {
-            assert!(
-                generated.contains(tool.as_str().expect("tool")),
-                "naming.ts is stale: a branch-style tool is missing."
-            );
+    }
+
+    /// `contains("spark")` / `"Spark".to_string()` pairs, without a regex
+    /// dependency for one call site.
+    fn regex_like_pairs(block: &str) -> Vec<(String, String)> {
+        let mut pairs = Vec::new();
+        let mut needle: Option<String> = None;
+        for line in block.lines() {
+            if let Some(rest) = line.split("contains(\"").nth(1) {
+                needle = rest.split('"').next().map(str::to_string);
+            } else if let Some(rest) = line.split('"').nth(1) {
+                if let Some(found) = needle.take() {
+                    pairs.push((found, rest.to_string()));
+                }
+            }
         }
+        pairs
     }
 }

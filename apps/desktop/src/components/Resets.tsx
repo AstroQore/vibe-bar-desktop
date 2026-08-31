@@ -1,5 +1,5 @@
 import type { PresentationSettings, QuotaForecast, QuotaView } from "../api";
-import { companyFor, subProviderFor } from "../naming";
+import { bucketLabelFor, companyFor, subProviderFor } from "../naming";
 import {
   forecastDetail,
   forecastHeadline,
@@ -41,7 +41,6 @@ export function collectResetEvents(
       continue;
     }
     const vendor = companyFor(account.tool);
-    const product = subProviderFor(account.tool);
     for (const bucket of account.buckets) {
       if (bucket.resetAt === undefined) {
         missing += 1;
@@ -59,10 +58,17 @@ export function collectResetEvents(
       const event: ResetEvent = {
         id: `${account.accountId}/${bucket.id}/${bucket.resetAt}`,
         vendor,
-        product,
-        bucket: bucket.groupTitle?.trim()
-          ? `${bucket.groupTitle.trim()} · ${bucket.title}`
-          : bucket.title,
+        // Per bucket, not per account: Cursor reports Grok Bot, which belongs
+        // to a SubProvider its account does not.
+        product: subProviderFor(account.tool, bucket.id),
+        bucket: bucketLabelFor(
+          account.tool,
+          bucket.id,
+          bucket.title,
+          bucket.shortLabel,
+          bucket.groupTitle,
+          " · ",
+        ),
         plan: settings?.providerPlanLabels[account.tool] ?? account.plan,
         resetAt: bucket.resetAt,
         forecast: bucket.forecast,

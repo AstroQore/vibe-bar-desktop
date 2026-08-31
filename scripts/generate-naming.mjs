@@ -133,6 +133,30 @@ export function groupKeyFor(
   return \`\${tool}.\${stem(bucketId)}\`;
 }
 
+/** How a bucket reads in a flat list: \`Spark Weekly\`, not
+ *  \`GPT-5.3 Codex Spark Weekly\`.
+ *
+ *  The provider adapters already shorten this into \`shortLabel\`, and the
+ *  native app prefers that, so this does too — the contract's group label is
+ *  the fallback for a bucket whose adapter did not, and \`groupLabelFor\` is
+ *  what a grouped surface uses for its column headers. A bucket with no group
+ *  of its own is named by its window alone. */
+export function bucketLabelFor(
+  tool: string,
+  bucketId: string,
+  bucketTitle: string,
+  shortLabel: string | undefined,
+  groupTitle: string | undefined,
+  separator = " ",
+): string {
+  const short = shortLabel?.trim();
+  if (short) return short;
+  const group = groupLabelFor(tool, bucketId, groupTitle);
+  return group && group !== bucketTitle
+    ? \`\${group}\${separator}\${bucketTitle}\`
+    : bucketTitle;
+}
+
 /** What an L3 group column is called. Falls back to the bucket's own
  *  groupTitle, which is what the native app shows for a group it has not been
  *  taught to shorten. Null means the bucket sits directly under its
