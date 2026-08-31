@@ -24,11 +24,6 @@ const accents = Object.keys(doc.providerAccent)
   })
   .join("\n");
 
-const resetHistory = Object.keys(doc.resetHistoryAccent)
-  .sort()
-  .map((tool) => `  ${tool}: "${doc.resetHistoryAccent[tool]}",`)
-  .join("\n");
-
 const bar = doc.quotaBar;
 const out = `// Generated from docs/contracts/design-tokens-v1.json — do not edit by hand.
 // The contract is generated from the native Theme.swift and checked against it
@@ -41,12 +36,6 @@ const out = `// Generated from docs/contracts/design-tokens-v1.json — do not e
  *  providers as far as the reader is concerned. */
 export const PROVIDER_ACCENT: Record<string, string | { light: string; dark: string }> = {
 ${accents}
-};
-
-/** The reset-history bars have their own palette — Claude is coral here and
- *  orange in PROVIDER_ACCENT. \`default\` is what an unlisted provider gets. */
-export const RESET_HISTORY_ACCENT: Record<string, string> = {
-${resetHistory}
 };
 
 export const QUOTA_BAR = {
@@ -75,7 +64,4 @@ export function providerAccent(tool: string, dark: boolean): string | undefined 
 }
 `;
 writeFileSync(join(root, "apps/desktop/src/tokens.ts"), out);
-console.log(
-  `tokens.ts: ${Object.keys(doc.providerAccent).length} provider accents, ` +
-    `${Object.keys(doc.resetHistoryAccent).length} reset-history accents`,
-);
+console.log(`tokens.ts: ${Object.keys(doc.providerAccent).length} provider accents`);

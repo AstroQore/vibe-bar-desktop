@@ -1,4 +1,5 @@
 import { providerAccent } from "../tokens";
+import { useDarkMode } from "../theme";
 
 // The brand marks are the native app's, byte for byte, so the same provider
 // is recognisably the same in both clients. They are single-path monochrome
@@ -43,12 +44,11 @@ function markupFor(tool: string): string | undefined {
 export function ProviderIcon({
   tool,
   size = 16,
-  dark = true,
 }: {
   tool: string;
   size?: number;
-  dark?: boolean;
 }) {
+  const dark = useDarkMode();
   const markup = markupFor(tool);
   if (!markup) return null;
   // The marks do not agree on how they spell their fill: nine say `white`,

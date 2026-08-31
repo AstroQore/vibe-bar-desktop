@@ -35,17 +35,6 @@ export const PROVIDER_ACCENT: Record<string, string | { light: string; dark: str
   zai: "#42BD8C",
 };
 
-/** The reset-history bars have their own palette — Claude is coral here and
- *  orange in PROVIDER_ACCENT. `default` is what an unlisted provider gets. */
-export const RESET_HISTORY_ACCENT: Record<string, string> = {
-  antigravity: "#579EF5",
-  claude: "#ED6666",
-  codex: "#4DC7BD",
-  default: "#738CA6",
-  gemini: "#579EF5",
-  grok: "#737380",
-};
-
 export const QUOTA_BAR = {
   remaining: {
     criticalBelow: 10,

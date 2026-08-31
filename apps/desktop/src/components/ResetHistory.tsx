@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-import { RESET_HISTORY_ACCENT } from "../tokens";
+import { providerAccent } from "../tokens";
+import { useDarkMode } from "../theme";
 
 /// One inferred quota cycle, as `quota_cycles` returns it.
 export interface QuotaCycle {
@@ -27,8 +28,14 @@ const BAR_GAP = 3;
 /** Below this a bar would vanish; native keeps the same 4% floor. */
 const MIN_BAR_FRACTION = 0.04;
 
-export function accentFor(tool: string): string {
-  return RESET_HISTORY_ACCENT[tool] ?? RESET_HISTORY_ACCENT.default;
+/// The one provider colour table, same as every other surface. Two accents
+/// resolve per appearance, so this needs to know which one is showing.
+///
+/// The fallback is unreachable for a real provider — a contract test asserts
+/// every tool has an accent — and exists only so a malformed id draws
+/// something rather than nothing.
+export function accentFor(tool: string, dark: boolean): string {
+  return providerAccent(tool, dark) ?? "#738CA6";
 }
 
 function remainingAtReset(cycle: QuotaCycle): number {
@@ -121,7 +128,8 @@ export function ResetHistory({
     return all.slice(-MAX_CYCLES);
   }, [history]);
 
-  const accent = accentFor(tool);
+  const dark = useDarkMode();
+  const accent = accentFor(tool, dark);
   const target =
     targetRemainingPercent === undefined
       ? undefined
