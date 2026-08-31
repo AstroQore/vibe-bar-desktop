@@ -1,7 +1,7 @@
 //! IPC surface for the web UI.
 
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::forecast::cycles::CycleSummary;
 use vibebar_desktop_core::refresh::QuotaView;
@@ -55,6 +55,7 @@ pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings
 /// in between wins over a stale idea of it here.
 #[tauri::command]
 pub fn save_shared_settings(
+    app: AppHandle,
     state: State<'_, AppState>,
     changes: serde_json::Map<String, serde_json::Value>,
 ) -> Result<PresentationSettings, String> {
@@ -68,11 +69,17 @@ pub fn save_shared_settings(
         // the only caller, so this is a bug in it.
         return Err(format!("not a setting Vibe Bar Desktop presents: {refused:?}"));
     }
-    state
+    let applied = state
         .settings()
         .lock()
         .map_err(|_| "the settings writer is unavailable".to_string())?
         .apply(&changes);
+    // A save re-reads, so it can be the first to see the native app's change.
+    // Reported down the same channel the watch uses, or the watch would find
+    // a file that already matches what this save recorded, and say nothing.
+    if let Some(replaced) = applied.folded.replaced {
+        let _ = app.emit(crate::SETTINGS_EVENT, Some(replaced.replaced_keys));
+    }
     Ok(SharedSettings::load(state.data_root()).presentation())
 }
 

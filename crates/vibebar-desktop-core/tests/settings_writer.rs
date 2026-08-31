@@ -93,7 +93,7 @@ fn a_setting_desktop_does_not_present_is_refused() {
     let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         writer.apply(&object(json!({ "skillsSyncMethod": "copy" })))
     }));
-    assert!(written.map(|keys| keys.is_empty()).unwrap_or(true));
+    assert!(written.map(|applied| applied.written.is_empty()).unwrap_or(true));
     assert_eq!(fixture.on_disk()["skillsSyncMethod"], json!("symlink"));
 }
 
@@ -103,7 +103,7 @@ fn a_save_of_the_value_already_there_does_not_touch_the_file() {
     let mut writer = fixture.writer();
 
     let before = std::fs::read(&fixture.path).expect("read");
-    assert!(writer.apply(&object(json!({ "displayMode": "remaining" }))).is_empty());
+    assert!(writer.apply(&object(json!({ "displayMode": "remaining" }))).written.is_empty());
     assert_eq!(std::fs::read(&fixture.path).expect("read"), before);
 }
 
@@ -189,4 +189,43 @@ fn choosing_again_after_a_loss_is_reported_again() {
     writer.apply(&object(json!({ "displayMode": "used" })));
     fixture.write_externally(json!({ "displayMode": "remaining" }));
     assert!(writer.poll().expect("changed").replaced.is_some());
+}
+
+/// A save re-reads, so it can be the first to notice the other writer. If it
+/// folds their change in and records the result as the file it has seen, the
+/// next poll compares the file with a baseline that already holds their change
+/// and finds nothing — and this client goes on showing what the file stopped
+/// saying some time ago.
+#[test]
+fn a_save_reports_the_external_change_it_folded_in() {
+    let fixture = Fixture::new(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 600 }));
+    let mut writer = fixture.writer();
+
+    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 })));
+
+    // Theirs lands, and this client saves something else before polling.
+    fixture.write_externally(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 120 }));
+    let applied = writer.apply(&object(json!({ "displayMode": "used" })));
+
+    let replaced = applied
+        .folded
+        .replaced
+        .expect("the save swallowed a change to a setting chosen here");
+    assert_eq!(replaced.replaced_keys, vec!["refreshIntervalSeconds".to_string()]);
+    // And it is not reported twice.
+    assert!(writer.poll().is_none_or(|change| change.replaced.is_none()));
+}
+
+/// The same, for a save that had nothing of its own to write: their change is
+/// still news, and the baseline must not quietly consume it.
+#[test]
+fn a_save_that_writes_nothing_leaves_their_change_to_be_polled() {
+    let fixture = Fixture::new(json!({ "displayMode": "remaining" }));
+    let mut writer = fixture.writer();
+
+    fixture.write_externally(json!({ "displayMode": "used" }));
+    let applied = writer.apply(&object(json!({ "displayMode": "used" })));
+    assert!(applied.written.is_empty(), "wrote a value that was already there");
+
+    assert!(writer.poll().is_some(), "their change was consumed by a save that wrote nothing");
 }

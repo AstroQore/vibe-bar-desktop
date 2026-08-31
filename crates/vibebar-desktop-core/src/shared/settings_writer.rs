@@ -56,6 +56,22 @@ pub struct ExternalChange {
     pub replaced: Option<ReplacedByAnotherWriter>,
 }
 
+/// What a save did, including anything it found the other writer had
+/// changed. A save re-reads, so it can be the first to notice.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Applied {
+    /// The settings actually written. Empty when everything asked for was
+    /// already the value on disk.
+    pub written: BTreeSet<String>,
+    pub folded: FoldedExternalChange,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FoldedExternalChange {
+    /// Settings chosen here that the file now holds someone else's value for.
+    pub replaced: Option<ReplacedByAnotherWriter>,
+}
+
 pub struct SettingsWriter {
     path: PathBuf,
     /// The file as this process last saw it, which is what a write measures
@@ -99,7 +115,7 @@ impl SettingsWriter {
     /// never taken out of the object in the first place.
     ///
     /// Returns the keys actually written, empty when there was nothing to do.
-    pub fn apply(&mut self, changes: &Object) -> BTreeSet<String> {
+    pub fn apply(&mut self, changes: &Object) -> Applied {
         let owned = Self::owned();
         let refused: Vec<&String> = changes.keys().filter(|key| !owned.contains(*key)).collect();
         debug_assert!(
@@ -109,8 +125,14 @@ impl SettingsWriter {
 
         let directory = self.directory().to_path_buf();
         file_lock::with_lock("settings", &directory, || {
-            let mut merged =
+            let theirs =
                 settings_document::read(&self.path).unwrap_or_else(|| self.baseline.clone());
+            // The other writer got here first, and this save is about to put
+            // its own keys on top and record the result as the file it has
+            // seen. Without saying so, the next `poll` compares the file with
+            // a baseline that already holds their change and finds nothing.
+            let their_changes = settings_document::changed_keys(&self.baseline, &theirs, None);
+            let mut merged = theirs.clone();
             let mut written = BTreeSet::new();
             for (key, value) in changes {
                 if !owned.contains(key) {
@@ -129,14 +151,17 @@ impl SettingsWriter {
                 merged.insert(key.clone(), value.clone());
                 written.insert(key.clone());
             }
+            let replaced = self.replaced_among(&their_changes, &theirs, &written);
             if written.is_empty() {
-                return written;
+                // Nothing of ours to write, but their change is still news:
+                // leave the baseline where it is so `poll` reports it.
+                return Applied { written, folded: FoldedExternalChange { replaced } };
             }
-            let Some(bytes) = settings_document::to_bytes(&merged).ok() else {
-                return BTreeSet::new();
+            let Ok(bytes) = settings_document::to_bytes(&merged) else {
+                return Applied::default();
             };
             if write_atomically(&self.path, &bytes).is_err() {
-                return BTreeSet::new();
+                return Applied::default();
             }
             for key in &written {
                 self.edited_keys.insert(key.clone());
@@ -144,9 +169,42 @@ impl SettingsWriter {
                     self.last_mine.insert(key.clone(), value.clone());
                 }
             }
+            // Their value is our position now for anything we did not write.
+            for key in their_changes.iter().filter(|key| !written.contains(*key)) {
+                match merged.get(key) {
+                    Some(value) => {
+                        self.last_mine.insert(key.clone(), value.clone());
+                    }
+                    None => {
+                        self.last_mine.remove(key);
+                    }
+                }
+                self.edited_keys.remove(key);
+            }
             self.baseline = merged;
-            written
+            Applied { written, folded: FoldedExternalChange { replaced } }
         })
+    }
+
+    /// Which of the settings the other writer just changed had been chosen
+    /// here, and now hold their value instead.
+    fn replaced_among(
+        &self,
+        their_changes: &BTreeSet<String>,
+        theirs: &Object,
+        ours: &BTreeSet<String>,
+    ) -> Option<ReplacedByAnotherWriter> {
+        let keys: Vec<String> = their_changes
+            .iter()
+            .filter(|key| self.edited_keys.contains(*key) || ours.contains(*key))
+            .filter(|key| match (self.last_mine.get(*key), theirs.get(*key)) {
+                (Some(ours), Some(theirs)) => !settings_document::values_equal(ours, theirs),
+                (None, None) => false,
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        (!keys.is_empty()).then_some(ReplacedByAnotherWriter { replaced_keys: keys })
     }
 
     /// What another writer has changed since this one last looked, and which
@@ -165,16 +223,7 @@ impl SettingsWriter {
         }
 
         let their_changes = settings_document::changed_keys(&self.baseline, &theirs, None);
-        let replaced: Vec<String> = their_changes
-            .iter()
-            .filter(|key| self.edited_keys.contains(*key))
-            .filter(|key| match (self.last_mine.get(*key), theirs.get(*key)) {
-                (Some(ours), Some(theirs)) => !settings_document::values_equal(ours, theirs),
-                (None, None) => false,
-                _ => true,
-            })
-            .cloned()
-            .collect();
+        let replaced = self.replaced_among(&their_changes, &theirs, &BTreeSet::new());
 
         self.baseline = theirs.clone();
         // Their value is our position now, not our edit: leaving these behind
@@ -192,10 +241,7 @@ impl SettingsWriter {
             self.edited_keys.remove(key);
         }
 
-        Some(ExternalChange {
-            replaced: (!replaced.is_empty())
-                .then_some(ReplacedByAnotherWriter { replaced_keys: replaced }),
-        })
+        Some(ExternalChange { replaced })
     }
 }
 

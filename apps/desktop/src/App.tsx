@@ -76,7 +76,14 @@ export function App() {
     // rather than showing what it said when this window opened.
     const unlistenSettings = api.onSettingsChanged((replacedKeys) => {
       api.presentationSettings().then(setPresentation).catch(() => undefined);
-      if (replacedKeys?.length) setReplacedSettings(replacedKeys);
+      // Added to, not replaced: a later change that costs nothing is not
+      // news that the first one cost nothing, and a second loss is a second
+      // thing to say. Only dismissing clears it.
+      if (replacedKeys?.length) {
+        setReplacedSettings((standing) =>
+          [...new Set([...(standing ?? []), ...replacedKeys])].sort(),
+        );
+      }
     });
     return () => {
       unlisten.then((off) => off()).catch(() => undefined);
