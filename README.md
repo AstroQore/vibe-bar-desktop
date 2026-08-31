@@ -77,6 +77,68 @@ user's history for no gain. See [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md)
 app does that Desktop does not, in what order to close the gap, and the bugs
 this preview found in itself along the way.
 
+## Feature parity
+
+One product, two clients. The binding rule is the **minor** version: the same
+`MAJOR.MINOR` means the same features. Patch versions diverge freely — each
+client fixes its own bugs at its own pace — and build numbers are always
+independent.
+
+Two things are exempt from parity, and only these two:
+
+- **Bug fixes.**
+- **Features with no equivalent on another platform at all.** Needing a
+  different implementation is not an exemption: Keychain becomes DPAPI or
+  libsecret, Sparkle becomes the Tauri updater, `SMAppService` becomes each
+  platform's autostart. Those are the same feature, built differently.
+
+**This table lists only where the two differ.** Anything not here is at
+parity — the quota hierarchy, tray percentages with your own fields and
+labels, session search and transcripts, mini-window geometry, and so on. A new
+feature on either side must appear here until it lands on both.
+
+Legend: ● full · ◐ partial · ○ not yet · ▲ platform equivalent · — exempt
+
+| Feature | macOS native | Desktop | Note |
+| --- | :---: | :---: | --- |
+| **Quota** |
+| Live provider fetch | ● 25 | ◐ 10 | Desktop reads the rest from the shared cache, labelled as such |
+| Browser-cookie providers | ● | ○ | Windows blocks third-party cookie reads; explicit import there |
+| Forecast verdicts, run-out ETA, confidence | ● | ○ | The product's own thesis — every bar and gauge carries one |
+| Observation and forecast history | ● | ○ | What happened, and what was predicted at the time |
+| Plan badges and provider brand icons | ● | ○ | 23 brand assets not yet ported |
+| Service status sources | ● 5 | ● 4 | |
+| **Menu bar / tray** |
+| Rich-text and two-row title | ● | — | Windows and Linux trays have no title at all, only an icon |
+| Field editor with style scopes | ● | ○ | |
+| Control Center allow-list watchdog | ● | — | macOS 26 platform behaviour |
+| **Main window** |
+| Provider detail pages | ● 4 | ○ | Desktop has one flat Quota tab |
+| Arrangeable module waterfall | ● 11 | ○ | |
+| Layout editor with presets | ● | ○ | |
+| **Mini window** |
+| Layouts | ● 7 | ◐ 1 | ring, compact, ledger, strip, tile, focus, rail |
+| Multiple independent windows | ● | ○ | |
+| Translucent surface | ● Liquid Glass | ▲ | Platform blur — deliberately not a copy |
+| **Workbench** |
+| Usage charts, donuts, breakdown tables | ● | ○ | Desktop renders no charts at all yet |
+| Session deletion | ● | ○ | |
+| Resets: risk view | ● | ○ | Needs forecasting |
+| Skills: install, import, discover, backups | ● | ◐ | Desktop is a read-only inventory |
+| **Cost and usage** |
+| Local scan | ● 9 harnesses | ◐ 3 | Codex, Claude Code, Gemini CLI |
+| Per-request ledger, multi-source pricing, history | ● | ○ | Desktop keeps an in-memory aggregate |
+| **Settings** |
+| Writable | ● | ○ | Shared writes need the cross-client storage contract |
+| Provider credential panes | ● 25 | ○ | |
+| **Platform** |
+| MCP tools | ● 12 | ◐ 5 | Read-only subset |
+| Remote probe sync | ● | ○ | |
+| Launch at login | ● | ▲ | |
+| In-app updates | ● Sparkle | ▲ | Tauri updater |
+| App Sandbox | ○ by design | ○ for now | Neither ships sandboxed. Native **cannot**: reading browser cookies, probing AntiGravity with `ps`/`lsof`, and driving Terminal by Apple events are all blocked inside it, and the release script refuses a sandboxed bundle. Desktop needs none of that while it stays read-only, so it is the one that *could* — an option that closes as soon as it grows cookie providers |
+| Windows and Linux | — | ◐ | Core is tested on all three; the GUI has only had a macOS pass |
+
 ## Layout
 
 ```
