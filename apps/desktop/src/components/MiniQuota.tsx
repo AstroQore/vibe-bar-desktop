@@ -109,6 +109,9 @@ export function MiniQuotaBody({
   layout?: string;
 }) {
   const dark = useDarkMode();
+  if (layout === "ledger" && !loading && companies.length > 0) {
+    return <MiniLedger companies={companies} dark={dark} />;
+  }
   return (
     <>
       {loading ? (
@@ -174,6 +177,88 @@ export function MiniQuotaBody({
  * needs a square. The forecast marker is a line across the bar rather than a
  * notch on an arc, for the same reason.
  */
+/**
+ * One row per quota bucket — fixed width, grows downward.
+ *
+ * The same tree as the other layouts, laid out vertically: company, then
+ * SubProvider, then the group where one is named, then a row per bucket. The
+ * tiers are indents rather than columns, and every bar starts at the same x so
+ * the column reads as one scale — which is why the group header and the rows
+ * share an indent instead of the header stepping in further than its own
+ * children.
+ */
+function MiniLedger({ companies, dark }: { companies: Company[]; dark: boolean }) {
+  return (
+    <div className="mini-ledger">
+      {companies.map((company) => (
+        <section className="mini-ledger-company" key={company.name}>
+          <h2 className="mini-ledger-company-name">
+            <span
+              className="mini-company-dot"
+              style={{ background: providerAccent(company.tool, dark) }}
+              aria-hidden
+            />
+            {company.name}
+          </h2>
+          {company.subProviders.map((subProvider) => (
+            <div key={subProvider.name}>
+              <h3 className="mini-ledger-sub-name">{subProvider.name}</h3>
+              {subProvider.groups.map((group, groupIndex) => (
+                <div key={group.label ?? groupIndex}>
+                  {/* Only where the SubProvider has more than one: a heading
+                      always means "these are different models", the same rule
+                      the other layouts follow. */}
+                  {subProvider.groups.length > 1 && group.label ? (
+                    <h4 className="mini-ledger-group-name">{group.label}</h4>
+                  ) : null}
+                  {group.cells.map((cell) => (
+                    <MiniLedgerRow key={cell.id} cell={cell} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function MiniLedgerRow({ cell }: { cell: Cell }) {
+  const { bucket, value, showsUsed } = cell;
+  const colour = quotaBarColor(value, showsUsed);
+  const forecast = bucket.forecast;
+  const planned = forecast ? plannedFor(forecast, showsUsed) : undefined;
+  const verdictColour = forecast ? FORECAST_VERDICT[forecast.verdict] : undefined;
+
+  return (
+    <div className="mini-ledger-row">
+      <span className="mini-ledger-label" title={cell.label}>
+        {cell.label}
+      </span>
+      <span className="mini-ledger-track">
+        <span
+          className="mini-ledger-fill"
+          style={{ width: `${Math.min(100, Math.max(0, value))}%`, background: colour }}
+        />
+        {/* Same guard as the ring and the compact bar: a projection at or past
+            the limit is not drawn, because a mark on the rim would read as
+            "expected to land exactly there". */}
+        {planned !== undefined && planned > 0 && planned < 100 ? (
+          <span
+            className="mini-ledger-mark"
+            style={{ left: `${planned}%`, background: verdictColour ?? colour }}
+          />
+        ) : null}
+      </span>
+      <span className="mini-ledger-value" style={{ color: colour }}>
+        {Math.round(value)}%
+      </span>
+      <span className="mini-ledger-reset">{formatRemaining(bucket.resetAt) || "—"}</span>
+    </div>
+  );
+}
+
 function MiniCompactCell({ cell }: { cell: Cell }) {
   const { bucket, value, showsUsed } = cell;
   const colour = quotaBarColor(value, showsUsed);

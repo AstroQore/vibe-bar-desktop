@@ -1137,3 +1137,103 @@ input[type="text"] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Ledger: one row per bucket, fixed width, grows downward. Native's metrics —
+   284 wide, a 76 label, 34 for the number, 40 for the countdown — so the two
+   clients' ledgers line up column for column. */
+.mini-ledger {
+  width: 284px;
+  padding: 18px 14px 12px;
+  box-sizing: border-box;
+}
+.mini-ledger-company + .mini-ledger-company {
+  margin-top: 8px;
+}
+.mini-ledger-company-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  line-height: 16px;
+}
+.mini-ledger-sub-name {
+  margin: 0 0 3px 10px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  line-height: 15px;
+}
+/* The group header keeps the rows' indent rather than stepping in further: a
+   heading must never sit right of its own children. */
+.mini-ledger-group-name {
+  margin: 0 0 0 20px;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--text-dim) 75%, transparent);
+  line-height: 14px;
+}
+.mini-ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 21px;
+  margin-left: 20px;
+}
+.mini-ledger-label {
+  width: 76px;
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-ledger-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+.mini-ledger-fill {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  min-width: 2px;
+  border-radius: 2px;
+}
+.mini-ledger-mark {
+  position: absolute;
+  /* Overhangs the track, like the compact bar's: inside a 4px bar a mark in
+     the fill's own colour family cannot be seen. */
+  inset-block: -3px;
+  width: 2px;
+  border-radius: 1px;
+}
+.mini-ledger-value {
+  width: 34px;
+  flex: none;
+  text-align: right;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.mini-ledger-reset {
+  width: 40px;
+  flex: none;
+  text-align: right;
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--text-dim) 75%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+}

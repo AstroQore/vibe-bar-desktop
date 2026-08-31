@@ -31,6 +31,16 @@ lives in the core crate, which has no Tauri dependency and is tested on
 macOS, Windows, and Linux without a GUI. The shell is thin enough to read in
 one sitting.
 
+## Looking at the mini layouts
+
+`pnpm -C apps/desktop dev`, then `/preview.html`. It renders every ported
+mini-window layout side by side against synthetic data, and is not part of the
+build — `index.html` is the only entry.
+
+It exists because the layouts are where the tests cannot see the bug. Labels
+wrapping onto a second line, bars that stop lining up, a forecast marker
+invisible against the fill it sits on: all found there, none by a unit test.
+
 ## Where decisions live
 
 | Concern | Module |
