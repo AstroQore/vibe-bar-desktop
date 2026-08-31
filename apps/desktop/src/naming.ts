@@ -291,6 +291,14 @@ export function bucketLabelFor(
   groupTitle: string | undefined,
   separator = " ",
 ): string {
+  // A bucket whose group *is* its SubProvider is drawn under a heading that
+  // already says so, and naming the window is the only thing left to add.
+  // Compared on the group title, as the native app does: Cursor's own models
+  // sit in "Cursor Models", which is a group of its own and keeps its name.
+  const reported = groupTitle?.trim();
+  if (reported && reported.toLowerCase() === subProviderFor(tool, bucketId).toLowerCase()) {
+    return bucketTitle;
+  }
   const short = shortLabel?.trim();
   if (short) return short;
   const group = groupLabelFor(tool, bucketId, groupTitle);

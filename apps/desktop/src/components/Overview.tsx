@@ -1,4 +1,4 @@
-import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
+import type { AccountQuota, PresentationSettings, QuotaBucket, QuotaView } from "../api";
 import { bucketLabelFor, companyFor, subProviderFor } from "../naming";
 import { ProviderIcon } from "./ProviderIcon";
 import { ResetHistory } from "./ResetHistory";
@@ -61,15 +61,18 @@ function QuotaCard({
   account: AccountQuota;
   settings: PresentationSettings | null;
 }) {
-  // A bucket can belong to a SubProvider its account does not, so the card
-  // header only speaks for the account when every bucket agrees with it.
-  const subProviders = new Set(
-    account.buckets.map((bucket) => subProviderFor(account.tool, bucket.id)),
-  );
-  const product =
-    subProviders.size === 1
-      ? [...subProviders][0]
-      : subProviderFor(account.tool);
+  // A bucket can belong to a SubProvider its account does not — Cursor
+  // reports Grok Bot — so the buckets are grouped by theirs rather than the
+  // card picking one name and filing the rest under it. With one group, which
+  // is every provider but Cursor, this draws exactly as before.
+  const groups: { subProvider: string; buckets: QuotaBucket[] }[] = [];
+  for (const bucket of account.buckets) {
+    const subProvider = subProviderFor(account.tool, bucket.id);
+    const existing = groups.find((group) => group.subProvider === subProvider);
+    if (existing) existing.buckets.push(bucket);
+    else groups.push({ subProvider, buckets: [bucket] });
+  }
+  const product = groups[0]?.subProvider ?? subProviderFor(account.tool);
   const plan = settings?.providerPlanLabels[account.tool] ?? account.plan;
   const showsUsed = settings?.displayMode === "used";
 
@@ -112,7 +115,15 @@ function QuotaCard({
       {account.buckets.length === 0 && !account.error ? (
         <p className="error-row">No quota windows reported.</p>
       ) : (
-        account.buckets.map((bucket) => {
+        groups.flatMap((group) => [
+          // Named only when the card holds more than one, so a heading always
+          // means "these are not the same SubProvider".
+          groups.length > 1 ? (
+            <p className="sub-provider" key={`head-${group.subProvider}`}>
+              {group.subProvider}
+            </p>
+          ) : null,
+          ...group.buckets.map((bucket) => {
           const remaining = Math.max(0, 100 - bucket.usedPercent);
           const shown = showsUsed ? bucket.usedPercent : remaining;
           const countdown = formatCountdown(bucket.resetAt);
@@ -142,7 +153,7 @@ function QuotaCard({
                 aria-valuenow={Math.round(shown)}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label={`${product} ${bucket.title} ${showsUsed ? "used" : "remaining"}`}
+                aria-label={`${group.subProvider} ${bucket.title} ${showsUsed ? "used" : "remaining"}`}
               >
                 <div
                   className="fill"
@@ -192,7 +203,8 @@ function QuotaCard({
               />
             </div>
           );
-        })
+          }),
+        ])
       )}
     </article>
   );
