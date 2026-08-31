@@ -36,11 +36,14 @@ const NATIVE_SCHEMA_VERSION: i64 = 1;
 /// widest thing forecast, so sixty days is roughly two of them.
 const RETENTION_SECONDS: f64 = 60.0 * 86_400.0;
 
-/// Tolerance for a source clock running slightly ahead. Anything past it is
-/// not an observation of the present: a future-dated row would become the
-/// freshest sample, steer the slope and confidence, and — far enough out —
-/// keep the seed threshold satisfied forever.
-const CLOCK_SKEW_SECONDS: f64 = 120.0;
+/// Seeding takes nothing dated after the moment it runs.
+///
+/// A tolerance here does not help: `compute` accepts points through
+/// `evaluation + 60`, so even a row thirty seconds ahead becomes the freshest
+/// sample and steers the slope, the coverage and the freshness score. Shared
+/// data written by another client on a skewed clock is exactly the case, and
+/// the cost of dropping such a row is one observation.
+const SEED_UPPER_BOUND_SLACK: f64 = 0.0;
 
 /// One observation, keyed the way both stores key them.
 #[derive(Debug, Clone, Copy)]
@@ -55,21 +58,31 @@ pub struct StoredObservation {
 /// a symlinked ancestor. Compares canonical paths, so a link anywhere in the
 /// chain is caught rather than only a link at the leaf.
 fn path_escapes_namespace(root: &DataRoot, path: &Path) -> bool {
-    let client = root.client_dir();
-    let anchor = std::fs::canonicalize(&client).unwrap_or(client);
-    // The file itself may not exist yet; its parent must.
-    let parent = match path.parent() {
-        Some(parent) => std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf()),
-        None => return true,
-    };
-    if !parent.starts_with(&anchor) {
+    // Every component from the data root down to the leaf must be a real
+    // directory. Canonicalising the client directory would defeat this: if
+    // `client/desktop` is itself a link, its target becomes the trusted
+    // anchor and everything below it then looks contained.
+    let mut current = root.shared().to_path_buf();
+    let Ok(relative) = path.strip_prefix(&current) else {
         return true;
+    };
+    for component in relative.components() {
+        use std::path::Component;
+        match component {
+            Component::Normal(name) => current.push(name),
+            // `..`, a root, or a prefix in a path this crate built itself
+            // means something is very wrong.
+            _ => return true,
+        }
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return true,
+            // Not created yet is fine; anything beyond this point does not
+            // exist either, so there is nothing left to escape through.
+            Err(_) => return false,
+            Ok(_) => {}
+        }
     }
-    // An existing leaf must not be a link out of the namespace either.
-    matches!(
-        std::fs::symlink_metadata(path),
-        Ok(metadata) if metadata.file_type().is_symlink()
-    )
+    false
 }
 
 pub struct ObservationStore {
@@ -120,6 +133,41 @@ impl ObservationStore {
         )?;
         connection.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Self { connection })
+    }
+
+    /// Open an existing store without initialising anything.
+    ///
+    /// `open` is a writer: it switches journal mode, runs DDL, stamps
+    /// `user_version`, and rebuilds a store whose version it does not know.
+    /// None of that may happen on a read — MCP `quota.get`, the first tray
+    /// paint and the inspect diagnostic all read — and a rebuild on a
+    /// downgrade would erase history a newer build wrote. Returns `None` when
+    /// the file is absent or its schema is not this one.
+    pub fn open_read_only(root: &DataRoot) -> Option<Self> {
+        let path = root.client_dir().join("observations.sqlite3");
+        if !path.is_file() || path_escapes_namespace(root, &path) {
+            return None;
+        }
+        // `immutable=1` also keeps SQLite from creating the -shm sidecar of a
+        // WAL database, so a read leaves no trace at all.
+        let uri = format!(
+            "file:{}?mode=ro&immutable=1",
+            path.to_string_lossy().replace('?', "%3f")
+        );
+        let connection = Connection::open_with_flags(
+            &uri,
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | OpenFlags::SQLITE_OPEN_URI,
+        )
+        .ok()?;
+        let version: i64 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .ok()?;
+        if version != SCHEMA_VERSION {
+            return None;
+        }
+        Some(Self { connection })
     }
 
     /// Record one observation. Re-recording the same instant is a no-op, so a
@@ -220,7 +268,7 @@ impl ObservationStore {
             return 0;
         };
         let cutoff = now - RETENTION_SECONDS;
-        let Ok(rows) = statement.query_map([cutoff, now + CLOCK_SKEW_SECONDS], |row| {
+        let Ok(rows) = statement.query_map([cutoff, now + SEED_UPPER_BOUND_SLACK], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -368,6 +416,68 @@ mod tests {
         let got = store.observations("a", "five_hour", 0.0).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].used_percent, 10.0);
+    }
+
+    #[test]
+    fn a_symlinked_client_directory_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+
+        // The escape the first guard missed: canonicalising the client
+        // directory would have made this external target the trusted anchor,
+        // and everything below it would then look contained.
+        let outside = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir_all(root.shared().join("client")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.client_dir()).unwrap();
+
+        assert!(ObservationStore::open(&root).is_err());
+        assert!(ObservationStore::open_read_only(&root).is_none());
+        assert!(!outside.join("observations.sqlite3").exists());
+    }
+
+    #[test]
+    fn a_read_only_open_initialises_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        std::fs::create_dir_all(root.client_dir()).unwrap();
+
+        // Absent means absent: a read must not bring the store into being.
+        assert!(ObservationStore::open_read_only(&root).is_none());
+        assert!(!root.client_dir().join("observations.sqlite3").exists());
+
+        let store = ObservationStore::open(&root).unwrap();
+        store
+            .record(
+                "a",
+                "b",
+                StoredObservation {
+                    sampled_at: 100.0,
+                    used_percent: 5.0,
+                    reset_at: None,
+                    raw_window_seconds: None,
+                },
+            )
+            .unwrap();
+        drop(store);
+
+        let reader = ObservationStore::open_read_only(&root).expect("existing store");
+        assert_eq!(reader.count().unwrap(), 1);
+        // A read-only handle cannot write, so a downgrade cannot rebuild the
+        // store and erase what a newer build recorded.
+        assert!(reader
+            .record(
+                "a",
+                "c",
+                StoredObservation {
+                    sampled_at: 200.0,
+                    used_percent: 6.0,
+                    reset_at: None,
+                    raw_window_seconds: None,
+                }
+            )
+            .is_err());
     }
 
     #[test]

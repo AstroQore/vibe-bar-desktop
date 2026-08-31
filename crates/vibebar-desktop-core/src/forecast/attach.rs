@@ -88,13 +88,11 @@ pub fn attach_cached_forecasts_at(root: &DataRoot, accounts: &mut [AccountQuota]
     if root.is_demo() {
         return;
     }
-    // Opening the store creates it, so a read only forecasts when a store is
-    // already there. A client that has never refreshed shows no forecast,
-    // which is honest: it has observed nothing.
-    if !root.client_dir().join("observations.sqlite3").is_file() {
-        return;
-    }
-    let Ok(store) = ObservationStore::open(root) else {
+    // A genuinely read-only handle: no journal switch, no DDL, no
+    // user_version write, and no rebuild of a schema this build does not
+    // know — a downgrade must not erase what a newer build recorded. Absent
+    // or unreadable means no forecast, which is honest: nothing was observed.
+    let Some(store) = ObservationStore::open_read_only(root) else {
         return;
     };
     for account in accounts.iter_mut() {
@@ -129,16 +127,23 @@ pub fn seed_from_native_once(root: &DataRoot, now: f64) -> usize {
     if root.is_demo() {
         return 0;
     }
+    // Nothing to seed from means nothing to create. Checking first keeps a
+    // read-only diagnostic on a machine that has never refreshed from
+    // creating a store merely by looking.
+    if !root.fill_timeline_file().is_file() {
+        return 0;
+    }
+    // Only worth seeding when this client has little of its own. An existing
+    // store is asked read-only, so the count cannot itself create one.
+    if let Some(existing) = ObservationStore::open_read_only(root) {
+        if existing.count().unwrap_or(i64::MAX) >= 100 {
+            return 0;
+        }
+    }
     let Ok(store) = ObservationStore::open(root) else {
         return 0;
     };
-    // Only worth seeding when this client has little of its own. Past that,
-    // Desktop's own record is the better one: it is current, and it is the
-    // only one that keeps growing on a machine without the native app.
-    match store.count() {
-        Ok(count) if count < 100 => store.seed_from_native(&root.fill_timeline_file(), now),
-        _ => 0,
-    }
+    store.seed_from_native(&root.fill_timeline_file(), now)
 }
 
 /// Observations held for one bucket, for diagnostics and the history chart.
