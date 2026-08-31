@@ -37,7 +37,8 @@ pub enum CoreError {
     Session(#[from] agent_session_core::SessionCoreError),
     /// A write was attempted outside the Desktop client namespace. This is a
     /// programming error, not a runtime condition: the shared data root is
-    /// read-only for this client.
+    /// read-only for this client. `settings.json` is the one shared file this
+    /// client writes, and it does not go through `ClientStore`.
     #[error("refusing to write outside the Desktop client namespace: {0}")]
     WriteOutsideClientNamespace(String),
     /// The UI did not present a transcript capability issued for a current

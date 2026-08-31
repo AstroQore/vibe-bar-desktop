@@ -9,7 +9,12 @@ where it is, and what has to be built before it moves.
 
 ## The rule today
 
-**Desktop reads the shared root and writes only `<root>/client/desktop/`.**
+**Desktop reads the shared root, and writes `<root>/client/desktop/` plus one
+shared file: `settings.json`.**
+
+That one exception is under its own contract — see *Settings writes* below and
+`docs/contracts/settings-write-v1.md`. Everything in this section is about
+every other shared store, all of which remain read-only.
 
 The boundary is enforced in code, not by convention:
 `ClientStore::write_json` refuses any path outside the client namespace
@@ -33,7 +38,7 @@ cannot redirect the final write.
 | everything else in the root | untouched, including files Desktop does not recognize |
 | `client/desktop/` | read and write |
 
-## Why Desktop does not write shared state yet
+## Why Desktop does not write the other shared stores
 
 Not caution for its own sake — the shared stores currently have properties
 that make a second writer unsafe:
