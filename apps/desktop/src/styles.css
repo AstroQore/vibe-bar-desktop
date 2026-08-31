@@ -1006,3 +1006,19 @@ input[type="text"] {
   border: 1px solid var(--hairline);
   color: var(--text);
 }
+
+/* The model group a bucket belongs to, named once above the first bucket in
+   it — "GPT-5.3 Codex Spark" over the Spark windows. Quieter than the
+   SubProvider heading above it, because it divides within a provider rather
+   than between two. */
+.bucket-group {
+  margin: 12px 0 -2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.bucket:first-of-type .bucket-group {
+  margin-top: 4px;
+}

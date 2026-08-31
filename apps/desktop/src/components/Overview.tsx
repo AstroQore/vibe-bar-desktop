@@ -144,22 +144,35 @@ function QuotaCard({
               {group.subProvider}
             </p>
           ) : null,
-          ...group.buckets.map((bucket) => {
+          ...group.buckets.map((bucket, index) => {
+          // The model group this bucket belongs to, named once above the
+          // first bucket in it. The provider's own wording rather than the
+          // short label the mini window uses: there is room for it here, and
+          // "Claude and GPT Models" says more than "Claude + GPT".
+          const groupTitle = bucket.groupTitle?.trim();
+          const previousTitle = group.buckets[index - 1]?.groupTitle?.trim();
+          const inNamedGroup = namesItsOwnGroup(groupTitle, group.subProvider);
+          const opensGroup = inNamedGroup && groupTitle !== previousTitle;
           const remaining = Math.max(0, 100 - bucket.usedPercent);
           const shown = showsUsed ? bucket.usedPercent : remaining;
           const countdown = formatCountdown(bucket.resetAt);
           return (
             <div className="bucket" key={bucket.id}>
+              {opensGroup && <p className="bucket-group">{groupTitle}</p>}
               <div className="bucket-head">
                 <span className="bucket-label">
-                  {bucketLabelFor(
-                    account.tool,
-                    bucket.id,
-                    bucket.title,
-                    bucket.shortLabel,
-                    bucket.groupTitle,
-                    " · ",
-                  )}
+                  {/* Under a heading that already names the group, the row
+                      names only its window: "Weekly", not "Spark Weekly". */}
+                  {inNamedGroup
+                    ? bucket.title
+                    : bucketLabelFor(
+                        account.tool,
+                        bucket.id,
+                        bucket.title,
+                        bucket.shortLabel,
+                        bucket.groupTitle,
+                        " · ",
+                      )}
                 </span>
                 {countdown ? (
                   <span className="bucket-reset">{countdown}</span>
@@ -230,6 +243,25 @@ function QuotaCard({
         ])
       )}
     </article>
+  );
+}
+
+/**
+ * Does this bucket belong to a model group worth naming?
+ *
+ * A group that only repeats its SubProvider is not a heading — it is the same
+ * name a third time, above a row that would then repeat it a fourth. Cursor's
+ * Grok Bot bucket is the case: its group title, its SubProvider and its short
+ * label are all "Grok Bot".
+ */
+export function namesItsOwnGroup(
+  groupTitle: string | undefined,
+  subProvider: string,
+): boolean {
+  const title = groupTitle?.trim();
+  return (
+    title !== undefined && title !== "" &&
+    title.toLowerCase() !== subProvider.toLowerCase()
   );
 }
 
