@@ -285,37 +285,6 @@ export const api = {
 
 /** L1 company → L2 SubProvider naming, mirrored from the core crate so the
  *  UI groups providers exactly the way the native app does. */
-const HIERARCHY: Record<string, { vendor: string; product: string }> = {
-  codex: { vendor: "OpenAI", product: "ChatGPT Agentic" },
-  claude: { vendor: "Anthropic", product: "Claude" },
-  gemini: { vendor: "Google AI", product: "Gemini Web" },
-  antigravity: { vendor: "Google AI", product: "AntiGravity" },
-  grok: { vendor: "SpaceXAI", product: "Grok" },
-  cursor: { vendor: "SpaceXAI", product: "Cursor" },
-  copilot: { vendor: "GitHub", product: "Copilot" },
-  alibaba: { vendor: "Alibaba", product: "Bailian" },
-  alibabaTokenPlan: { vendor: "Alibaba", product: "Bailian" },
-  zai: { vendor: "Zhipu", product: "GLM" },
-  minimax: { vendor: "MiniMax", product: "MiniMax" },
-  kimi: { vendor: "Moonshot", product: "Kimi" },
-  mimo: { vendor: "Xiaomi", product: "MiMo" },
-  iflytek: { vendor: "iFlytek", product: "Spark" },
-  tencentHunyuan: { vendor: "Tencent", product: "Hunyuan" },
-  tencentTokenPlan: { vendor: "Tencent", product: "Hunyuan" },
-  volcengine: { vendor: "ByteDance", product: "Doubao" },
-  volcengineAgentPlan: { vendor: "ByteDance", product: "Doubao" },
-  baiduQianfan: { vendor: "Baidu", product: "Qianfan" },
-  openCodeGo: { vendor: "OpenCode", product: "OpenCode Go" },
-  kilo: { vendor: "Kilo", product: "Kilo" },
-  kiro: { vendor: "Kiro", product: "Kiro" },
-  ollama: { vendor: "Ollama", product: "Ollama" },
-  openRouter: { vendor: "OpenRouter", product: "OpenRouter" },
-  warp: { vendor: "Warp", product: "Warp" },
-};
-
-export function hierarchyFor(tool: string) {
-  return HIERARCHY[tool] ?? { vendor: tool, product: tool };
-}
 
 /**
  * The quota bar's fill colour, from the shared token contract.

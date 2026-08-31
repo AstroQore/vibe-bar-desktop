@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
-    "tokens": "node ../../scripts/generate-tokens.mjs"
+    "tokens": "node ../../scripts/generate-tokens.mjs",
+    "naming": "node ../../scripts/generate-naming.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

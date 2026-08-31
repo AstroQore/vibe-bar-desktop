@@ -811,3 +811,14 @@ input[type="text"] {
   font-size: 8.5px;
   color: var(--text-faint);
 }
+/* An L2 heading inside a card, drawn only when the card holds buckets from
+   more than one SubProvider — a Cursor account reporting Grok Bot alongside
+   its own models. One name for the whole card would file one of them wrongly. */
+.sub-provider {
+  margin: 10px 0 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
