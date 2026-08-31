@@ -1,4 +1,10 @@
-import type { AccountQuota, PresentationSettings, QuotaBucket, QuotaView } from "../api";
+import type {
+  AccountQuota,
+  PresentationSettings,
+  QuotaBucket,
+  QuotaForecast,
+  QuotaView,
+} from "../api";
 import { bucketLabelFor, companyFor, subProviderFor } from "../naming";
 import { ProviderIcon } from "./ProviderIcon";
 import { ResetHistory } from "./ResetHistory";
@@ -8,9 +14,11 @@ import {
   forecastHeadline,
   forecastSeverity,
   formatCountdown,
+  forecastMarks,
   formatRelative,
   quotaBarColor,
 } from "../api";
+import { FORECAST_VERDICT } from "../tokens";
 
 /** Quota grouped the way Vibe Bar names things: L1 company → L2 SubProvider
  *  → L3 buckets. Never mix this with the harness (usage) axis. */
@@ -94,7 +102,7 @@ function QuotaCard({
     else groups.push({ subProvider, buckets: [bucket] });
   }
   const product = groups[0]?.subProvider ?? subProviderFor(account.tool);
-  const plan = settings?.providerPlanLabels[account.tool] ?? account.plan;
+  const plan = settings?.providerPlanLabels?.[account.tool] ?? account.plan;
   const showsUsed = settings?.displayMode === "used";
 
   return (
@@ -197,16 +205,9 @@ function QuotaCard({
                   }}
                 />
                 {bucket.forecast ? (
-                  <span
-                    className="projection"
-                    style={{
-                      left: `${Math.min(100, Math.max(0, showsUsed
-                        ? bucket.forecast.projectedUsedPercent
-                        : 100 - bucket.forecast.projectedUsedPercent))}%`,
-                    }}
-                    title={`Projected ${Math.round(
-                      bucket.forecast.projectedUsedPercent,
-                    )}% used at reset`}
+                  <ForecastOverlay
+                    forecast={bucket.forecast}
+                    showsUsed={showsUsed}
                   />
                 ) : null}
               </div>
@@ -243,6 +244,54 @@ function QuotaCard({
         ])
       )}
     </article>
+  );
+}
+
+/**
+ * What a forecast adds to the bar: where the window would be if it were spent
+ * evenly, where it is projected to land, and how sure that is.
+ *
+ * Three marks with three jobs, and one shared transform so they cannot
+ * disagree about which way the bar runs. The interval stays inside the bar's
+ * own height — a forecast is an annotation on the quota, not a second bar —
+ * and the median sits inside its interval.
+ */
+function ForecastOverlay({
+  forecast,
+  showsUsed,
+}: {
+  forecast: QuotaForecast;
+  showsUsed: boolean;
+}) {
+  const marks = forecastMarks(forecast, showsUsed);
+  const verdict = FORECAST_VERDICT[forecast.verdict];
+  const width = Math.max(0, marks.high - marks.low);
+  return (
+    <>
+      {width > 0 && (
+        <span
+          className="forecast-band"
+          style={{
+            left: `${marks.low}%`,
+            width: `${width}%`,
+            background: verdict ?? "currentColor",
+          }}
+          title={`Between ${Math.round(marks.low)}% and ${Math.round(marks.high)}% at reset`}
+        />
+      )}
+      {/* The wall clock: where an evenly spent window would be by now. Neutral
+          and inset, because it is a reference rather than a prediction. */}
+      <span
+        className="pace-tick"
+        style={{ left: `${marks.pace}%` }}
+        title={`Time-only pace ${Math.round(marks.pace)}%`}
+      />
+      <span
+        className="forecast-tick"
+        style={{ left: `${marks.median}%`, background: verdict ?? undefined }}
+        title={`Forecast ${Math.round(marks.median)}% at reset`}
+      />
+    </>
   );
 }
 

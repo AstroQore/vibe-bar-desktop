@@ -69,7 +69,7 @@ export function collectResetEvents(
           bucket.groupTitle,
           " · ",
         ),
-        plan: settings?.providerPlanLabels[account.tool] ?? account.plan,
+        plan: settings?.providerPlanLabels?.[account.tool] ?? account.plan,
         resetAt: bucket.resetAt,
         forecast: bucket.forecast,
         used,
