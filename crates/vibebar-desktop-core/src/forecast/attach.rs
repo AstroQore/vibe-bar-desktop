@@ -94,7 +94,7 @@ fn forecast_account(store: &ObservationStore, account: &mut AccountQuota, now: f
             continue;
         };
         let Ok(history) =
-            store.dated_observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS)
+            store.dated_observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS, now)
         else {
             continue;
         };
@@ -128,11 +128,29 @@ pub fn cycles_for(
     bucket_id: &str,
     lookback_seconds: f64,
 ) -> (Vec<CycleSummary>, Option<CycleSummary>) {
-    let since = crate::providers::now_unix() - lookback_seconds;
+    cycles_for_at(
+        root,
+        account_id,
+        bucket_id,
+        lookback_seconds,
+        crate::providers::now_unix(),
+    )
+}
+
+/// `cycles_for` with an explicit clock, so a test can replay a synthetic
+/// history without waiting for one.
+pub fn cycles_for_at(
+    root: &DataRoot,
+    account_id: &str,
+    bucket_id: &str,
+    lookback_seconds: f64,
+    now: f64,
+) -> (Vec<CycleSummary>, Option<CycleSummary>) {
     let Some(store) = ObservationStore::open_read_only(root) else {
         return (Vec::new(), None);
     };
-    let Ok(history) = store.dated_observations(account_id, bucket_id, since) else {
+    let Ok(history) = store.dated_observations(account_id, bucket_id, now - lookback_seconds, now)
+    else {
         return (Vec::new(), None);
     };
     cycles::summarize(&history)
@@ -333,6 +351,56 @@ mod tests {
         let current = current.expect("the window still open");
         assert_eq!(current.peak_used_percent, 9.0);
         assert_eq!(current.observation_count, 2);
+    }
+
+    /// An observation left behind by a clock that was ahead must not be
+    /// replayed as the newest state. `record` refuses one from the future, but
+    /// a correction after the fact leaves it stored, and cycle inference takes
+    /// whatever comes last as current — an open cycle at a percentage nobody
+    /// has reached, or a cycle closed on a reset that has not happened.
+    #[test]
+    fn an_observation_from_the_future_is_not_replayed_as_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let now = 1_000_000.0;
+        let reset = now + 9_000.0;
+        for (offset, used) in [(-1_200.0, 4.0), (-600.0, 6.0)] {
+            let at = now + offset;
+            attach_forecasts(&root, &mut [account(at, used, Some(reset))], at);
+        }
+        // Stored while the clock was an hour ahead.
+        let store = ObservationStore::open(&root).unwrap();
+        store
+            .record(
+                "acct",
+                "five_hour",
+                StoredObservation {
+                    sampled_at: now + 3_600.0,
+                    used_percent: 99.0,
+                    reset_at: Some(reset + 3_600.0),
+                    raw_window_seconds: Some(18_000),
+                },
+            )
+            .expect("a skewed row can exist however it got there");
+        assert_eq!(
+            store
+                .dated_observations("acct", "five_hour", 0.0, now + 86_400.0)
+                .unwrap()
+                .len(),
+            3,
+            "the skewed row has to actually be stored for this to test anything"
+        );
+        // The reader opens with `immutable=1`, which ignores the WAL entirely,
+        // so a live writer's row is invisible to it and this would pass without
+        // testing anything at all.
+        drop(store);
+
+        let (_, current) = cycles_for_at(&root, "acct", "five_hour", 45.0 * 86_400.0, now);
+        let current = current.expect("an open cycle");
+        assert_eq!(
+            current.peak_used_percent, 6.0,
+            "the future-dated reading became the current state"
+        );
     }
 
     #[test]

@@ -242,6 +242,7 @@ pub fn as_forecast_input(cycles: &[CycleSummary]) -> Vec<CompletedCycle> {
         .map(|cycle| CompletedCycle {
             window_start: cycle.window_start.unwrap_or(cycle.first_seen_at),
             window_end: cycle.window_end,
+            raw_window_seconds: cycle.raw_window_seconds,
             peak_used_percent: cycle.peak_used_percent,
         })
         .collect()
@@ -559,7 +560,7 @@ mod real_data {
         let mut disagreed = Vec::new();
         for (account, bucket) in store.distinct_series().expect("series") {
             let points = store
-                .dated_observations(&account, &bucket, 0.0)
+                .dated_observations(&account, &bucket, 0.0, now)
                 .expect("observations");
             let (mine, open) = summarize(&points);
             let (Some(first), Some(last)) = (points.first(), points.last()) else {

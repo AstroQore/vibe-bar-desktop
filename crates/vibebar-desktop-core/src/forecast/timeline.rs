@@ -227,25 +227,36 @@ impl ObservationStore {
     /// Observations with the window each belonged to, for reconstructing
     /// cycles. Separate from `observations` because the forecast only needs
     /// the time and the percentage, and this carries more per row.
+    /// Bounded at both ends. `record` refuses an observation from the future,
+    /// but a clock that was ahead and has since been corrected leaves one
+    /// behind, and cycle inference replays whatever comes last as the newest
+    /// state — an open cycle at a percentage nobody reached, or a cycle closed
+    /// on a reset that has not happened. `observations` needs no such bound
+    /// because `compute` filters to the current window itself.
     pub fn dated_observations(
         &self,
         account_id: &str,
         bucket_id: &str,
         since: f64,
+        until: f64,
     ) -> Result<Vec<super::cycles::DatedObservation>, rusqlite::Error> {
         let mut statement = self.connection.prepare(
             "SELECT sampled_at, used_percent, reset_at, raw_window_seconds FROM observations
-              WHERE account_id = ?1 AND bucket_id = ?2 AND sampled_at >= ?3
+              WHERE account_id = ?1 AND bucket_id = ?2
+                AND sampled_at >= ?3 AND sampled_at <= ?4
               ORDER BY sampled_at",
         )?;
-        let rows = statement.query_map(rusqlite::params![account_id, bucket_id, since], |row| {
-            Ok(super::cycles::DatedObservation {
-                sampled_at: row.get(0)?,
-                used_percent: row.get(1)?,
-                reset_at: row.get(2).ok(),
-                raw_window_seconds: row.get(3).ok(),
-            })
-        })?;
+        let rows = statement.query_map(
+            rusqlite::params![account_id, bucket_id, since, until],
+            |row| {
+                Ok(super::cycles::DatedObservation {
+                    sampled_at: row.get(0)?,
+                    used_percent: row.get(1)?,
+                    reset_at: row.get(2).ok(),
+                    raw_window_seconds: row.get(3).ok(),
+                })
+            },
+        )?;
         rows.collect()
     }
 

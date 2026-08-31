@@ -48,10 +48,15 @@ pub struct Observation {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletedCycle {
-    /// Unix seconds.
+    /// Unix seconds. A best effort: a rolling window's stored start slides
+    /// forward with every poll, so the projection reconstructs it from
+    /// `raw_window_seconds` when that is known and only falls back to this.
     pub window_start: f64,
-    /// Unix seconds.
+    /// Unix seconds, the observed refill time.
     pub window_end: f64,
+    /// The window length the provider reported, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_window_seconds: Option<i64>,
     pub peak_used_percent: f64,
 }
 

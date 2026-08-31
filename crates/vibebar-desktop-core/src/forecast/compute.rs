@@ -298,19 +298,31 @@ fn historical_remaining_usage(
     cycles
         .iter()
         .filter_map(|cycle| {
-            if cycle.window_end <= cycle.window_start {
+            // The refill time is observed; the window's beginning is not. A
+            // rolling bucket's stored start slides forward with every poll and
+            // stops when the cycle closes, which can leave it a single polling
+            // interval before the end. Reconstructing it from the reported
+            // window length gives the span the cycle actually had, and agrees
+            // with the stored value whenever that value was trustworthy.
+            let start = cycle
+                .raw_window_seconds
+                .map_or(cycle.window_start, |seconds| {
+                    cycle.window_end - seconds as f64
+                });
+            if cycle.window_end <= start {
                 return None;
             }
-            let total = activity_weight(cycle.window_start, cycle.window_end).max(0.001);
+            let total = activity_weight(start, cycle.window_end).max(0.001);
+            // Half-open at the end: the observation that detected the refill is
+            // stamped exactly at the end and belongs to the cycle that follows.
+            // Including it put a post-refill reading at progress 1.0 inside the
+            // finished cycle, which is exactly where a nearly-finished current
+            // window looks — a 60% to 5% refill doubled that cycle's answer.
             let matching = observations
                 .iter()
-                .filter(|p| p.sampled_at >= cycle.window_start && p.sampled_at <= cycle.window_end)
+                .filter(|p| p.sampled_at >= start && p.sampled_at < cycle.window_end)
                 .map(|p| {
-                    let progress = clamp(
-                        activity_weight(cycle.window_start, p.sampled_at) / total,
-                        0.0,
-                        1.0,
-                    );
+                    let progress = clamp(activity_weight(start, p.sampled_at) / total, 0.0, 1.0);
                     ((progress - current_progress).abs(), p.used_percent)
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0));
@@ -323,4 +335,128 @@ fn historical_remaining_usage(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod cycle_span_tests {
+    use super::*;
+    use crate::forecast::model::{CompletedCycle, ForecastInput};
+
+    const WEEK: i64 = 7 * 86_400;
+
+    fn ramp(from: f64, to: f64, start: f64, end: f64, count: usize) -> Vec<Observation> {
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / (count - 1) as f64;
+                Observation {
+                    sampled_at: start + (end - start) * t,
+                    used_percent: from + (to - from) * t,
+                }
+            })
+            .collect()
+    }
+
+    /// A cycle whose stored start collapsed still contributes a measured
+    /// figure. The store moves `window_start` forward on every observation of
+    /// a rolling window and stops when the cycle closes, so a finished cycle
+    /// can claim a span of one polling interval — and the projection both
+    /// filters observations by that span and derives their progress from it.
+    #[test]
+    fn a_collapsed_stored_span_yields_the_same_history_as_an_honest_one() {
+        let week = WEEK as f64;
+        let now = 1_800_000_000.0;
+        let reset = now + week / 2.0;
+        let start = reset - week;
+        let end = start - week;
+
+        let current = ramp(0.0, 20.0, start, start + week * 11.0 / 24.0, 12);
+        let history = ramp(0.0, 80.0, end - week, end - week / 12.0, 12);
+        let observations: Vec<Observation> =
+            current.iter().chain(history.iter()).copied().collect();
+
+        let projection = |window_start: f64| {
+            compute(&ForecastInput {
+                used_percent: 20.0,
+                reset_at: reset,
+                raw_window_seconds: WEEK,
+                now,
+                observations: observations.clone(),
+                completed_cycles: vec![CompletedCycle {
+                    window_start,
+                    window_end: end,
+                    raw_window_seconds: Some(WEEK),
+                    peak_used_percent: 80.0,
+                }],
+            })
+            .expect("forecast")
+            .diagnostics
+            .historical_projection_used_percent
+            .expect("a comparable cycle")
+        };
+
+        let honest = projection(end - week);
+        let collapsed = projection(end - 900.0);
+        assert!(
+            (honest - collapsed).abs() < 1e-9,
+            "the reported window length decides the span, not a stale start: \
+             honest {honest}, collapsed {collapsed}"
+        );
+    }
+
+    /// The observation that detected a refill belongs to the cycle that
+    /// follows. It is stamped exactly at the end, which is where a
+    /// nearly-finished current window looks for its comparison, so an
+    /// end-inclusive filter let a 60% to 5% refill double the answer.
+    ///
+    /// Stated as an A/B: adding a sample from the next cycle must not change
+    /// what this one contributes.
+    #[test]
+    fn a_reading_from_the_next_cycle_does_not_change_this_one() {
+        let week = WEEK as f64;
+        let now = 1_800_000_000.0;
+        // Current window nearly over, so the closest comparable progress is
+        // exactly where the stray sample sits.
+        let reset = now + week / 40.0;
+        let start = reset - week;
+        let end = start - week;
+
+        let current = ramp(0.0, 55.0, start, start + week * 23.0 / 24.0, 24);
+        let history = ramp(0.0, 60.0, end - week, end - week / 12.0, 12);
+        let after_refill = Observation {
+            sampled_at: end,
+            used_percent: 5.0,
+        };
+
+        let projection = |observations: Vec<Observation>| {
+            compute(&ForecastInput {
+                used_percent: 55.0,
+                reset_at: reset,
+                raw_window_seconds: WEEK,
+                now,
+                observations,
+                completed_cycles: vec![CompletedCycle {
+                    window_start: end - week,
+                    window_end: end,
+                    raw_window_seconds: Some(WEEK),
+                    peak_used_percent: 60.0,
+                }],
+            })
+            .expect("forecast")
+            .diagnostics
+            .historical_projection_used_percent
+            .expect("a comparable cycle")
+        };
+
+        let base: Vec<Observation> = current.iter().chain(history.iter()).copied().collect();
+        let mut with_stray = base.clone();
+        with_stray.push(after_refill);
+
+        let without = projection(base);
+        let with = projection(with_stray);
+        assert!(
+            (with - without).abs() < 1e-9,
+            "a reading from the next cycle changed what the previous one \
+             contributed: {without} became {with}"
+        );
+    }
 }
