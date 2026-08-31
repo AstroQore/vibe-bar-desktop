@@ -17,6 +17,20 @@ use crate::paths::DataRoot;
 
 const MAX_SETTINGS_BYTES: u64 = 8 * 1024 * 1024;
 
+/// The shared mini-window preferences this client reads.
+///
+/// Only `displayMode` so far. The rest of the pane — per-window geometry,
+/// label overrides, the cycle order — belongs to windows this client does not
+/// have yet, and is kept in `unknown` rather than typed and ignored.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniWindowSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_mode: Option<String>,
+    #[serde(flatten)]
+    pub unknown: BTreeMap<String, serde_json::Value>,
+}
+
 /// The native app's Settings → Cost Data pane.
 ///
 /// One setting here is not a preference about presentation: privacy mode
@@ -58,6 +72,8 @@ pub struct SharedSettings {
     pub provider_plan_labels: Option<BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_data: Option<CostDataSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mini_window: Option<MiniWindowSettings>,
 
     /// Every key this build does not model, preserved byte-for-byte.
     #[serde(flatten)]
@@ -76,6 +92,8 @@ pub struct PresentationSettings {
     pub core_provider_order: Vec<String>,
     pub visible_misc_providers: Option<Vec<String>>,
     pub provider_plan_labels: BTreeMap<String, String>,
+    /// The mini-window layout, among the ones this client draws.
+    pub mini_display_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -123,6 +141,21 @@ impl SharedSettings {
     /// 10 minutes, matching the native default.
     /// Whether the user has asked, in either client, that local spend not be
     /// read. Absent settings mean off, which is the native default.
+    /// Which mini-window layout the shared settings ask for, among the ones
+    /// this client draws. A mode it has not ported yet falls back to
+    /// `regular`: showing the arrangement in a shape the user did not pick is
+    /// better than showing nothing, and the parity table says which exist.
+    pub fn mini_display_mode(&self) -> &'static str {
+        match self
+            .mini_window
+            .as_ref()
+            .and_then(|mini| mini.display_mode.as_deref())
+        {
+            Some("compact") => "compact",
+            _ => "regular",
+        }
+    }
+
     pub fn cost_privacy_mode(&self) -> bool {
         self.cost_data
             .as_ref()
@@ -199,6 +232,7 @@ impl SharedSettings {
             }),
             visible_misc_providers,
             provider_plan_labels: self.provider_plan_labels.clone().unwrap_or_default(),
+            mini_display_mode: self.mini_display_mode().to_string(),
         }
     }
 
@@ -300,6 +334,46 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(settings.refresh_interval().as_secs(), 60);
+    }
+
+    /// A layout this client has not ported falls back to the one it draws.
+    /// Silently: a mini window has no room to explain itself, and the parity
+    /// table is where "which layouts exist" belongs.
+    #[test]
+    fn an_unported_mini_layout_falls_back_to_the_one_that_exists() {
+        let with_mode = |mode: &str| {
+            serde_json::from_str::<SharedSettings>(&format!(
+                r#"{{"miniWindow":{{"displayMode":"{mode}"}}}}"#
+            ))
+            .expect("settings parse")
+            .mini_display_mode()
+        };
+
+        assert_eq!(with_mode("compact"), "compact");
+        assert_eq!(with_mode("regular"), "regular");
+        for unported in ["ledger", "strip", "tile", "focus", "rail", "somethingNewer"] {
+            assert_eq!(with_mode(unported), "regular", "{unported}");
+        }
+        assert_eq!(
+            serde_json::from_str::<SharedSettings>("{}")
+                .expect("empty settings parse")
+                .mini_display_mode(),
+            "regular",
+            "no mini settings at all"
+        );
+    }
+
+    /// The rest of the pane belongs to windows this client does not have, and
+    /// must survive a round trip rather than being typed and dropped.
+    #[test]
+    fn keeps_the_mini_settings_it_does_not_understand() {
+        let settings: SharedSettings = serde_json::from_str(
+            r#"{"miniWindow":{"displayMode":"compact","cycleModes":["tile"],"size":{"w":1}}}"#,
+        )
+        .expect("settings parse");
+        let mini = settings.mini_window.as_ref().expect("miniWindow");
+        assert!(mini.unknown.contains_key("cycleModes"));
+        assert!(mini.unknown.contains_key("size"));
     }
 
     #[test]

@@ -81,7 +81,11 @@ export function MiniQuota() {
           ×
         </button>
       </div>
-      <MiniQuotaBody companies={companies} loading={view === null} />
+      <MiniQuotaBody
+        companies={companies}
+        loading={view === null}
+        layout={settings?.miniDisplayMode}
+      />
     </main>
   );
 }
@@ -95,9 +99,14 @@ export function MiniQuota() {
 export function MiniQuotaBody({
   companies,
   loading = false,
+  layout = "regular",
 }: {
   companies: Company[];
   loading?: boolean;
+  /** "regular" draws ring gauges; "compact" the same arrangement as vertical
+   *  bars, sized for a corner. Native's other five fall back to regular in the
+   *  core, so only these two arrive here. */
+  layout?: string;
 }) {
   const dark = useDarkMode();
   return (
@@ -134,9 +143,13 @@ export function MiniQuotaBody({
                             {subProvider.groups.length > 1 ? group.label ?? " " : " "}
                           </div>
                           <div className="mini-cells">
-                            {group.cells.map((cell) => (
-                              <MiniCell key={cell.id} cell={cell} />
-                            ))}
+                            {group.cells.map((cell) =>
+                              layout === "compact" ? (
+                                <MiniCompactCell key={cell.id} cell={cell} />
+                              ) : (
+                                <MiniCell key={cell.id} cell={cell} />
+                              ),
+                            )}
                           </div>
                         </div>
                       ))}
@@ -149,6 +162,52 @@ export function MiniQuotaBody({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * The same three tiers as vertical bars, sized for a corner.
+ *
+ * Same arrangement as the rings — company → SubProvider → group is decided in
+ * `arrange`, not here — and the same facts per cell. What changes is the
+ * gauge: a bar fills from the bottom, which fits a narrow column where a ring
+ * needs a square. The forecast marker is a line across the bar rather than a
+ * notch on an arc, for the same reason.
+ */
+function MiniCompactCell({ cell }: { cell: Cell }) {
+  const { bucket, value, showsUsed } = cell;
+  const colour = quotaBarColor(value, showsUsed);
+  const forecast = bucket.forecast;
+  const verdictColour = forecast ? FORECAST_VERDICT[forecast.verdict] : undefined;
+  const planned = forecast ? plannedFor(forecast, showsUsed) : undefined;
+
+  return (
+    <div className="mini-compact-cell">
+      <div
+        className="mini-compact-bar"
+        role="img"
+        aria-label={`${cell.label} ${Math.round(value)}%`}
+      >
+        <div
+          className="mini-compact-fill"
+          style={{ height: `${Math.min(100, Math.max(0, value))}%`, background: colour }}
+        />
+        {/* Where the forecast expects to be at the reset. Drawn only when it
+            is on the bar: a marker pinned to the rim would read as a
+            prediction of exactly full, which is not what a projection past
+            100% means. */}
+        {planned !== undefined && planned > 0 && planned < 100 ? (
+          <div
+            className="mini-compact-mark"
+            style={{ bottom: `${planned}%`, background: verdictColour ?? colour }}
+          />
+        ) : null}
+      </div>
+      <div className="mini-compact-value" style={{ color: colour }}>
+        {Math.round(value)}%
+      </div>
+      <div className="mini-compact-label">{cell.label}</div>
+    </div>
   );
 }
 

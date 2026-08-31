@@ -1076,3 +1076,64 @@ input[type="text"] {
 .bucket:first-of-type .bucket-group {
   margin-top: 4px;
 }
+
+/* Compact: the same arrangement as the rings, drawn as vertical bars so a
+   column fits a corner of the screen. */
+.mini-compact-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  /* Wide enough for "5 Hours" and "Weekly" on one line: a wrapped label makes
+     neighbouring cells different heights, and the bars stop lining up. */
+  width: 44px;
+}
+.mini-compact-bar {
+  position: relative;
+  width: 14px;
+  height: 46px;
+  border-radius: 4px;
+  /* Not hidden: the forecast tick is meant to overhang the track. */
+  overflow: visible;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+.mini-compact-fill {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  border-radius: 4px;
+}
+.mini-compact-bar::after {
+  /* Rounds the track's own corners over the fill, since the bar no longer
+     clips its children. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
+  pointer-events: none;
+}
+.mini-compact-mark {
+  position: absolute;
+  /* Protrudes past the track on both sides: inside it, a 2px line in the same
+     colour family as the fill is invisible. The ring solves the same problem
+     with a halo behind the mark; a bar can just let the tick stick out. */
+  inset-inline: -3px;
+  height: 2px;
+  border-radius: 1px;
+}
+.mini-compact-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.mini-compact-label {
+  font-size: 9px;
+  line-height: 1.1;
+  color: var(--text-dim);
+  text-align: center;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
