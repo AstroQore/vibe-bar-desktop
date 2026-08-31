@@ -1,5 +1,11 @@
-import type { PresentationSettings, QuotaView } from "../api";
-import { hierarchyFor, severityFor } from "../api";
+import type { PresentationSettings, QuotaForecast, QuotaView } from "../api";
+import {
+  forecastDetail,
+  forecastHeadline,
+  forecastSeverity,
+  hierarchyFor,
+  severityFor,
+} from "../api";
 import { orderedVisibleAccounts } from "./Overview";
 
 const CLOCK_SKEW_SECONDS = 300;
@@ -15,6 +21,7 @@ interface ResetEvent {
   used: number;
   remaining: number;
   state: "upcoming" | "due" | "expired";
+  forecast?: QuotaForecast;
 }
 
 export function collectResetEvents(
@@ -57,6 +64,7 @@ export function collectResetEvents(
           : bucket.title,
         plan: settings?.providerPlanLabels[account.tool] ?? account.plan,
         resetAt: bucket.resetAt,
+        forecast: bucket.forecast,
         used,
         remaining: 100 - used,
         state: delta > 0 ? "upcoming" : delta >= -RESET_GRACE_SECONDS ? "due" : "expired",
@@ -103,9 +111,11 @@ export function Resets({
       <header className="resets-heading">
         <div>
           <h1>Upcoming resets</h1>
-          <p>Provider-declared next reset times from the current quota data.</p>
+          <p>
+            Provider-declared next reset times, with what each window is
+            projected to do before it gets there.
+          </p>
         </div>
-        <span className="pill">no forecast</span>
       </header>
 
       {events.futureDated > 0 ? (
@@ -151,6 +161,19 @@ export function Resets({
                             {Math.round(event.remaining)}% left → 100% · +
                             {Math.round(event.used)}% refill
                           </span>
+                          {event.forecast ? (
+                            <span
+                              className={`verdict-line ${forecastSeverity(
+                                event.forecast.verdict,
+                              )}`}
+                            >
+                              {forecastHeadline(event.forecast)}
+                              {(() => {
+                                const detail = forecastDetail(event.forecast, now);
+                                return detail ? ` · ${detail}` : "";
+                              })()}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="reset-when">
                           <strong>{relativeReset(event, now)}</strong>

@@ -220,6 +220,11 @@ pub struct QuotaBucket {
     pub raw_window_seconds: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub group_title: Option<String>,
+    /// Attached after a refresh when there is enough history to support one.
+    /// Absent means "not enough evidence", which the UI must show as such
+    /// rather than as a confident verdict.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub forecast: Option<crate::forecast::QuotaPaceForecast>,
 }
 
 impl QuotaBucket {
@@ -246,6 +251,7 @@ impl QuotaBucket {
             reset_at,
             raw_window_seconds,
             group_title,
+            forecast: None,
         }
     }
 

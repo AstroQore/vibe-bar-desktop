@@ -21,10 +21,12 @@
 //! This port implements that path. The vectors pin it, so adding the heatmap
 //! later is a visible change to both lanes rather than a silent divergence.
 
+mod attach;
 mod compute;
 mod model;
 mod timeline;
 
+pub use attach::{attach_forecasts, observations_for, seed_from_native_once};
 pub use compute::compute;
 pub use model::{Confidence, Diagnostics, ForecastInput, Observation, QuotaPaceForecast, Verdict};
 pub use timeline::{ObservationStore, StoredObservation};

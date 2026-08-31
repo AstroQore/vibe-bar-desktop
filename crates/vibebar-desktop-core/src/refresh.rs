@@ -70,7 +70,7 @@ impl QuotaEngine {
         let own = self.store.load_quotas();
         let (shared, has_shared_data) = self.load_shared(&own);
         let accounts = merge(own, shared);
-        Self::view(accounts, has_shared_data, self.data_root().is_demo())
+        self.view(accounts, has_shared_data, self.data_root().is_demo())
     }
 
     /// Read the shared cache, naming as many accounts as we can.
@@ -157,16 +157,16 @@ impl QuotaEngine {
                 accounts.push(failure);
             }
         }
-        Self::view(accounts, has_shared_data, self.data_root().is_demo())
+        self.view(accounts, has_shared_data, self.data_root().is_demo())
     }
 
-    fn view(accounts: Vec<AccountQuota>, has_shared_data: bool, is_demo: bool) -> QuotaView {
-        Self::view_at(
-            accounts,
-            has_shared_data,
-            is_demo,
-            crate::providers::now_unix(),
-        )
+    fn view(&self, accounts: Vec<AccountQuota>, has_shared_data: bool, is_demo: bool) -> QuotaView {
+        let now = crate::providers::now_unix();
+        let mut view = Self::view_at(accounts, has_shared_data, is_demo, now);
+        // Records this refresh and answers the question the bars cannot:
+        // whether the quota lasts. Never allowed to fail a refresh.
+        crate::forecast::attach_forecasts(self.data_root(), &mut view.accounts, now);
+        view
     }
 
     fn view_at(
@@ -553,7 +553,7 @@ mod tests {
             quota("c", ToolType::Claude, 30.0, QuotaOrigin::Live),
             quota("x", ToolType::Codex, 20.0, QuotaOrigin::Live),
         ];
-        let view = QuotaEngine::view(accounts, true, false);
+        let view = QuotaEngine::view_at(accounts, true, false, crate::providers::now_unix());
         let order: Vec<&str> = view.accounts.iter().map(|a| a.tool.raw_value()).collect();
         assert_eq!(order, vec!["codex", "claude", "kimi"]);
         assert_eq!(view.last_updated, Some(30.0));
@@ -570,7 +570,7 @@ mod tests {
             origin: QuotaOrigin::Live,
             error: Some(crate::error::QuotaError::NoCredential),
         }];
-        let view = QuotaEngine::view(accounts, false, false);
+        let view = QuotaEngine::view_at(accounts, false, false, crate::providers::now_unix());
         assert_eq!(view.last_updated, None);
     }
 

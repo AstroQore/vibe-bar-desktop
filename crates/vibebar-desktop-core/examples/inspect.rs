@@ -65,6 +65,40 @@ fn main() {
         );
     }
 
+    // What the quota bars cannot say on their own.
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let adopted = vibebar_desktop_core::forecast::seed_from_native_once(&root, now);
+        let mut view = vibebar_desktop_core::shared::quota_cache::load_all(
+            &root,
+            &vibebar_desktop_core::shared::settings::SharedSettings::load(&root)
+                .candidate_account_ids(),
+        );
+        vibebar_desktop_core::forecast::attach_forecasts(&root, &mut view, now);
+        let forecast_count = view
+            .iter()
+            .flat_map(|a| a.buckets.iter())
+            .filter(|b| b.forecast.is_some())
+            .count();
+        println!("\nforecast: {forecast_count} buckets, {adopted} observations adopted");
+        for account in view.iter() {
+            for bucket in account.buckets.iter().filter(|b| b.forecast.is_some()) {
+                let f = bucket.forecast.as_ref().expect("checked");
+                println!(
+                    "  {}/{}: {:?} ({:?}) projected {:.0}% at reset",
+                    account.tool.raw_value(),
+                    bucket.id,
+                    f.verdict,
+                    f.confidence,
+                    f.projected_used_percent
+                );
+            }
+        }
+    }
+
     let status = service_status::load(&root);
     let degraded: Vec<&str> = status
         .iter()
