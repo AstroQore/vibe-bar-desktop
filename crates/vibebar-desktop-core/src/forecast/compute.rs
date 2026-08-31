@@ -310,14 +310,27 @@ fn historical_remaining_usage(
                 return None;
             }
             let total = activity_weight(start, cycle.window_end).max(0.001);
-            // Half-open at the end: the observation that detected the refill is
-            // stamped exactly at the end and belongs to the cycle that follows.
-            // Including it put a post-refill reading at progress 1.0 inside the
-            // finished cycle, which is exactly where a nearly-finished current
-            // window looks — a 60% to 5% refill doubled that cycle's answer.
+            // Bounded by the last observation this cycle absorbed, not by its
+            // end. The reading that detected the refill belongs to the cycle it
+            // opened, and it is stamped a shade *before* the recorded end — the
+            // timeline and the history are written by separate calls, each
+            // taking its own clock reading — so no bound on time separates
+            // them. Without this a 60% to 5% refill doubled the answer, because
+            // a nearly-finished window looks for its comparison at exactly the
+            // progress that stray reading occupies.
             let matching = observations
                 .iter()
-                .filter(|p| p.sampled_at >= start && p.sampled_at < cycle.window_end)
+                .filter(|p| {
+                    p.sampled_at >= start
+                        && match cycle.last_seen_at {
+                            Some(last) => p.sampled_at <= last,
+                            // An input from before this was published carries no
+                            // bound, so the end is the only one available — and
+                            // it has to stay exclusive, or the reading stamped
+                            // exactly there is admitted again.
+                            None => p.sampled_at < cycle.window_end,
+                        }
+                })
                 .map(|p| {
                     let progress = clamp(activity_weight(start, p.sampled_at) / total, 0.0, 1.0);
                     ((progress - current_progress).abs(), p.used_percent)
@@ -353,6 +366,55 @@ mod cycle_span_tests {
             .collect()
     }
 
+    /// An input serialized before `lastSeenAt` was published still has to
+    /// exclude a reading stamped exactly at the cycle's end. That is all a
+    /// timestamp can do, and dropping it in favour of an inclusive bound would
+    /// have re-admitted the very observation the earlier rule excluded.
+    #[test]
+    fn a_cycle_with_no_published_bound_still_excludes_its_own_end() {
+        let week = WEEK as f64;
+        let now = 1_800_000_000.0;
+        let reset = now + week / 40.0;
+        let start = reset - week;
+        let end = start - week;
+
+        let current = ramp(0.0, 55.0, start, start + week * 23.0 / 24.0, 24);
+        let history = ramp(0.0, 60.0, end - week, end - week / 12.0, 12);
+        let at_the_boundary = Observation {
+            sampled_at: end,
+            used_percent: 5.0,
+        };
+
+        let projection = |observations: Vec<Observation>| {
+            compute(&ForecastInput {
+                used_percent: 55.0,
+                reset_at: reset,
+                raw_window_seconds: WEEK,
+                now,
+                observations,
+                completed_cycles: vec![CompletedCycle {
+                    window_start: end - week,
+                    window_end: end,
+                    // As an older input arrives: no bound published.
+                    last_seen_at: None,
+                    peak_used_percent: 60.0,
+                }],
+            })
+            .expect("forecast")
+            .diagnostics
+            .historical_projection_used_percent
+            .expect("a comparable cycle")
+        };
+
+        let base: Vec<Observation> = current.iter().chain(history.iter()).copied().collect();
+        let mut with_stray = base.clone();
+        with_stray.push(at_the_boundary);
+        assert!(
+            (projection(with_stray) - projection(base)).abs() < 1e-9,
+            "a reading stamped at the cycle's end was counted against it"
+        );
+    }
+
     /// The observation that detected a refill belongs to the cycle that
     /// follows. It is stamped exactly at the end, which is where a
     /// nearly-finished current window looks for its comparison, so an
@@ -372,8 +434,11 @@ mod cycle_span_tests {
 
         let current = ramp(0.0, 55.0, start, start + week * 23.0 / 24.0, 24);
         let history = ramp(0.0, 60.0, end - week, end - week / 12.0, 12);
+        // Stamped a shade before the cycle's end, which is how it arrives in
+        // production: the timeline and the history are written by separate
+        // calls, each taking its own clock reading.
         let after_refill = Observation {
-            sampled_at: end,
+            sampled_at: end - 0.4,
             used_percent: 5.0,
         };
 
@@ -387,6 +452,7 @@ mod cycle_span_tests {
                 completed_cycles: vec![CompletedCycle {
                     window_start: end - week,
                     window_end: end,
+                    last_seen_at: Some(end - week / 12.0),
                     peak_used_percent: 60.0,
                 }],
             })
