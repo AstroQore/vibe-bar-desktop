@@ -38,7 +38,7 @@ pub fn attach_forecasts(root: &DataRoot, accounts: &mut [AccountQuota], now: f64
         // in the view, and the forecast simply has one sample less.
         for bucket in &account.buckets {
             let _ = store.record(
-                &account.account_id,
+                bucket.observation_account(&account.account_id),
                 &bucket.id,
                 StoredObservation {
                     sampled_at: account.queried_at,
@@ -93,9 +93,12 @@ fn forecast_account(store: &ObservationStore, account: &mut AccountQuota, now: f
         let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds) else {
             continue;
         };
-        let Ok(history) =
-            store.dated_observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS, now)
-        else {
+        let Ok(history) = store.dated_observations(
+            bucket.observation_account(&account.account_id),
+            &bucket.id,
+            now - LOOKBACK_SECONDS,
+            now,
+        ) else {
             continue;
         };
         let (completed, _) = cycles::summarize(&history);
@@ -400,6 +403,60 @@ mod tests {
         assert_eq!(
             current.peak_used_percent, 6.0,
             "the future-dated reading became the current state"
+        );
+    }
+
+    /// A bucket merged onto another route's card keeps its own history.
+    ///
+    /// One card can carry buckets from several credential routes, and the id it
+    /// is filed under is whichever route answered most recently — which changes
+    /// between refreshes. Keying observations on that scattered a bucket's
+    /// history across two names, and hid whatever had been seeded for it.
+    #[test]
+    fn a_merged_bucket_records_under_the_account_that_reported_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let reset = 1_020_000.0;
+
+        for (i, used) in [2.0, 4.0, 6.0].iter().enumerate() {
+            let now = 1_003_000.0 + i as f64 * 600.0;
+            let mut merged = account(now, *used, Some(reset));
+            // The card is filed under one route; this bucket came from another.
+            merged.account_id = "card-route".into();
+            merged.buckets[0].source_account_id = Some("reporting-route".into());
+            attach_forecasts(&root, &mut [merged], now);
+        }
+
+        let store = ObservationStore::open_read_only(&root).expect("store");
+        assert_eq!(
+            store
+                .observations("reporting-route", "five_hour", 0.0)
+                .unwrap()
+                .len(),
+            3,
+            "history belongs to the route that reported the bucket"
+        );
+        assert!(
+            store
+                .observations("card-route", "five_hour", 0.0)
+                .unwrap()
+                .is_empty(),
+            "nothing should be filed under the card's own id"
+        );
+
+        // And the same key is used when reading it back, whichever route the
+        // card happens to be filed under next time.
+        let mut later = account(1_004_800.0, 8.0, Some(reset));
+        later.account_id = "a-different-route".into();
+        later.buckets[0].source_account_id = Some("reporting-route".into());
+        attach_cached_forecasts_at(&root, std::slice::from_mut(&mut later), 1_004_800.0);
+        assert_eq!(
+            later.buckets[0]
+                .forecast
+                .as_ref()
+                .expect("forecast")
+                .current_observation_count,
+            3
         );
     }
 

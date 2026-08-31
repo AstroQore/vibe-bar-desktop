@@ -696,6 +696,7 @@ mod real_data {
         store.seed_from_native(&native, now);
 
         let mut classified = 0usize;
+        let mut accounts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for (account, bucket) in store.distinct_series().expect("series") {
             let points = store
                 .dated_observations(&account, &bucket, 0.0, now)
@@ -704,13 +705,12 @@ mod real_data {
             if completed.is_empty() {
                 continue;
             }
-            // Account slugs are local labels, but Codex's is the provider's own
-            // identifier, so anything that looks like one is not printed.
-            let label = if account.len() == 36 && account.matches('-').count() == 4 {
-                "provider-account"
-            } else {
-                account.as_str()
-            };
+            // No account identifier reaches the output. Shape is not a privacy
+            // boundary — a provider may issue an account string in any form,
+            // and one of these is the provider's own id — so every account gets
+            // a number instead, which is all a reader needs to tell two apart.
+            let next = accounts.len() + 1;
+            let label = *accounts.entry(account.clone()).or_insert(next);
             let count = |kind: ResetKind| completed.iter().filter(|c| c.reset_kind == kind).count();
             let window = points
                 .iter()
@@ -726,7 +726,8 @@ mod real_data {
                 sorted[sorted.len() / 2]
             };
             eprintln!(
-                "{label}/{bucket}: window {:.0}h, span {:.0}d, median gap {:.0}h — on schedule {}, \
+                "account {label}/{bucket}: window {:.0}h, span {:.0}d, median gap {:.0}h — \
+                 on schedule {}, \
                  early+restarted {}, early+unchanged {}, unclear {}",
                 window / 3600.0,
                 (points.last().unwrap().sampled_at - points.first().unwrap().sampled_at) / 86_400.0,

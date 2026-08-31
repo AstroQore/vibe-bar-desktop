@@ -250,9 +250,13 @@ fn consolidate(accounts: Vec<AccountQuota>, now: f64) -> Vec<AccountQuota> {
             for bucket in &account.buckets {
                 let entry = newest.get(&bucket.id);
                 if entry.is_none_or(|(at, _, _)| account.queried_at > *at) {
+                    let mut bucket = bucket.clone();
+                    // Remember who reported it: the card's id is whichever
+                    // route answered last, and that changes between refreshes.
+                    bucket.source_account_id = Some(account.account_id.clone());
                     newest.insert(
                         bucket.id.clone(),
-                        (account.queried_at, account.origin, bucket.clone()),
+                        (account.queried_at, account.origin, bucket),
                     );
                 }
             }
