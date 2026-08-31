@@ -1,4 +1,4 @@
-import type { CostTotals, CostView, ModelCost } from "../api";
+import type { CostTotals, CostView, ModelCost, ProviderCost } from "../api";
 import { formatRelative } from "../api";
 
 export function CostOverview({ cost }: { cost: CostView | null }) {
@@ -35,6 +35,9 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
   const models = [...cost.models]
     .sort((left, right) => right.pricedCostMicros - left.pricedCostMicros || right.tokens - left.tokens)
     .slice(0, 3);
+  // Already ordered by spend in the core; sliced here for the same reason the
+  // model list is.
+  const providers = cost.providers.slice(0, 4);
   return (
     <section className="cost-overview">
       <div className="cost-head">
@@ -52,6 +55,18 @@ export function CostOverview({ cost }: { cost: CostView | null }) {
           <ul className="cost-models">
             {models.map((model) => (
               <ModelRow key={`${model.harness}:${model.model}`} model={model} />
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {providers.length ? (
+        <>
+          {/* Its own list, never merged with the harness rows above: a harness
+              is where a request ran, a company is who charges for it. */}
+          <p className="cost-note">By billing company · all time</p>
+          <ul className="cost-models">
+            {providers.map((provider) => (
+              <ProviderRow key={provider.company} provider={provider} />
             ))}
           </ul>
         </>
@@ -84,6 +99,15 @@ function ModelRow({ model }: { model: ModelCost }) {
     <li>
       <span>{model.harness} · {model.model || "Unknown model"}</span>
       <span>{formatCost(model.pricedCostMicros)}</span>
+    </li>
+  );
+}
+
+function ProviderRow({ provider }: { provider: ProviderCost }) {
+  return (
+    <li>
+      <span>{provider.company}</span>
+      <span>{formatCost(provider.pricedCostMicros)}</span>
     </li>
   );
 }

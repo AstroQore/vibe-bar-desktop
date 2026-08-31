@@ -50,6 +50,23 @@ pub struct DailyCost {
     pub requests: u64,
 }
 
+/// Spend grouped by the company that bills for it.
+///
+/// A separate axis from `ModelCost`'s harness, and deliberately not mixed with
+/// it in one list (`AGENTS.md` § 2.3): a harness is where a request ran, a
+/// company is who charges for it. Two harnesses can bill the same company —
+/// Gemini Web and AntiGravity are both Google AI — which is exactly what this
+/// grouping is for and the reason it cannot be a relabelled harness list.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCost {
+    pub company: String,
+    pub priced_cost_micros: i64,
+    pub tokens: u64,
+    pub requests: u64,
+    pub unpriced_events: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCost {
@@ -93,6 +110,10 @@ pub struct CostView {
     pub all_time: CostTotals,
     pub daily: Vec<DailyCost>,
     pub models: Vec<ModelCost>,
+    /// Defaulted so a snapshot written before this field existed still loads
+    /// rather than being discarded as unreadable.
+    #[serde(default)]
+    pub providers: Vec<ProviderCost>,
     pub unpriced_events: u64,
     pub scanned_files: u64,
     pub malformed_lines: u64,
@@ -1554,6 +1575,7 @@ fn aggregate(
     let mut all_totals = CostTotals::default();
     let mut daily: BTreeMap<String, CostTotals> = BTreeMap::new();
     let mut models: HashMap<ToolType, HashMap<String, ModelCost>> = HashMap::new();
+    let mut provider_costs: HashMap<&'static str, ProviderCost> = HashMap::new();
     let mut unpriced_events = 0_u64;
 
     for event in events {
@@ -1584,6 +1606,28 @@ fn aggregate(
             add_totals(&mut month_totals, tokens, cost);
         }
         add_totals(daily.entry(day.to_string()).or_default(), tokens, cost);
+
+        // Who bills for this, as opposed to where it ran. Keyed by the
+        // company itself so two harnesses of one company land in one row —
+        // grouping by tool and labelling by company would show "Google AI"
+        // twice the moment both Gemini Web and AntiGravity had spend.
+        let provider = provider_costs
+            .entry(event.tool.hierarchy().vendor)
+            .or_insert_with(|| ProviderCost {
+                company: event.tool.hierarchy().vendor.to_string(),
+                priced_cost_micros: 0,
+                tokens: 0,
+                requests: 0,
+                unpriced_events: 0,
+            });
+        provider.tokens = provider.tokens.saturating_add(tokens);
+        provider.requests = provider.requests.saturating_add(1);
+        match cost {
+            Some(cost) => {
+                provider.priced_cost_micros = provider.priced_cost_micros.saturating_add(cost);
+            }
+            None => provider.unpriced_events = provider.unpriced_events.saturating_add(1),
+        }
 
         let models_for_harness = models.entry(event.tool).or_default();
         let model_label = if event.model.len() <= MAX_RETAINED_MODEL_BYTES {
@@ -1634,6 +1678,15 @@ fn aggregate(
             .then_with(|| left.harness.cmp(&right.harness))
             .then_with(|| left.model.cmp(&right.model))
     });
+    let mut providers = provider_costs.into_values().collect::<Vec<_>>();
+    providers.sort_by(|left, right| {
+        right
+            .priced_cost_micros
+            .cmp(&left.priced_cost_micros)
+            .then_with(|| right.tokens.cmp(&left.tokens))
+            .then_with(|| left.company.cmp(&right.company))
+    });
+
     CostView {
         today: today_totals,
         last_7_days: week_totals,
@@ -1649,6 +1702,7 @@ fn aggregate(
             })
             .collect(),
         models,
+        providers,
         unpriced_events,
         scanned_files,
         malformed_lines,
@@ -1706,6 +1760,107 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         fs::write(path, body).unwrap();
+    }
+
+    /// Spend is grouped by the company that bills for it, so two harnesses of
+    /// one company land in one row.
+    ///
+    /// The same rows the native client produces, by a different route: it
+    /// folds each tool onto a representative one (`coreProviderRepresentative`
+    /// sends AntiGravity to Gemini and Cursor to Grok) so the row keeps a
+    /// `ToolType` for its accent colour. This client has no per-row accent to
+    /// preserve, so it keys by the company itself.
+    #[test]
+    fn groups_spend_by_the_company_that_bills_for_it() {
+        let scanned_at = 1_800_000_000.0;
+        let event = |tool: ToolType, model: &str| UsageEvent {
+            tool,
+            date: scanned_at - 1.0,
+            model: model.into(),
+            input: 1_000,
+            cache_read: 0,
+            output: 100,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            service_tier: None,
+            session_id: None,
+            message_id: None,
+            request_id: None,
+            is_sidechain: false,
+            is_parent_path: true,
+            source_key: Arc::from(""),
+        };
+
+        let view = aggregate(
+            &[
+                event(ToolType::Gemini, "gemini-2.5-pro"),
+                event(ToolType::Antigravity, "gemini-2.5-pro"),
+                event(ToolType::Codex, "gpt-5"),
+            ],
+            3,
+            0,
+            false,
+            scanned_at,
+        );
+
+        let companies: Vec<&str> =
+            view.providers.iter().map(|row| row.company.as_str()).collect();
+        assert_eq!(
+            companies.iter().filter(|name| **name == "Google AI").count(),
+            1,
+            "one company, two harnesses, two rows: {companies:?}"
+        );
+        let google = view
+            .providers
+            .iter()
+            .find(|row| row.company == "Google AI")
+            .expect("a Google AI row");
+        assert_eq!(google.requests, 2, "both harnesses count toward the company");
+
+        // And the harness axis still separates them, in its own list.
+        let harnesses: Vec<&str> = view.models.iter().map(|row| row.harness.as_str()).collect();
+        assert!(
+            harnesses.contains(&"Gemini CLI") && harnesses.contains(&"antigravity"),
+            "the harness breakdown collapsed two harnesses together: {harnesses:?}"
+        );
+    }
+
+    /// Ordered by spend, like every other cost list here.
+    #[test]
+    fn orders_companies_by_what_they_cost() {
+        let scanned_at = 1_800_000_000.0;
+        let event = |tool: ToolType, model: &str, output: u64| UsageEvent {
+            tool,
+            date: scanned_at - 1.0,
+            model: model.into(),
+            input: 1_000,
+            cache_read: 0,
+            output,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            service_tier: None,
+            session_id: None,
+            message_id: None,
+            request_id: None,
+            is_sidechain: false,
+            is_parent_path: true,
+            source_key: Arc::from(""),
+        };
+
+        let view = aggregate(
+            &[
+                event(ToolType::Gemini, "gemini-2.5-pro", 10),
+                event(ToolType::Codex, "gpt-5", 100_000),
+            ],
+            2,
+            0,
+            false,
+            scanned_at,
+        );
+
+        let costs: Vec<i64> = view.providers.iter().map(|r| r.priced_cost_micros).collect();
+        assert!(costs.windows(2).all(|w| w[0] >= w[1]), "not ordered by spend: {costs:?}");
+        assert_eq!(view.providers[0].company, "OpenAI");
     }
 
     #[test]
