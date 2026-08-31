@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { QuotaForecast } from "./api";
 import {
+  forecastConfidence,
   forecastDetail,
   forecastHeadline,
   formatCountdown,
@@ -92,5 +93,29 @@ describe("what a forecast says", () => {
       Date.now() / 1000,
     );
     expect(detail ?? "").not.toContain("100%");
+  });
+});
+
+describe("how much a verdict should be trusted", () => {
+  it("says so in the words the native app uses", () => {
+    expect(forecastConfidence(forecast({ confidence: "high" }))).toBe("High confidence");
+    expect(forecastConfidence(forecast({ confidence: "medium" }))).toBe(
+      "Medium confidence",
+    );
+  });
+
+  /// "Learning" twice on two lines is not two pieces of information.
+  it("stays quiet when the verdict already said it", () => {
+    expect(
+      forecastConfidence(forecast({ verdict: "learning", confidence: "learning" })),
+    ).toBeNull();
+  });
+
+  /// A confident-sounding verdict resting on thin evidence is the one case
+  /// this line exists for.
+  it("says so when a real verdict rests on thin evidence", () => {
+    expect(
+      forecastConfidence(forecast({ verdict: "surplus", confidence: "learning" })),
+    ).toBe("Learning");
   });
 });

@@ -10,6 +10,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { ResetHistory } from "./ResetHistory";
 import {
   describeError,
+  forecastConfidence,
   forecastDetail,
   forecastHeadline,
   forecastSeverity,
@@ -220,6 +221,12 @@ function QuotaCard({
                   >
                     {forecastHeadline(bucket.forecast)}
                   </span>
+                  {(() => {
+                    const confidence = forecastConfidence(bucket.forecast);
+                    return confidence ? (
+                      <span className="verdict-confidence">{confidence}</span>
+                    ) : null;
+                  })()}
                   {(() => {
                     const detail = forecastDetail(bucket.forecast, Date.now() / 1000);
                     return detail ? (

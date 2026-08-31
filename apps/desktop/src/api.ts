@@ -60,6 +60,26 @@ export function forecastHeadline(f: QuotaForecast): string {
   }
 }
 
+/**
+ * How much the verdict should be trusted, in the native app's words.
+ *
+ * A verdict without it overstates itself: the whole point of saying
+ * `Learning` rather than a number is that the evidence does not support one
+ * yet, and `Medium` says the same thing more quietly. Null where the verdict
+ * already carries the answer — `Learning` twice on two lines is not two
+ * pieces of information.
+ */
+export function forecastConfidence(f: QuotaForecast): string | null {
+  switch (f.confidence) {
+    case "high":
+      return "High confidence";
+    case "medium":
+      return "Medium confidence";
+    default:
+      return f.verdict === "learning" ? null : "Learning";
+  }
+}
+
 /** The line under the headline: when it runs out, or that it lasts. */
 export function forecastDetail(f: QuotaForecast, now: number): string | null {
   if (f.runOutAt != null) {
