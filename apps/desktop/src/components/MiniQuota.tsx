@@ -109,8 +109,9 @@ export function MiniQuotaBody({
   layout?: string;
 }) {
   const dark = useDarkMode();
-  if (layout === "ledger" && !loading && companies.length > 0) {
-    return <MiniLedger companies={companies} dark={dark} />;
+  if (!loading && companies.length > 0) {
+    if (layout === "ledger") return <MiniLedger companies={companies} dark={dark} />;
+    if (layout === "tile") return <MiniTiles entries={flatten(companies)} dark={dark} />;
   }
   return (
     <>
@@ -177,6 +178,113 @@ export function MiniQuotaBody({
  * needs a square. The forecast marker is a line across the bar rather than a
  * notch on an arc, for the same reason.
  */
+/** One bucket with the tiers above it carried along, for the layouts that
+ *  draw a flat list rather than a tree. */
+interface Entry {
+  cell: Cell;
+  company: string;
+  tool: string;
+  subProvider: string;
+  groupLabel: string | null;
+}
+
+/**
+ * The arranged tree as a flat list, parents kept.
+ *
+ * Tiles are one per bucket with no headers, so each one has to say whose
+ * quota it is — a bare "All · Weekly" says nothing about that. The order is
+ * the tree's, which is the order the fields were chosen in.
+ */
+function flatten(companies: Company[]): Entry[] {
+  const entries: Entry[] = [];
+  for (const company of companies) {
+    for (const subProvider of company.subProviders) {
+      for (const group of subProvider.groups) {
+        for (const cell of group.cells) {
+          entries.push({
+            cell,
+            company: company.name,
+            tool: company.tool,
+            subProvider: subProvider.name,
+            // Named only where the SubProvider has more than one, the same
+            // rule the tree layouts use for their group headings.
+            groupLabel: subProvider.groups.length > 1 ? group.label : null,
+          });
+        }
+      }
+    }
+  }
+  return entries;
+}
+
+/**
+ * A grid of tiles with a big number and a severity stripe.
+ *
+ * Four columns at most, like native, so a window with many buckets grows
+ * downward rather than off the side of the screen.
+ */
+function MiniTiles({ entries, dark }: { entries: Entry[]; dark: boolean }) {
+  const columns = Math.min(4, Math.max(1, entries.length));
+  return (
+    <div
+      className="mini-tiles"
+      style={{ gridTemplateColumns: `repeat(${columns}, 120px)` }}
+    >
+      {entries.map((entry) => (
+        <MiniTile key={entry.cell.id} entry={entry} dark={dark} />
+      ))}
+    </div>
+  );
+}
+
+function MiniTile({ entry, dark }: { entry: Entry; dark: boolean }) {
+  const { cell } = entry;
+  const colour = quotaBarColor(cell.value, cell.showsUsed);
+  const label = entry.groupLabel ? `${entry.groupLabel} · ${cell.label}` : cell.label;
+
+  return (
+    // Native shrinks the caption to fit and still carries a tooltip with the
+    // full text; CSS cannot shrink, so the tooltip is doing more work here.
+    // A 120-point tile cannot hold "OpenAI · ChatGPT Agentic" at a readable
+    // size, and clipping without a way to read it would lose which quota the
+    // tile is about.
+    <div className="mini-tile" title={`${entry.company} · ${entry.subProvider} · ${label}`}>
+      {/* The severity stripe: the same colour the number takes, so the tile
+          reads at a glance before any of its text does. */}
+      <span className="mini-tile-stripe" style={{ background: colour }} aria-hidden />
+      <div className="mini-tile-body">
+        <div className="mini-tile-parents">
+          <span
+            className="mini-company-dot"
+            style={{ background: providerAccent(entry.tool, dark) }}
+            aria-hidden
+          />
+          {/* Two tones so the tiers still read apart in one line. */}
+          <span className="mini-tile-company">{entry.company}</span>
+          <span className="mini-tile-sub">{entry.subProvider}</span>
+        </div>
+        <div className="mini-tile-label" title={label}>
+          {label}
+        </div>
+        <div className="mini-tile-figure">
+          <span className="mini-tile-value" style={{ color: colour }}>
+            {Math.round(cell.value)}%
+          </span>
+          <span className="mini-tile-track">
+            <span
+              className="mini-tile-fill"
+              style={{
+                width: `${Math.min(100, Math.max(0, cell.value))}%`,
+                background: colour,
+              }}
+            />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One row per quota bucket — fixed width, grows downward.
  *

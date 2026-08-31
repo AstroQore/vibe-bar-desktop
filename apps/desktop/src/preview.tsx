@@ -81,10 +81,10 @@ const panel = {
 
 createRoot(document.getElementById("root")!).render(
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-    {["regular", "compact", "ledger"].map((layout) => (
+    {["regular", "compact", "ledger", "tile"].map((layout) => (
       <div key={layout}>
         <p style={{ font: "12px system-ui", opacity: 0.6, margin: "0 0 6px" }}>{layout}</p>
-        <div style={{ ...panel, padding: layout === "ledger" ? 0 : 8 }}>
+        <div style={{ ...panel, padding: layout === "ledger" || layout === "tile" ? 0 : 8 }}>
           <MiniQuotaBody companies={companies} layout={layout} />
         </div>
       </div>
