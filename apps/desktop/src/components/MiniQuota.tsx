@@ -199,39 +199,52 @@ export function MiniQuotaBody({
  * notch on an arc, for the same reason.
  */
 /**
- * Report the size the whole window needs, whenever the content changes.
+ * Report the size the whole window needs, whenever it changes.
  *
- * The measured element is not the one observed. The wrapper this watches is a
- * block inside `.mini-quota`, so its width is the *container's* — 244 in a 272
- * window — and stays 244 while a 284-wide ledger or a 525-wide tile grid
- * overflows it. Its height leaves out the title and the surface's own padding.
- * Both are wrong in exactly the case that matters, so the numbers come from
- * the document's scroll size, which includes the chrome and the overflow.
+ * The numbers come from the document's scroll size, not from an element's box.
+ * The wrapper this hook is attached to is a block inside `.mini-quota`, so its
+ * width is the *container's* — 244 in a 272 window — and stays 244 while a
+ * 284-wide ledger or a 525-wide tile grid overflows it. Its height leaves out
+ * the title and the surface's padding. Both are wrong in exactly the case the
+ * resize exists for.
  *
- * A `ResizeObserver` rather than a computed size: the layouts are React and
- * their heights depend on how many buckets there are and how the text wraps,
- * so the thing that draws is the only thing that knows.
+ * Measured after every render, not only from the observer. A `ResizeObserver`
+ * fires on its target's border box, and content that grows only in overflow
+ * never changes that box: a tile grid going from one bucket to four stays one
+ * row, and the wrapper is the same size it was. The observer is still here for
+ * the changes a render does not cause — the window's own resize, a font or
+ * theme change — and the effect covers the rest.
  */
 function useContentSize(report?: (width: number, height: number) => void) {
   const observer = useRef<ResizeObserver | null>(null);
+  const lastSent = useRef<[number, number] | null>(null);
+
+  const send = useCallback(() => {
+    if (!report) return;
+    const root = document.documentElement;
+    const width = root.scrollWidth;
+    const height = root.scrollHeight;
+    if (width <= 0 || height <= 0) return;
+    const [lastWidth, lastHeight] = lastSent.current ?? [0, 0];
+    if (width === lastWidth && height === lastHeight) return;
+    lastSent.current = [width, height];
+    report(width, height);
+  }, [report]);
+
+  // After every render: the content it drew is what decides the size, and a
+  // render is the only thing that changes the content.
+  useEffect(send);
+
   return useCallback(
     (node: HTMLDivElement | null) => {
       observer.current?.disconnect();
       observer.current = null;
       if (!node || !report) return;
-      const send = () => {
-        const root = document.documentElement;
-        const width = Math.max(root.scrollWidth, node.scrollWidth);
-        const height = Math.max(root.scrollHeight, node.scrollHeight);
-        if (width > 0 && height > 0) report(width, height);
-      };
       const next = new ResizeObserver(send);
       next.observe(node);
       observer.current = next;
-      // After layout, so the first report is not of a half-built tree.
-      requestAnimationFrame(send);
     },
-    [report],
+    [report, send],
   );
 }
 
