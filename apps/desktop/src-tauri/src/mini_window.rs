@@ -83,15 +83,19 @@ pub fn resize_to_content<R: Runtime>(app: &AppHandle<R>, width: f64, height: f64
         return;
     }
     let scale = window.scale_factor().unwrap_or(1.0);
+    // The work area, not the display: `size()` is the whole panel, so a
+    // ceiling taken from it puts the bottom of the window under the Dock or
+    // the taskbar and the top under the menu bar. This is what the native
+    // client's `NSScreen.visibleFrame` gives it.
     let (max_width, max_height) = window
         .current_monitor()
         .ok()
         .flatten()
         .map(|monitor| {
-            let size = monitor.size().to_logical::<f64>(scale);
+            let area = monitor.work_area().size.to_logical::<f64>(scale);
             (
-                (size.width - 2.0 * SCREEN_MARGIN).max(MIN_SIZE.0),
-                (size.height - 2.0 * SCREEN_MARGIN).max(MIN_SIZE.1),
+                (area.width - 2.0 * SCREEN_MARGIN).max(MIN_SIZE.0),
+                (area.height - 2.0 * SCREEN_MARGIN).max(MIN_SIZE.1),
             )
         })
         .unwrap_or((f64::MAX, f64::MAX));
@@ -116,8 +120,11 @@ fn keep_on_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     ) else {
         return;
     };
-    let screen = monitor.position();
-    let bounds = monitor.size();
+    // Same reason as the ceiling above: the usable area, so the window is not
+    // tucked under the menu bar or the Dock.
+    let area = monitor.work_area();
+    let screen = area.position;
+    let bounds = area.size;
     let margin = (SCREEN_MARGIN * monitor.scale_factor()).round() as i32;
     // Native's order: clamp to the far edge first, then to the near one, so a
     // window larger than the screen ends up against the top-left rather than
