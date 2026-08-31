@@ -318,15 +318,9 @@ input[type="text"] {
   border-radius: 999px;
   transition: width 240ms ease;
 }
-.fill.ok {
-  background: var(--ok);
-}
-.fill.warning {
-  background: var(--warning);
-}
-.fill.critical {
-  background: var(--critical);
-}
+/* No severity classes here: the bar's colour is a token from
+   docs/contracts/design-tokens-v1.json, applied by quotaBarColor. A CSS rule
+   painting it would be a second source of truth no contract test can see. */
 
 .error-row {
   color: var(--text-dim);
