@@ -4,7 +4,7 @@ import {
   forecastHeadline,
   forecastSeverity,
   hierarchyFor,
-  severityFor,
+  quotaBarColor,
 } from "../api";
 import { orderedVisibleAccounts } from "./Overview";
 
@@ -182,8 +182,11 @@ export function Resets({
                       </div>
                       <div className="track" aria-hidden="true">
                         <div
-                          className={`fill ${severityFor(event.remaining)}`}
-                          style={{ width: `${event.remaining}%` }}
+                          className="fill"
+                          style={{
+                            width: `${event.remaining}%`,
+                            background: quotaBarColor(event.remaining, false),
+                          }}
                         />
                       </div>
                     </article>
