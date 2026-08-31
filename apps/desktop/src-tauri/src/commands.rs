@@ -7,6 +7,7 @@ use vibebar_desktop_core::forecast::cycles::CycleSummary;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::{SessionListing, TranscriptCursor};
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
+use vibebar_desktop_core::shared::settings_writer::WRITABLE_KEYS as SETTINGS_WRITABLE_KEYS;
 use vibebar_desktop_core::skills::SkillsInventoryView;
 use vibebar_desktop_core::status::ServiceStatusView;
 
@@ -45,6 +46,34 @@ pub fn quota_view(state: State<'_, AppState>) -> QuotaView {
 #[tauri::command]
 pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings {
     SharedSettings::load(state.data_root()).presentation()
+}
+
+/// Save one or more shared settings.
+///
+/// Returns the settings as they read afterwards, which is not necessarily
+/// what was asked for: the file is shared, and a value the native app changed
+/// in between wins over a stale idea of it here.
+#[tauri::command]
+pub fn save_shared_settings(
+    state: State<'_, AppState>,
+    changes: serde_json::Map<String, serde_json::Value>,
+) -> Result<PresentationSettings, String> {
+    let refused: Vec<&str> = changes
+        .keys()
+        .map(String::as_str)
+        .filter(|key| !SETTINGS_WRITABLE_KEYS.contains(key))
+        .collect();
+    if !refused.is_empty() {
+        // Not a permission failure to report to the user: Desktop's own UI is
+        // the only caller, so this is a bug in it.
+        return Err(format!("not a setting Vibe Bar Desktop presents: {refused:?}"));
+    }
+    state
+        .settings()
+        .lock()
+        .map_err(|_| "the settings writer is unavailable".to_string())?
+        .apply(&changes);
+    Ok(SharedSettings::load(state.data_root()).presentation())
 }
 
 #[tauri::command]

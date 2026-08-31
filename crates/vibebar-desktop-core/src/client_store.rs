@@ -503,7 +503,7 @@ fn temp_sibling(path: &std::ffi::OsStr, attempt: u8) -> std::ffi::OsString {
 
 /// `create_new` refuses a pre-existing temp path instead of following a
 /// symlink the process does not own.
-fn create_temp_file(
+pub(crate) fn create_temp_file(
     directory: &Dir,
     name: &std::ffi::OsStr,
 ) -> std::io::Result<(std::ffi::OsString, cap_std::fs::File)> {
@@ -535,7 +535,7 @@ fn restrict_directory(directory: &Dir) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn restrict_file(file: &cap_std::fs::File) -> std::io::Result<()> {
+pub(crate) fn restrict_file(file: &cap_std::fs::File) -> std::io::Result<()> {
     use cap_std::fs::PermissionsExt;
     file.set_permissions(cap_std::fs::Permissions::from_mode(0o600))
 }
@@ -546,17 +546,17 @@ fn restrict_directory(_directory: &Dir) -> std::io::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn restrict_file(_file: &cap_std::fs::File) -> std::io::Result<()> {
+pub(crate) fn restrict_file(_file: &cap_std::fs::File) -> std::io::Result<()> {
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn sync_directory(directory: &Dir) -> std::io::Result<()> {
+pub(crate) fn sync_directory(directory: &Dir) -> std::io::Result<()> {
     directory.try_clone()?.into_std_file().sync_all()
 }
 
 #[cfg(not(target_os = "macos"))]
-fn sync_directory(_directory: &Dir) -> std::io::Result<()> {
+pub(crate) fn sync_directory(_directory: &Dir) -> std::io::Result<()> {
     // cap-std may represent directories with O_PATH on Linux, which cannot be
     // fsynced, and Windows has no portable std directory-sync equivalent. The
     // atomic rename remains capability-scoped; this cache is reconstructible.

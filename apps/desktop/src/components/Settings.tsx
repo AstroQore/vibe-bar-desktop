@@ -1,23 +1,87 @@
 import type { ReactNode } from "react";
 
 import type { PresentationSettings } from "../api";
+import { humanisedSettingName } from "../settingNames";
 import { subProviderFor } from "../naming";
 
-export function Settings({ settings }: { settings: PresentationSettings | null }) {
+/** The refresh cadences the native app offers, so the two Settings windows
+ *  present the same choices rather than each inventing a list. */
+const REFRESH_INTERVALS = [60, 120, 300, 600, 900, 1800, 3600];
+
+export function Settings({
+  settings,
+  replacedKeys,
+  onSave,
+  onDismissReplaced,
+}: {
+  settings: PresentationSettings | null;
+  replacedKeys: string[] | null;
+  onSave: (changes: Record<string, unknown>) => void;
+  onDismissReplaced: () => void;
+}) {
   if (!settings) return <p className="empty">Loading shared presentation settings…</p>;
 
   const fieldLabel = (fieldId: string) => settings.customLabels[fieldId] || fieldId;
   return (
     <section className="settings-readonly">
-      <p className="banner">
-        These preferences are managed by Vibe Bar’s shared settings. Desktop reads
-        and applies them but does not save changes here.
-      </p>
+      {replacedKeys?.length ? (
+        <div className="banner banner-warning">
+          <div>
+            <strong>Another Vibe Bar replaced your change</strong>
+            <p>{replacedSummary(replacedKeys)}</p>
+          </div>
+          <button type="button" onClick={onDismissReplaced}>
+            Dismiss
+          </button>
+        </div>
+      ) : (
+        <p className="banner">
+          These preferences are shared with the Vibe Bar menu-bar app. Changes made
+          here reach it, and changes it makes reach here.
+        </p>
+      )}
 
       <SettingsGroup title="Display">
-        <Setting name="Percent shows" value={settings.displayMode === "used" ? "Used" : "Remaining"} />
-        <Setting name="Refresh interval" value={formatInterval(settings.refreshIntervalSeconds)} />
-        <Setting name="Menu-bar colour basis" value={settings.menuBarColorBasis || "Actual"} />
+        <div className="setting-row">
+          <span>Percent shows</span>
+          <select
+            value={settings.displayMode === "used" ? "used" : "remaining"}
+            onChange={(event) => onSave({ displayMode: event.target.value })}
+          >
+            <option value="remaining">Remaining</option>
+            <option value="used">Used</option>
+          </select>
+        </div>
+        <div className="setting-row">
+          <span>Refresh interval</span>
+          <select
+            value={String(settings.refreshIntervalSeconds)}
+            onChange={(event) =>
+              onSave({ refreshIntervalSeconds: Number(event.target.value) })
+            }
+          >
+            {/* A cadence the native app set but this list does not offer is
+                still the current one, and must not silently become another. */}
+            {(REFRESH_INTERVALS.includes(settings.refreshIntervalSeconds)
+              ? REFRESH_INTERVALS
+              : [...REFRESH_INTERVALS, settings.refreshIntervalSeconds].sort((a, b) => a - b)
+            ).map((seconds) => (
+              <option key={seconds} value={String(seconds)}>
+                {formatInterval(seconds)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="setting-row">
+          <span>Menu-bar colour basis</span>
+          <select
+            value={settings.menuBarColorBasis || "actual"}
+            onChange={(event) => onSave({ menuBarColorBasis: event.target.value })}
+          >
+            <option value="actual">Actual</option>
+            <option value="forecast">Forecast</option>
+          </select>
+        </div>
       </SettingsGroup>
 
       <SettingsGroup title="Overview">
@@ -81,6 +145,17 @@ function Setting({ name, value }: { name: string; value: string }) {
       <span>{value}</span>
     </div>
   );
+}
+
+/** The one sentence under the notice. */
+export function replacedSummary(keys: string[]): string {
+  const names = keys.map(humanisedSettingName);
+  if (!names.length) return "";
+  const listed = names.slice(0, 3).join(", ");
+  if (names.length > 3) {
+    return `${listed} and ${names.length - 3} more settings now hold the other copy's value.`;
+  }
+  return `${listed} now ${names.length === 1 ? "holds" : "hold"} the other copy's value.`;
 }
 
 function formatInterval(seconds: number): string {

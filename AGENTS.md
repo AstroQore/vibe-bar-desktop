@@ -20,12 +20,21 @@ must work fully on a machine that has never had it installed.
 
 ## 2. Rules that cause silent damage if ignored
 
-1. **Never write outside `<data root>/client/desktop/`.** The shared root has
-   no cross-process locking, coalesces writes for up to 30 seconds, and
-   responds to schema mismatches by dropping data. `ClientStore::write_json`
-   enforces the boundary and there are tests; do not add a bypass. The full
-   reasoning and the conditions for lifting this are in
-   [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
+1. **Never write outside `<data root>/client/desktop/`, with one exception.**
+   The shared root has no cross-process locking for most stores, coalesces
+   writes for up to 30 seconds, and responds to schema mismatches by dropping
+   data. `ClientStore::write_json` enforces the boundary and there are tests;
+   do not add a bypass. The full reasoning and the conditions for lifting this
+   are in [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
+
+   The exception is `settings.json`, through
+   `shared::settings_writer::SettingsWriter`, which meets those conditions:
+   an advisory `flock(2)` both clients take, a merge that puts back only what
+   changed and preserves every key this build does not know, and a whitelist
+   of the settings Desktop's own UI presents. The rule is
+   [docs/contracts/settings-write-v1.md](docs/contracts/settings-write-v1.md)
+   and it is shared with the native app — a change to it is a change in both
+   repositories.
 2. **Never repair, migrate, prune, or rebuild a shared store.** Including the
    session index. An unreadable or unknown-version store degrades to "not
    available" with an explanation — it is another client's data.

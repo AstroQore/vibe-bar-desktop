@@ -22,6 +22,8 @@ use vibebar_desktop_core::client_store::{startup_action, ClientStore, StartupAct
 
 /// Emitted whenever a refresh completes, carrying the full `QuotaView`.
 pub const QUOTA_EVENT: &str = "vibebar://quota-updated";
+/// The shared settings file changed underneath this process.
+pub const SETTINGS_EVENT: &str = "vibebar://settings-changed";
 pub const MINI_SHOWN_EVENT: &str = "vibebar://mini-shown";
 
 /// Run the Desktop-owned, read-only MCP server without starting Tauri.
@@ -58,6 +60,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::quota_view,
             commands::presentation_settings,
+            commands::save_shared_settings,
             commands::status_snapshot,
             commands::refresh_status,
             commands::cost_view,
@@ -96,6 +99,7 @@ pub fn run() {
             app.manage(state);
             apply_startup_action(app.handle(), &store, action);
             spawn_refresh_loop(app.handle().clone());
+            spawn_settings_watch(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -138,6 +142,35 @@ fn apply_startup_action<R: tauri::Runtime>(
             }
         }
     }
+}
+
+/// Watch the shared settings for the other client's changes.
+///
+/// `settings.json` is written by the native app as well, and every surface
+/// here reads it fresh — so the only thing this has to do is notice, and say
+/// when a setting the user chose *here* now holds someone else's value.
+///
+/// Polled rather than watched: the file is a few tens of kilobytes, the
+/// cadence is slower than a person can retype a preference, and a poll is the
+/// same three lines on every platform Desktop targets.
+fn spawn_settings_watch(app: tauri::AppHandle) {
+    const CADENCE: Duration = Duration::from_secs(2);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(CADENCE).await;
+            let changed = {
+                let state = app.state::<AppState>();
+                let Ok(mut writer) = state.settings().lock() else { continue };
+                writer.poll()
+            };
+            if let Some(change) = changed {
+                let _ = app.emit(
+                    SETTINGS_EVENT,
+                    change.replaced.map(|replaced| replaced.replaced_keys),
+                );
+            }
+        }
+    });
 }
 
 /// Background refresh: one immediate pass, then on the cadence the shared

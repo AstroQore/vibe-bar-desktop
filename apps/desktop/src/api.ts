@@ -271,6 +271,7 @@ export interface CostView {
 
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
+export const SETTINGS_EVENT = "vibebar://settings-changed";
 
 export const api = {
   quotaView: () => invoke<QuotaView>("quota_view"),
@@ -298,8 +299,18 @@ export const api = {
       limit,
       cursor,
     }),
+  /** Save shared settings. Returns them as they read afterwards, which is not
+   *  necessarily what was asked for: the file is shared with the native app,
+   *  and a value it changed in between wins over a stale idea of it here. */
+  saveSharedSettings: (changes: Record<string, unknown>) =>
+    invoke<PresentationSettings>("save_shared_settings", { changes }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
+  /** The shared settings file changed. The payload names the settings chosen
+   *  here that now hold the other client's value, and is null when nothing
+   *  was lost — much the commoner case. */
+  onSettingsChanged: (handler: (replacedKeys: string[] | null) => void) =>
+    listen<string[] | null>(SETTINGS_EVENT, (event) => handler(event.payload)),
   onMiniShown: (handler: () => void) => listen<void>(MINI_SHOWN_EVENT, handler),
 };
 

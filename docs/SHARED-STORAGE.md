@@ -73,14 +73,35 @@ Before either client may write shared state:
 - `flushPendingWrites` on exit for every coalesced store (the native app
   currently flushes only settings).
 
-## Settings writes are not implemented
+## Settings writes
 
-Desktop reads `settings.json` and writes nothing to it. There is no patch
-engine, no lease, and no transaction in this repository: those existed as a
-product-disabled foundation and were removed once it was clear neither client
-could reach them, since carrying an unreachable protocol is worse than
-carrying none. See [contracts/README.md](contracts/README.md) for the design
-record and the git paths that recover both implementations.
+Desktop writes `settings.json`, and nothing else in the shared root. It is the
+one store where the conditions above are met:
+
+- **The lock.** `flock(2)` on `<data root>/run/settings.lock`, the same call
+  the native app makes on the same path, held from the re-read to the rename.
+  Not a lease — a lock, which is what a file this small and this rarely
+  written needs. The kernel releases it when the descriptor closes, so there
+  is no stale lock to break.
+- **Lossless patch semantics.** A write puts back only the keys this process
+  changed, onto whatever the file holds at that moment. Every other key keeps
+  the value it had, including keys this build has never heard of.
+- **Joint interop testing.** The merge cases live in one file
+  (`docs/contracts/settings-merge-v1.json`) that both implementations run, and
+  the byte format is checked against a `settings.json` the native app actually
+  wrote rather than one this repository imagined.
+- **A writer whitelist**, so a bug cannot take over a setting Desktop does not
+  present. `settings_writer::WRITABLE_KEYS`.
+
+No schema negotiation, because the file has no schema version: it is a flat
+object of independent keys, and an unknown one is preserved rather than
+interpreted. No migration, because Desktop does not migrate shared stores.
+
+The earlier design for this — an envelope with `schemaVersion` and `revision`,
+and a contested key going to the first writer rather than the last — is kept
+as a record in [contracts/settings-document-v1.md](contracts/settings-document-v1.md),
+with the reasons it was not carried over in
+[contracts/settings-write-v1.md](contracts/settings-write-v1.md).
 
 What that foundation established is still worth knowing before the work is
 picked up again. No user-space check can close a hostile replacement between a
