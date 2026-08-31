@@ -257,10 +257,61 @@ input[type="text"] {
 }
 
 .track {
+  position: relative;
   height: 6px;
   border-radius: 999px;
   background: var(--track);
-  overflow: hidden;
+  /* The fill is clipped to the rounded track, but the projection marker sits
+     on top of it and must not be, so the clip moves to the fill itself. */
+}
+.fill {
+  border-radius: 999px;
+}
+
+/* Where usage is projected to land when the provider resets. A hairline, not
+   a second bar: it marks a position, it does not encode a magnitude. */
+.projection {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text);
+  opacity: 0.55;
+}
+
+/* The verdict, which is the thing the bar cannot say on its own. */
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 5px;
+}
+.verdict-line {
+  font-size: 11.5px;
+}
+.verdict-line::before {
+  content: "●";
+  font-size: 7px;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.verdict-line.ok {
+  color: var(--ok);
+}
+.verdict-line.warning {
+  color: var(--warning);
+}
+.verdict-line.critical {
+  color: var(--critical);
+}
+.verdict-line.muted {
+  color: var(--text-faint);
+}
+.verdict-detail {
+  font-size: 11px;
+  color: var(--text-dim);
 }
 .fill {
   height: 100%;

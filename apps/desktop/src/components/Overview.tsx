@@ -2,6 +2,9 @@ import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
 import { ProviderIcon } from "./ProviderIcon";
 import {
   describeError,
+  forecastDetail,
+  forecastHeadline,
+  forecastSeverity,
   formatCountdown,
   formatRelative,
   hierarchyFor,
@@ -134,7 +137,37 @@ function QuotaCard({
                     background: quotaBarColor(shown, showsUsed),
                   }}
                 />
+                {bucket.forecast ? (
+                  <span
+                    className="projection"
+                    style={{
+                      left: `${Math.min(100, Math.max(0, showsUsed
+                        ? bucket.forecast.projectedUsedPercent
+                        : 100 - bucket.forecast.projectedUsedPercent))}%`,
+                    }}
+                    title={`Projected ${Math.round(
+                      bucket.forecast.projectedUsedPercent,
+                    )}% used at reset`}
+                  />
+                ) : null}
               </div>
+              {bucket.forecast ? (
+                <div className="verdict">
+                  <span
+                    className={`verdict-line ${forecastSeverity(
+                      bucket.forecast.verdict,
+                    )}`}
+                  >
+                    {forecastHeadline(bucket.forecast)}
+                  </span>
+                  {(() => {
+                    const detail = forecastDetail(bucket.forecast, Date.now() / 1000);
+                    return detail ? (
+                      <span className="verdict-detail">{detail}</span>
+                    ) : null;
+                  })()}
+                </div>
+              ) : null}
             </div>
           );
         })

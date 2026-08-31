@@ -3,6 +3,29 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 /** Kept in sync with `vibebar_desktop_core::model`. */
+export type ForecastVerdict =
+  | "enough"
+  | "surplus"
+  | "watch"
+  | "atRisk"
+  | "learning";
+export type ForecastConfidence = "learning" | "medium" | "high";
+
+export interface QuotaForecast {
+  verdict: ForecastVerdict;
+  confidence: ForecastConfidence;
+  confidenceScore: number;
+  currentUsedPercent: number;
+  plannedUsedPercent: number;
+  /** May exceed 100: the quota is capped, the shortage is not. */
+  projectedUsedPercent: number;
+  projectedUsedLowerPercent: number;
+  projectedUsedUpperPercent: number;
+  targetRemainingPercent: number;
+  /** Unix seconds, when usage is projected to reach the cap. */
+  runOutAt?: number;
+}
+
 export interface QuotaBucket {
   id: string;
   title: string;
@@ -11,6 +34,55 @@ export interface QuotaBucket {
   resetAt?: number;
   rawWindowSeconds?: number;
   groupTitle?: string;
+  /** Absent when there is not enough history yet — shown as such, never as
+   *  a confident verdict. */
+  forecast?: QuotaForecast;
+}
+
+/** Verdict wording, taken from the native app so one product does not
+ *  describe the same state two different ways. */
+export function forecastHeadline(f: QuotaForecast): string {
+  switch (f.verdict) {
+    case "atRisk":
+      return "At risk · likely to run out before reset";
+    case "watch":
+      return "Watch · could run out before reset";
+    case "surplus":
+      return `Surplus · forecast ${Math.round(
+        Math.max(0, 100 - f.projectedUsedPercent),
+      )}% left at reset`;
+    case "enough":
+      return `Enough · forecast ${Math.round(
+        Math.max(0, 100 - f.projectedUsedPercent),
+      )}% left at reset`;
+    case "learning":
+      return "Learning · not enough history yet";
+  }
+}
+
+/** The line under the headline: when it runs out, or that it lasts. */
+export function forecastDetail(f: QuotaForecast, now: number): string | null {
+  if (f.runOutAt != null) {
+    const seconds = f.runOutAt - now;
+    if (seconds <= 0) return "Estimated to be out now";
+    return `Estimated to run out in ${formatDuration(seconds)}`;
+  }
+  if (f.verdict === "learning") return null;
+  return "Projected to last until reset";
+}
+
+/** Severity class for the verdict line, matching the quota bar's palette. */
+export function forecastSeverity(verdict: ForecastVerdict): string {
+  switch (verdict) {
+    case "atRisk":
+      return "critical";
+    case "watch":
+      return "warning";
+    case "learning":
+      return "muted";
+    default:
+      return "ok";
+  }
 }
 
 export type QuotaOrigin = "live" | "desktopCache" | "sharedCache" | "mixed";
@@ -283,6 +355,20 @@ export function formatRelative(unixSeconds?: number): string {
 }
 
 /** "resets in 3h 12m", or empty when the bucket states no reset. */
+/** `3d 2h`, `5h 39m`, `12m` — the same shape the reset countdown uses, and
+ *  the same the native app prints beside a run-out estimate. */
+export function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    return `${days}d ${hours % 24}h`;
+  }
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 export function formatCountdown(resetAt?: number): string {
   if (!resetAt) return "";
   const remaining = Math.round(resetAt - Date.now() / 1000);

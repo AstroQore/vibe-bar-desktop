@@ -72,6 +72,15 @@ pub fn run() {
         ])
         .setup(move |app| {
             let state = AppState::new();
+            // A forecast needs history and a fresh install has none. On a Mac
+            // with the native app, adopt its observations once so the first
+            // launch can already say something instead of waiting two weeks.
+            // Read-only, optional, and skipped once this client has its own.
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            vibebar_desktop_core::forecast::seed_from_native_once(state.data_root(), now);
             mini_window::install(app.handle(), state.data_root().clone())?;
             // Tray failure deliberately does not abort setup: without a tray,
             // hiding the only window would leave the user no way back in.

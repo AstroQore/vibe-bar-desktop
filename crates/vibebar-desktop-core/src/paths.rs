@@ -99,6 +99,12 @@ impl DataRoot {
     pub fn session_index_file(&self) -> PathBuf {
         self.root.join("session_index.sqlite3")
     }
+    /// The native app's quota observation timeline. Read-only, and only ever
+    /// as a seed for this client's own history — Desktop must keep working on
+    /// a machine where this file has never existed.
+    pub fn fill_timeline_file(&self) -> PathBuf {
+        self.root.join("fill_timeline.sqlite3")
+    }
     /// The native app's MCP socket. Only ever probed for liveness, never
     /// connected to: Desktop must not depend on the native app for data.
     pub fn native_mcp_socket(&self) -> PathBuf {
