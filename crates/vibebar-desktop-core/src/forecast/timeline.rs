@@ -369,6 +369,10 @@ mod tests {
         assert_eq!(store.count().unwrap(), 3);
     }
 
+    // Creating a symlink on Windows needs elevation, so this boundary is
+    // exercised where it can be: the guard itself is not platform-specific,
+    // but the attack it refuses can only be staged here.
+    #[cfg(unix)]
     #[test]
     fn a_symlinked_store_path_is_refused() {
         let dir = tempfile::tempdir().unwrap();
@@ -418,6 +422,10 @@ mod tests {
         assert_eq!(got[0].used_percent, 10.0);
     }
 
+    // Creating a symlink on Windows needs elevation, so this boundary is
+    // exercised where it can be: the guard itself is not platform-specific,
+    // but the attack it refuses can only be staged here.
+    #[cfg(unix)]
     #[test]
     fn a_symlinked_client_directory_is_refused() {
         let dir = tempfile::tempdir().unwrap();
