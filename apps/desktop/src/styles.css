@@ -976,3 +976,33 @@ input[type="text"] {
   font-size: 5.8px;
   letter-spacing: -0.01em;
 }
+
+/* The provider row: an overview, then one page per company. A second level
+   under the Quota tab rather than more top-level tabs, so a provider sits
+   beside its siblings instead of beside Sessions. Quieter than the tabs above
+   it, because it selects within a surface rather than between surfaces. */
+.provider-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+.provider-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+}
+.provider-tab:hover {
+  color: var(--text);
+}
+.provider-tab[aria-selected="true"] {
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+}

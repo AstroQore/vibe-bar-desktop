@@ -17,17 +17,31 @@ import {
 export function Overview({
   view,
   settings,
+  company,
+  detailed = false,
 }: {
   view: QuotaView;
   settings: PresentationSettings | null;
+  /** Show only this company's accounts. Everything when absent. */
+  company?: string;
+  /** Draw each bucket's cycle history. Reserved for a provider's own page:
+   *  the overview is a glance across every provider, and a strip under every
+   *  bucket turns it into a page you have to scroll. */
+  detailed?: boolean;
 }) {
-  const accounts = orderedVisibleAccounts(view.accounts, settings);
+  const visible = orderedVisibleAccounts(view.accounts, settings);
+  const accounts = company
+    ? visible.filter((account) => companyFor(account.tool) === company)
+    : visible;
+  const showsHistory = detailed;
   if (accounts.length === 0) {
     return (
       <p className="empty">
-        {view.accounts.length > 0
-          ? "All quota providers are hidden by the shared presentation settings."
-          : "No quota yet. Sign in with the Codex or Claude CLI, configure a supported provider API key, or launch the macOS app once to populate shared Vibe Bar data."}
+        {company
+          ? `No quota from ${company} right now.`
+          : view.accounts.length > 0
+            ? "All quota providers are hidden by the shared presentation settings."
+            : "No quota yet. Sign in with the Codex or Claude CLI, configure a supported provider API key, or launch the macOS app once to populate shared Vibe Bar data."}
       </p>
     );
   }
@@ -46,7 +60,12 @@ export function Overview({
         <section className="vendor-group" key={vendor}>
           <h2 className="vendor-name">{vendor}</h2>
           {accounts.map((account) => (
-            <QuotaCard key={account.accountId} account={account} settings={settings} />
+            <QuotaCard
+              key={account.accountId}
+              account={account}
+              settings={settings}
+              showsHistory={showsHistory}
+            />
           ))}
         </section>
       ))}
@@ -57,9 +76,11 @@ export function Overview({
 function QuotaCard({
   account,
   settings,
+  showsHistory,
 }: {
   account: AccountQuota;
   settings: PresentationSettings | null;
+  showsHistory: boolean;
 }) {
   // A bucket can belong to a SubProvider its account does not — Cursor
   // reports Grok Bot — so the buckets are grouped by theirs rather than the
@@ -193,6 +214,7 @@ function QuotaCard({
                   })()}
                 </div>
               ) : null}
+              {showsHistory && (
               <ResetHistory
                 accountId={account.accountId}
                 bucketId={bucket.id}
@@ -201,6 +223,7 @@ function QuotaCard({
                 refreshedAt={account.queriedAt}
                 targetRemainingPercent={bucket.forecast?.targetRemainingPercent}
               />
+              )}
             </div>
           );
           }),
