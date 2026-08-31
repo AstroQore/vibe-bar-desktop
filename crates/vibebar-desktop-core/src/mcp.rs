@@ -7,6 +7,8 @@ use agent_session_core::SessionProvider;
 use serde_json::{json, Map, Value};
 
 use crate::client_store::ClientStore;
+use serde::Serialize;
+
 use crate::cost::effective_model_prices;
 use crate::model::ToolType;
 use crate::paths::{home_directory, DataRoot};
@@ -21,6 +23,7 @@ pub struct ReadonlyMcp {
     quota: QuotaEngine,
     sessions: SessionsService,
     status_store: ClientStore,
+    cost: crate::cost::CostEngine,
 }
 
 impl ReadonlyMcp {
@@ -42,6 +45,10 @@ impl ReadonlyMcp {
         Self {
             quota: QuotaEngine::new(root.clone()),
             sessions: SessionsService::with_home(root.clone(), home.clone()),
+            // Reads the snapshot this client last saved. Never scans: an MCP
+            // call is not the place to walk the whole session tree, and the
+            // snapshot is what the window is showing anyway.
+            cost: crate::cost::CostEngine::new(root.clone(), home.clone()),
             status_store: ClientStore::new(root),
         }
     }
@@ -171,6 +178,12 @@ impl ReadonlyMcp {
                 serde_json::to_value(status_response(status.as_ref(), tools.as_deref()))
                     .map_err(|_| Problem::internal())?
             }
+            "cost.snapshot" => {
+                let arguments = object_params(arguments, &["tools"])?;
+                let tools = parse_tools(arguments.get("tools"))?;
+                serde_json::to_value(cost_snapshot_response(&self.cost.cached(), tools.as_deref()))
+                    .map_err(|_| Problem::internal())?
+            }
             "pricing.effective" => {
                 let arguments = object_params(arguments, &["provider", "model"])?;
                 let provider = parse_pricing_provider(arguments.get("provider"))?;
@@ -267,6 +280,14 @@ fn tool_catalog() -> Vec<Value> {
             schema(&[("tools", tools_schema())], &[]),
         ),
         tool(
+            "cost.snapshot",
+            "Today / last 7 days / last 30 days / all-time cost, tokens and requests per provider, \
+             from Desktop's last local scan. Already aggregated, so prefer it for 'what have I \
+             spent'. When 'privacyModeEnabled' is true every window is empty by design — say so \
+             rather than reporting zero spend.",
+            schema(&[("tools", tools_schema())], &[]),
+        ),
+        tool(
             "pricing.effective",
             "Read the static model prices Desktop actually uses",
             schema(
@@ -298,6 +319,89 @@ struct McpStatusCompany {
     updated_at: Option<f64>,
     is_refreshing: bool,
     error: Option<String>,
+}
+
+/// Native's `cost.snapshot` shape, so a caller written against one client
+/// reads the other without noticing. Windows are per tool; `company` and
+/// `subProvider` name where it sits on the quota axis.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpCostWindow {
+    cost_usd: f64,
+    cost_micros: i64,
+    tokens: u64,
+    requests: u64,
+}
+
+impl From<&crate::cost::CostTotals> for McpCostWindow {
+    fn from(totals: &crate::cost::CostTotals) -> Self {
+        Self {
+            cost_usd: totals.priced_cost_micros as f64 / 1_000_000.0,
+            cost_micros: totals.priced_cost_micros,
+            tokens: totals.tokens,
+            requests: totals.requests,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpCostToolSnapshot {
+    tool: String,
+    company: String,
+    sub_provider: String,
+    today: McpCostWindow,
+    last7d: McpCostWindow,
+    last30d: McpCostWindow,
+    all_time: McpCostWindow,
+    jsonl_files_found: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpCostSnapshotResponse {
+    generated_at: f64,
+    scanned_at: f64,
+    /// Every window is empty because nothing was read, not because nothing was
+    /// spent. Report the difference.
+    privacy_mode_enabled: bool,
+    /// Desktop scans three harnesses; a provider it has no scanner for is
+    /// absent rather than zero.
+    tools: Vec<McpCostToolSnapshot>,
+}
+
+fn cost_snapshot_response(
+    view: &crate::cost::CostView,
+    tools: Option<&[ToolType]>,
+) -> McpCostSnapshotResponse {
+    let rows = if view.privacy_suppressed {
+        Vec::new()
+    } else {
+        view.tools
+            .iter()
+            .filter(|row| {
+                tools.is_none_or(|wanted| {
+                    wanted.iter().any(|tool| tool.raw_value() == row.tool)
+                })
+            })
+            .map(|row| McpCostToolSnapshot {
+                tool: row.tool.clone(),
+                company: row.company.clone(),
+                sub_provider: row.sub_provider.clone(),
+                today: (&row.today).into(),
+                last7d: (&row.last_7_days).into(),
+                last30d: (&row.last_30_days).into(),
+                all_time: (&row.all_time).into(),
+                jsonl_files_found: row.files_found,
+            })
+            .collect()
+    };
+    McpCostSnapshotResponse {
+        generated_at: now_unix(),
+        scanned_at: view.scanned_at,
+        privacy_mode_enabled: view.privacy_suppressed,
+        tools: rows,
+    }
 }
 
 fn status_response(
@@ -595,6 +699,129 @@ mod tests {
             .unwrap()
     }
 
+    /// One tool's worth of spend, valid enough to persist and read back.
+    fn seeded_view() -> crate::cost::CostView {
+        let totals = crate::cost::CostTotals {
+            priced_cost_micros: 1_234_567,
+            tokens: 8_000,
+            requests: 12,
+        };
+        crate::cost::CostView {
+            today: totals.clone(),
+            last_7_days: totals.clone(),
+            last_30_days: totals.clone(),
+            all_time: totals.clone(),
+            tools: vec![crate::cost::ToolCost {
+                tool: "codex".into(),
+                company: "OpenAI".into(),
+                sub_provider: "Codex".into(),
+                today: totals.clone(),
+                last_7_days: totals.clone(),
+                last_30_days: totals.clone(),
+                all_time: totals,
+                files_found: 3,
+            }],
+            scanned_at: now_unix(),
+            pricing_version: crate::cost::PRICING_VERSION.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn cost_snapshot(server: &ReadonlyMcp, arguments: &str) -> Value {
+        let reply = server
+            .handle_line(&format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"cost.snapshot","arguments":{arguments}}}}}"#
+            ))
+            .unwrap();
+        let value: Value = serde_json::from_str(&reply).unwrap();
+        serde_json::from_str(
+            value["result"]["content"][0]["text"].as_str().expect("text content"),
+        )
+        .expect("the payload is JSON")
+    }
+
+    /// The shape a caller written against the native client expects: windows
+    /// per tool, and the quota axis' names beside each one.
+    ///
+    /// The snapshot is seeded rather than scanned: this tool deliberately
+    /// reports what the app last scanned rather than walking the session tree
+    /// on an MCP call, so the thing under test is what it does with a snapshot
+    /// that exists.
+    #[test]
+    fn cost_snapshot_reports_windows_per_tool() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(temp.path().join(".vibebar"));
+        let view = seeded_view();
+        ClientStore::new(root.clone())
+            .save_cost_snapshot(&view)
+            .expect("the seeded snapshot is a valid one");
+        let server = server(&temp);
+
+        let payload = cost_snapshot(&server, "{}");
+
+        assert_eq!(payload["privacyModeEnabled"], false);
+        let rows = payload["tools"].as_array().expect("tools array");
+        // Without this the loop below runs zero times and proves nothing.
+        assert!(!rows.is_empty(), "the fixture produced no spend to report");
+        for row in rows {
+            for window in ["today", "last7d", "last30d", "allTime"] {
+                assert!(row[window]["costMicros"].is_i64(), "{window} is not a window");
+                assert!(row[window]["tokens"].is_u64());
+            }
+            assert!(row["company"].is_string(), "no company beside the tool");
+            assert!(row["subProvider"].is_string());
+            assert!(row["jsonlFilesFound"].is_u64());
+        }
+    }
+
+    /// Privacy mode is set in the other client, and this tool is a way out of
+    /// the machine. Empty, and saying why.
+    ///
+    /// Seeded with spend first: asserting an empty list proves nothing against
+    /// a machine that had none.
+    #[test]
+    fn cost_snapshot_reports_nothing_under_privacy_mode() {
+        let temp = tempfile::tempdir().unwrap();
+        let shared = temp.path().join(".vibebar");
+        std::fs::create_dir_all(&shared).unwrap();
+        let root = DataRoot::at(shared.clone());
+        ClientStore::new(root)
+            .save_cost_snapshot(&seeded_view())
+            .expect("the seeded snapshot is a valid one");
+        assert!(
+            !cost_snapshot(&server(&temp), "{}")["tools"]
+                .as_array()
+                .expect("tools")
+                .is_empty(),
+            "the seed did not reach the tool, so suppressing it proves nothing"
+        );
+
+        std::fs::write(
+            shared.join("settings.json"),
+            r#"{"costData":{"privacyModeEnabled":true}}"#,
+        )
+        .unwrap();
+        let server = server(&temp);
+
+        let payload = cost_snapshot(&server, "{}");
+
+        assert_eq!(payload["privacyModeEnabled"], true, "the caller is not told why it is empty");
+        assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
+    }
+
+    #[test]
+    fn cost_snapshot_rejects_an_argument_it_does_not_take() {
+        let temp = tempfile::tempdir().unwrap();
+        let server = server(&temp);
+        let rejected = server
+            .handle_line(r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"cost.snapshot","arguments":{"days":7}}}"#)
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&rejected).unwrap()["error"]["code"],
+            -32602
+        );
+    }
+
     #[test]
     fn catalog_is_read_only_and_schemas_fail_closed() {
         let temp = tempfile::tempdir().unwrap();
@@ -614,6 +841,7 @@ mod tests {
                 "sessions.list",
                 "sessions.search",
                 "status.get",
+                "cost.snapshot",
                 "pricing.effective"
             ]
         );

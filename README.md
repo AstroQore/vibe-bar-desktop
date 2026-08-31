@@ -153,7 +153,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Writable | ● | ◐ 3 | The cross-client write contract is in place (`docs/contracts/settings-write-v1.md`): a lock, a merge that keeps every key the writer does not know, and a notice when the other client replaces a choice made here. Desktop writes the three settings its own Settings presents |
 | Provider credential panes | ● 25 | ○ | |
 | **Platform** |
-| MCP tools | ● 12 | ◐ 5 | Read-only subset |
+| MCP tools | ● 12 | ◐ 6 | Read-only subset. `cost.snapshot` reports what the last local scan found, in the shape native's does |
 | Remote probe sync | ● | ○ | |
 | Launch at login | ● | ○ | |
 | In-app updates | ● Sparkle | ○ | Planned on the Tauri updater |
