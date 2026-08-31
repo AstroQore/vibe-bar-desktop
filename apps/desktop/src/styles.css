@@ -103,12 +103,131 @@ input[type="text"] {
   font-size: 14px;
   line-height: 1;
 }
-.mini-row { margin-bottom: 10px; }
-.mini-row:last-child { margin-bottom: 0; }
-.mini-row-head { display: flex; align-items: baseline; gap: 6px; font-size: 11px; }
-.mini-row-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mini-row-head small { color: var(--text-faint); }
-.mini-row-head strong { margin-left: auto; font-variant-numeric: tabular-nums; }
+/* The mini window is a row of dials grouped by the quota axis: company,
+   SubProvider, then the model group. Reading across it should answer "whose
+   quota is this" before "how much is left", which a flat list of bars could
+   not do — three of them saying "Weekly" is three different weeks. */
+.mini-companies {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.mini-company {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* A rule rather than a gap: the gap between SubProviders inside one company is
+   already this wide, and without the line the two boundaries read alike. */
+.mini-company-rule {
+  position: absolute;
+  left: -7px;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: color-mix(in srgb, var(--text) 5.5%, transparent);
+}
+.mini-company-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.mini-company-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.mini-subproviders {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.mini-subprovider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.mini-subprovider-name {
+  margin: 0;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+/* No rule between model groups on purpose: at this depth a divider read as a
+   SubProvider boundary when it was only separating one provider's models. */
+.mini-groups {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.mini-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.mini-group-name {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  min-height: 11px;
+  white-space: pre;
+}
+.mini-cells {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* Fixed width and fixed row heights: the dials line up across companies only
+   if every cell reserves the same space whether or not it has a forecast. */
+.mini-cell {
+  width: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+.mini-cell-label {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-dim);
+  min-height: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-cell-forecast {
+  font-size: 8px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  min-height: 10px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-cell-reset {
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  min-height: 10px;
+}
 .mini-empty { color: var(--text-faint); font-size: 12px; margin: 42px 0 0; text-align: center; }
 
 .titlebar {
@@ -821,4 +940,39 @@ input[type="text"] {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-dim);
+}
+
+/* The mini window's dial. The centre label is positioned over the arc rather
+   than inside the SVG so it inherits the page's font metrics. */
+.ring-gauge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.ring-gauge svg {
+  position: absolute;
+  inset: 0;
+}
+.ring-track {
+  stroke: var(--track);
+}
+.ring-centre {
+  position: relative;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+/* Long forecast lines shrink instead of being clipped: "out 3d" and
+   "out 3d 14h" are different answers, and an ellipsis hides which. Two steps,
+   sized from the widest wording at each length. */
+.mini-cell-forecast.is-long {
+  font-size: 6.5px;
+  letter-spacing: -0.01em;
+}
+.mini-cell-forecast.is-longest {
+  font-size: 5.8px;
+  letter-spacing: -0.01em;
 }
