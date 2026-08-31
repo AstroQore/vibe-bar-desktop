@@ -17,6 +17,7 @@ pub mod client_store;
 pub mod cost;
 pub mod credentials;
 pub mod error;
+pub mod forecast;
 pub mod mcp;
 pub mod model;
 pub mod paths;
