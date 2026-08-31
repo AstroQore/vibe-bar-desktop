@@ -11,6 +11,17 @@ use vibebar_desktop_core::shared::settings_document;
 const NATIVE_WRITTEN: &[u8] =
     include_bytes!("fixtures/settings-native-written.json");
 
+/// A checkout that translated the fixture's line endings would make every
+/// line look like a format disagreement with an implementation that is in fact
+/// identical. Say which it is.
+#[test]
+fn the_fixture_reached_this_checkout_untranslated() {
+    assert!(
+        !NATIVE_WRITTEN.contains(&b'\r'),
+        "the fixture has CRLF line endings — .gitattributes should keep it verbatim"
+    );
+}
+
 #[test]
 fn writes_back_exactly_what_the_native_app_wrote() {
     let object = settings_document::from_slice(NATIVE_WRITTEN)

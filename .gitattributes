@@ -1,3 +1,9 @@
 docs/contracts/*.json text eol=lf
 docs/contracts/*.sha256 text eol=lf
 docs/contracts/*.md text eol=lf
+
+# Not a text file that happens to be JSON: it is the bytes the native app
+# wrote, and the round-trip test compares against them exactly. A Windows
+# checkout that translated the line endings would report every line as a
+# format disagreement with an implementation that is in fact identical.
+crates/vibebar-desktop-core/tests/fixtures/*.json -text
