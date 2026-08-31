@@ -23,12 +23,14 @@
 
 mod attach;
 mod compute;
+pub mod cycles;
 mod model;
 mod timeline;
 
 pub use attach::{
-    attach_cached_forecasts, attach_cached_forecasts_at, attach_forecasts, observations_for,
-    seed_from_native_once,
+    attach_cached_forecasts, attach_cached_forecasts_at, attach_forecasts, cycles_for,
+    cycles_for_at,
+    observations_for, seed_from_native_once,
 };
 pub use compute::compute;
 pub use model::{Confidence, Diagnostics, ForecastInput, Observation, QuotaPaceForecast, Verdict};
@@ -157,6 +159,10 @@ mod contract_tests {
         raw_window_seconds: i64,
         reset_at: f64,
         observations: Vec<Observation>,
+        /// Absent in the five original cases, which leave the historical
+        /// projection untouched.
+        #[serde(default)]
+        completed_cycles: Vec<crate::forecast::model::CompletedCycle>,
     }
 
     /// The vectors in `docs/contracts/forecast-v1.json` were produced by the
@@ -193,7 +199,7 @@ mod contract_tests {
                     raw_window_seconds: case.input.raw_window_seconds,
                     now,
                     observations: visible,
-                    completed_cycles: vec![],
+                    completed_cycles: case.input.completed_cycles.clone(),
                 });
                 let Some(got) = got else { continue };
                 let want = expectations
@@ -232,16 +238,26 @@ mod contract_tests {
                     ("upper", got.projected_used_upper_percent, want_num("upper")),
                     ("target", got.target_remaining_percent, want_num("target")),
                     ("planned", got.planned_used_percent, want_num("planned")),
-                    (
-                        "runOutAt",
-                        got.run_out_at.unwrap_or(-1.0),
-                        want_num("runOutAt"),
-                    ),
                 ] {
                     assert!(
                         (got_v - want_v).abs() <= doc.numeric_tolerance,
                         "{ctx}: {label} {got_v} vs native {want_v}"
                     );
+                }
+                // Presence first: "never runs out" and "ran out at the epoch"
+                // are opposite claims, and a plain numeric comparison read an
+                // absent key as zero. Every case had one until the surplus
+                // vectors arrived, so nothing caught it.
+                match (got.run_out_at, want["runOutAt"].as_f64()) {
+                    (None, None) => {}
+                    (Some(got_at), Some(want_at)) => assert!(
+                        (got_at - want_at).abs() <= doc.numeric_tolerance,
+                        "{ctx}: runOutAt {got_at} vs native {want_at}"
+                    ),
+                    (got_at, want_at) => panic!(
+                        "{ctx}: runOutAt {got_at:?} vs native {want_at:?} — \
+                         one client predicts running out and the other does not"
+                    ),
                 }
                 assert_eq!(
                     got.current_observation_count as f64,

@@ -1,5 +1,6 @@
 import type { AccountQuota, PresentationSettings, QuotaView } from "../api";
 import { ProviderIcon } from "./ProviderIcon";
+import { ResetHistory } from "./ResetHistory";
 import {
   describeError,
   forecastDetail,
@@ -168,6 +169,14 @@ function QuotaCard({
                   })()}
                 </div>
               ) : null}
+              <ResetHistory
+                accountId={account.accountId}
+                bucketId={bucket.id}
+                tool={account.tool}
+                mode={showsUsed ? "used" : "remaining"}
+                refreshedAt={account.queriedAt}
+                targetRemainingPercent={bucket.forecast?.targetRemainingPercent}
+              />
             </div>
           );
         })

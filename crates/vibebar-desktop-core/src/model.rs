@@ -225,6 +225,23 @@ pub struct QuotaBucket {
     /// rather than as a confident verdict.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub forecast: Option<crate::forecast::QuotaPaceForecast>,
+    /// The account that actually reported this bucket, when it is not the one
+    /// the card is filed under.
+    ///
+    /// One card can merge buckets from several credential routes, and the id it
+    /// carries is whichever route answered most recently — which changes
+    /// between refreshes. Observations keyed on that would scatter a bucket's
+    /// own history across two ids and lose sight of what was seeded for it.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub source_account_id: Option<String>,
+}
+
+impl QuotaBucket {
+    /// Where this bucket's observations live, which is its own account rather
+    /// than the card's when a merge put them under different names.
+    pub fn observation_account<'a>(&'a self, card_account_id: &'a str) -> &'a str {
+        self.source_account_id.as_deref().unwrap_or(card_account_id)
+    }
 }
 
 impl QuotaBucket {
@@ -252,6 +269,7 @@ impl QuotaBucket {
             raw_window_seconds,
             group_title,
             forecast: None,
+            source_account_id: None,
         }
     }
 

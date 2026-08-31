@@ -9,6 +9,7 @@
 use crate::model::AccountQuota;
 use crate::paths::DataRoot;
 
+use super::cycles::{self, CycleSummary};
 use super::model::ForecastInput;
 use super::timeline::{ObservationStore, StoredObservation};
 use super::{compute, Observation};
@@ -37,7 +38,7 @@ pub fn attach_forecasts(root: &DataRoot, accounts: &mut [AccountQuota], now: f64
         // in the view, and the forecast simply has one sample less.
         for bucket in &account.buckets {
             let _ = store.record(
-                &account.account_id,
+                bucket.observation_account(&account.account_id),
                 &bucket.id,
                 StoredObservation {
                     sampled_at: account.queried_at,
@@ -48,25 +49,7 @@ pub fn attach_forecasts(root: &DataRoot, accounts: &mut [AccountQuota], now: f64
             );
         }
 
-        for bucket in account.buckets.iter_mut() {
-            let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds)
-            else {
-                continue;
-            };
-            let Ok(observations) =
-                store.observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS)
-            else {
-                continue;
-            };
-            bucket.forecast = compute(&ForecastInput {
-                used_percent: bucket.used_percent,
-                reset_at,
-                raw_window_seconds: window,
-                now,
-                observations,
-                completed_cycles: Vec::new(),
-            });
-        }
+        forecast_account(&store, account, now);
     }
 
     let _ = store.prune(now);
@@ -96,26 +79,84 @@ pub fn attach_cached_forecasts_at(root: &DataRoot, accounts: &mut [AccountQuota]
         return;
     };
     for account in accounts.iter_mut() {
-        for bucket in account.buckets.iter_mut() {
-            let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds)
-            else {
-                continue;
-            };
-            let Ok(observations) =
-                store.observations(&account.account_id, &bucket.id, now - LOOKBACK_SECONDS)
-            else {
-                continue;
-            };
-            bucket.forecast = compute(&ForecastInput {
-                used_percent: bucket.used_percent,
-                reset_at,
-                raw_window_seconds: window,
-                now,
-                observations,
-                completed_cycles: Vec::new(),
-            });
-        }
+        forecast_account(&store, account, now);
     }
+}
+
+/// Forecast every bucket of one account from the history the store holds.
+///
+/// One query per bucket serves both halves of the input: the observations the
+/// projections read, and the cycles they are compared against. Querying twice
+/// would double the cost of the most expensive part of a refresh for nothing.
+fn forecast_account(store: &ObservationStore, account: &mut AccountQuota, now: f64) {
+    for bucket in account.buckets.iter_mut() {
+        let (Some(reset_at), Some(window)) = (bucket.reset_at, bucket.raw_window_seconds) else {
+            continue;
+        };
+        let Ok(history) = store.dated_observations(
+            bucket.observation_account(&account.account_id),
+            &bucket.id,
+            now - LOOKBACK_SECONDS,
+            now,
+        ) else {
+            continue;
+        };
+        let (completed, _) = cycles::summarize(&history);
+        let observations: Vec<Observation> = history
+            .iter()
+            .map(|point| Observation {
+                sampled_at: point.sampled_at,
+                used_percent: point.used_percent,
+            })
+            .collect();
+        bucket.forecast = compute(&ForecastInput {
+            used_percent: bucket.used_percent,
+            reset_at,
+            raw_window_seconds: window,
+            now,
+            observations,
+            completed_cycles: cycles::as_forecast_input(&completed),
+        });
+    }
+}
+
+/// The cycles behind one bucket's history, oldest first, with the open one
+/// returned separately. Backs the reset-history chart.
+///
+/// Read-only: the chart is drawn from what a refresh already recorded, so
+/// opening a card can never create or mutate the store.
+pub fn cycles_for(
+    root: &DataRoot,
+    account_id: &str,
+    bucket_id: &str,
+    lookback_seconds: f64,
+) -> (Vec<CycleSummary>, Option<CycleSummary>) {
+    cycles_for_at(
+        root,
+        account_id,
+        bucket_id,
+        lookback_seconds,
+        crate::providers::now_unix(),
+    )
+}
+
+/// `cycles_for` with an explicit clock, so a test can replay a synthetic
+/// history without waiting for one.
+pub fn cycles_for_at(
+    root: &DataRoot,
+    account_id: &str,
+    bucket_id: &str,
+    lookback_seconds: f64,
+    now: f64,
+) -> (Vec<CycleSummary>, Option<CycleSummary>) {
+    let Some(store) = ObservationStore::open_read_only(root) else {
+        return (Vec::new(), None);
+    };
+    let Ok(history) = store.dated_observations(account_id, bucket_id, now - lookback_seconds, now)
+    else {
+        return (Vec::new(), None);
+    };
+    cycles::summarize(&history)
 }
 
 /// Adopt the native app's observation history, once per launch.
@@ -273,6 +314,150 @@ mod tests {
             .unwrap()
             .len();
         assert_eq!(before, after, "a read must not grow the store");
+    }
+
+    /// The chart reads; it must not write. `cycles_for` backs an IPC call the
+    /// UI makes whenever a card is drawn, so a store created here would mean
+    /// merely looking at the app mutates persistent state.
+    #[test]
+    fn asking_for_cycles_creates_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+
+        let (completed, current) = cycles_for(&root, "acct", "five_hour", 45.0 * 86_400.0);
+
+        assert!(completed.is_empty());
+        assert!(current.is_none());
+        assert!(!root.client_dir().join("observations.sqlite3").exists());
+    }
+
+    #[test]
+    fn cycles_for_reads_what_refreshes_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let now = crate::providers::now_unix();
+        // Two windows: one that ends, then a fresh one after the reset.
+        for (offset, used, reset) in [
+            (-7_200.0, 20.0, 1_800.0),
+            (-6_600.0, 45.0, 1_800.0),
+            (-1_800.0, 3.0, 19_800.0),
+            (-600.0, 9.0, 19_800.0),
+        ] {
+            let at = now + offset;
+            attach_forecasts(&root, &mut [account(at, used, Some(now + reset))], at);
+        }
+
+        let (completed, current) = cycles_for(&root, "acct", "five_hour", 45.0 * 86_400.0);
+
+        assert_eq!(completed.len(), 1, "the window that reset");
+        assert_eq!(completed[0].peak_used_percent, 45.0);
+        let current = current.expect("the window still open");
+        assert_eq!(current.peak_used_percent, 9.0);
+        assert_eq!(current.observation_count, 2);
+    }
+
+    /// An observation left behind by a clock that was ahead must not be
+    /// replayed as the newest state. `record` refuses one from the future, but
+    /// a correction after the fact leaves it stored, and cycle inference takes
+    /// whatever comes last as current — an open cycle at a percentage nobody
+    /// has reached, or a cycle closed on a reset that has not happened.
+    #[test]
+    fn an_observation_from_the_future_is_not_replayed_as_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let now = 1_000_000.0;
+        let reset = now + 9_000.0;
+        for (offset, used) in [(-1_200.0, 4.0), (-600.0, 6.0)] {
+            let at = now + offset;
+            attach_forecasts(&root, &mut [account(at, used, Some(reset))], at);
+        }
+        // Stored while the clock was an hour ahead.
+        let store = ObservationStore::open(&root).unwrap();
+        store
+            .record(
+                "acct",
+                "five_hour",
+                StoredObservation {
+                    sampled_at: now + 3_600.0,
+                    used_percent: 99.0,
+                    reset_at: Some(reset + 3_600.0),
+                    raw_window_seconds: Some(18_000),
+                },
+            )
+            .expect("a skewed row can exist however it got there");
+        assert_eq!(
+            store
+                .dated_observations("acct", "five_hour", 0.0, now + 86_400.0)
+                .unwrap()
+                .len(),
+            3,
+            "the skewed row has to actually be stored for this to test anything"
+        );
+        // The reader opens with `immutable=1`, which ignores the WAL entirely,
+        // so a live writer's row is invisible to it and this would pass without
+        // testing anything at all.
+        drop(store);
+
+        let (_, current) = cycles_for_at(&root, "acct", "five_hour", 45.0 * 86_400.0, now);
+        let current = current.expect("an open cycle");
+        assert_eq!(
+            current.peak_used_percent, 6.0,
+            "the future-dated reading became the current state"
+        );
+    }
+
+    /// A bucket merged onto another route's card keeps its own history.
+    ///
+    /// One card can carry buckets from several credential routes, and the id it
+    /// is filed under is whichever route answered most recently — which changes
+    /// between refreshes. Keying observations on that scattered a bucket's
+    /// history across two names, and hid whatever had been seeded for it.
+    #[test]
+    fn a_merged_bucket_records_under_the_account_that_reported_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let reset = 1_020_000.0;
+
+        for (i, used) in [2.0, 4.0, 6.0].iter().enumerate() {
+            let now = 1_003_000.0 + i as f64 * 600.0;
+            let mut merged = account(now, *used, Some(reset));
+            // The card is filed under one route; this bucket came from another.
+            merged.account_id = "card-route".into();
+            merged.buckets[0].source_account_id = Some("reporting-route".into());
+            attach_forecasts(&root, &mut [merged], now);
+        }
+
+        let store = ObservationStore::open_read_only(&root).expect("store");
+        assert_eq!(
+            store
+                .observations("reporting-route", "five_hour", 0.0)
+                .unwrap()
+                .len(),
+            3,
+            "history belongs to the route that reported the bucket"
+        );
+        assert!(
+            store
+                .observations("card-route", "five_hour", 0.0)
+                .unwrap()
+                .is_empty(),
+            "nothing should be filed under the card's own id"
+        );
+
+        // And the same key is used when reading it back, whichever route the
+        // card happens to be filed under next time.
+        let mut later = account(1_004_800.0, 8.0, Some(reset));
+        later.account_id = "a-different-route".into();
+        later.buckets[0].source_account_id = Some("reporting-route".into());
+        attach_cached_forecasts_at(&root, std::slice::from_mut(&mut later), 1_004_800.0);
+        assert_eq!(
+            later.buckets[0]
+                .forecast
+                .as_ref()
+                .expect("forecast")
+                .current_observation_count,
+            3
+        );
     }
 
     #[test]

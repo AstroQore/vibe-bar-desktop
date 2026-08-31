@@ -684,3 +684,130 @@ input[type="text"] {
 .provider-icon svg {
   display: block;
 }
+
+/* Reset history: one bar per quota cycle, filled by how much that cycle used
+   before the provider refilled it. The native card carries the same strip
+   under each bucket, so the proportions and the 12-bar cap match it. */
+.reset-history {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.reset-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.reset-history-title {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.reset-history-hint {
+  font-size: 8.5px;
+  color: var(--text-faint);
+}
+.reset-history-strip {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+.reset-history-bar {
+  position: relative;
+  flex: 1 1 0;
+  /* Below this the strip stops being readable as bars at all, and a bucket
+     with a long history is better scrolled than shaved to hairlines. */
+  min-width: 5px;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--track);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+.reset-history-bar:hover {
+  background: color-mix(in srgb, var(--track) 100%, var(--text) 6%);
+}
+/* The cycle still running is outlined: it is a partial measurement, and
+   drawing it like a finished one would invite comparing it to cycles that had
+   their full window to accumulate. The outline is an overlay rather than a
+   border because these bars are `flex-basis: 0` — a border sits outside the
+   flex basis and would make this one bar two pixels wider than its neighbours,
+   which reads as the current cycle being somehow bigger. */
+.reset-history-bar.is-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px dashed;
+  border-color: inherit;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.reset-history-fill {
+  width: 100%;
+  border-radius: 3px;
+}
+/* The forecast's safety target, for reading past cycles against. */
+.reset-history-target {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px dashed;
+  border-color: color-mix(in srgb, var(--text) 34%, transparent);
+  pointer-events: none;
+}
+.reset-history-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--track) 45%, transparent);
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.reset-history-caption {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.reset-history-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cycles that refilled before their window was up. Marked rather than smoothed
+   away: on real data one provider does this to 85% of its weekly cycles, and
+   whether the next reset moved with it decides whether the extra capacity is
+   usable or easy to waste.
+
+   The row sits above the bars because a cycle that spent all of its quota
+   fills the track to the top, and a marker inside would be the same colour as
+   the fill under it. The slots mirror the bars' flex sizing so the dots stay
+   over the cycles they describe. */
+.reset-history-marks {
+  display: flex;
+  height: 4px;
+}
+.reset-history-mark {
+  flex: 1 1 0;
+  min-width: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.reset-history-early {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+.reset-history-note {
+  font-size: 8.5px;
+  color: var(--text-faint);
+}

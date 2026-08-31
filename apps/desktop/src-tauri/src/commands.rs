@@ -3,6 +3,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use vibebar_desktop_core::cost::CostView;
+use vibebar_desktop_core::forecast::cycles::CycleSummary;
 use vibebar_desktop_core::refresh::QuotaView;
 use vibebar_desktop_core::sessions::{SessionListing, TranscriptCursor};
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
@@ -20,6 +21,16 @@ pub struct AppInfo {
     pub data_root: String,
     pub is_demo: bool,
     pub native_app: NativeAppPresence,
+}
+
+/// One bucket's reset cycles: the finished ones oldest first, then the one
+/// still open. Separate fields because the chart draws the open one
+/// differently — outlined rather than filled.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetHistory {
+    pub completed: Vec<CycleSummary>,
+    pub current: Option<CycleSummary>,
 }
 
 /// The current view without hitting the network.
@@ -112,6 +123,31 @@ pub fn session_transcript(
         )
         .map_err(|e| e.to_string())?;
     serde_json::to_value(page).map_err(|e| e.to_string())
+}
+
+/// The reset cycles behind one bucket, for the reset-history chart.
+///
+/// Read-only and outside the refresh path: the chart is drawn from what a
+/// refresh already recorded, so opening a card can never mutate the store.
+#[tauri::command]
+pub fn quota_cycles(
+    state: State<'_, AppState>,
+    account_id: String,
+    bucket_id: String,
+) -> ResetHistory {
+    // The native chart shows at most twelve bars, so a wider window would be
+    // read and thrown away. Sized for the longest cycle a provider uses.
+    const LOOKBACK_SECONDS: f64 = 120.0 * 86_400.0;
+    let (completed, current) = vibebar_desktop_core::forecast::cycles_for(
+        state.data_root(),
+        &account_id,
+        &bucket_id,
+        LOOKBACK_SECONDS,
+    );
+    ResetHistory {
+        completed,
+        current,
+    }
 }
 
 #[tauri::command]

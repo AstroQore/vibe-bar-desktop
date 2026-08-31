@@ -48,9 +48,9 @@ pub struct Observation {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletedCycle {
-    /// Unix seconds.
+    /// Unix seconds, from what the provider reported at the time.
     pub window_start: f64,
-    /// Unix seconds.
+    /// Unix seconds, the observed refill time.
     pub window_end: f64,
     pub peak_used_percent: f64,
 }
