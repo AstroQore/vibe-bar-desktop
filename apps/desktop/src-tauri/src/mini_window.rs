@@ -16,6 +16,16 @@ struct MiniState {
     geometry: Mutex<MiniWindowGeometry>,
 }
 
+/// Smallest the window will be made, so a render that measures nothing cannot
+/// produce a window too small to find. There is deliberately no fixed upper
+/// bound: the ceiling is the monitor, the way it is in the native client. A
+/// permitted twelve-field regular layout is wider than any round number worth
+/// picking, and cropping it to keep the window tidy would hide quotas the user
+/// asked for.
+const MIN_SIZE: (f64, f64) = (200.0, 120.0);
+/// Native keeps this much between the window and the screen edge.
+const SCREEN_MARGIN: f64 = 8.0;
+
 pub fn install<R: Runtime>(app: &AppHandle<R>, root: DataRoot) -> tauri::Result<()> {
     let store = ClientStore::new(root.clone());
     let geometry = store.load_mini_window_geometry();
@@ -25,8 +35,13 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, root: DataRoot) -> tauri::Result<
     });
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?mini=1".into()))
         .title("Vibe Bar Mini")
+        // A starting size only: the first render measures its layout and the
+        // window is fitted to it. The minimum is the one `resize_to_content`
+        // clamps to — two constants disagreeing about the same thing meant the
+        // platform floor silently won, and the smallest layouts stayed padded
+        // to a width nothing had asked for.
         .inner_size(272.0, 190.0)
-        .min_inner_size(272.0, 150.0)
+        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
@@ -59,16 +74,6 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
         show(app);
     }
 }
-
-/// Smallest the window will be made, so a render that measures nothing cannot
-/// produce a window too small to find. There is deliberately no fixed upper
-/// bound: the ceiling is the monitor, the way it is in the native client. A
-/// permitted twelve-field regular layout is wider than any round number worth
-/// picking, and cropping it to keep the window tidy would hide quotas the user
-/// asked for.
-const MIN_SIZE: (f64, f64) = (200.0, 120.0);
-/// Native keeps this much between the window and the screen edge.
-const SCREEN_MARGIN: f64 = 8.0;
 
 /// Fit the window to the layout it is drawing.
 ///
