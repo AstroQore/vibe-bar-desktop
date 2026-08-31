@@ -411,20 +411,31 @@ fn checked_directory(path: &Path) -> DirectoryState {
 /// closed on Unix, and a user whose `.codex` is somehow a file would be told
 /// their usage is zero rather than that the scan could not complete.
 fn not_found_state(path: &Path) -> DirectoryState {
+    if genuinely_absent(path) {
+        DirectoryState::Missing
+    } else {
+        DirectoryState::Unusable
+    }
+}
+
+/// True when nothing along `path` contradicts the claim that it is simply
+/// missing. False when the first existing ancestor cannot hold a child, which
+/// means discovery hit something unexpected rather than an empty machine.
+///
+/// Both discovery paths need this and neither can use the io error kind alone:
+/// Windows reports `NotFound` for a path that traverses a regular file, where
+/// Unix reports `ENOTDIR`.
+fn genuinely_absent(path: &Path) -> bool {
     let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     else {
-        return DirectoryState::Missing;
+        return true;
     };
     match fs::symlink_metadata(parent) {
-        // The parent exists but cannot hold this child.
-        Ok(metadata) if !metadata.is_dir() => DirectoryState::Unusable,
-        Ok(_) => DirectoryState::Missing,
-        // The parent is absent too: recurse so a file deep in the chain is
-        // still distinguished from a chain that simply does not exist.
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => not_found_state(parent),
-        Err(_) => DirectoryState::Unusable,
+        Ok(metadata) => metadata.is_dir() && !metadata.file_type().is_symlink(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => genuinely_absent(parent),
+        Err(_) => false,
     }
 }
 
@@ -573,7 +584,7 @@ fn collect_jsonl(
     let root_metadata = match fs::symlink_metadata(root) {
         Ok(metadata) => metadata,
         Err(error) => {
-            mark_discovery_error(&error, optional_root, budget);
+            mark_discovery_error(&error, root, optional_root, budget);
             return;
         }
     };
@@ -584,7 +595,7 @@ fn collect_jsonl(
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) => {
-            mark_discovery_error(&error, false, budget);
+            mark_discovery_error(&error, root, false, budget);
             return;
         }
     };
@@ -592,7 +603,7 @@ fn collect_jsonl(
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                mark_discovery_error(&error, false, budget);
+                mark_discovery_error(&error, root, false, budget);
                 continue;
             }
         };
@@ -605,7 +616,7 @@ fn collect_jsonl(
         let file_type = match entry.file_type() {
             Ok(file_type) => file_type,
             Err(error) => {
-                mark_discovery_error(&error, false, budget);
+                mark_discovery_error(&error, root, false, budget);
                 continue;
             }
         };
@@ -624,7 +635,7 @@ fn collect_jsonl(
             let metadata = match entry.metadata() {
                 Ok(metadata) => metadata,
                 Err(error) => {
-                    mark_discovery_error(&error, false, budget);
+                    mark_discovery_error(&error, root, false, budget);
                     continue;
                 }
             };
@@ -641,8 +652,17 @@ fn collect_jsonl(
     }
 }
 
-fn mark_discovery_error(error: &std::io::Error, optional_root: bool, budget: &mut DiscoveryBudget) {
+fn mark_discovery_error(
+    error: &std::io::Error,
+    root: &Path,
+    optional_root: bool,
+    budget: &mut DiscoveryBudget,
+) {
     if error.kind() != std::io::ErrorKind::NotFound || !optional_root {
+        budget.mark_incomplete();
+        return;
+    }
+    if !genuinely_absent(root) {
         budget.mark_incomplete();
     }
 }
@@ -2531,6 +2551,22 @@ mod tests {
             checked_directory(&home.path().join(".gemini/tmp")),
             DirectoryState::Missing
         );
+
+        // The other discovery path must agree: this is the one that actually
+        // failed on Windows, because it never consulted checked_directory.
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
+        assert!(files.is_empty());
+        assert!(
+            truncated,
+            "a file in the path must mark discovery incomplete"
+        );
+
+        // And an absent provider root stays quiet on both paths.
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Claude, &[".claude/projects"], 1);
+        assert!(files.is_empty());
+        assert!(!truncated, "an absent root is not an incomplete scan");
     }
 
     #[cfg(unix)]
