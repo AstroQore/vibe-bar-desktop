@@ -225,6 +225,15 @@ impl UsageEvent {
     }
 }
 
+/// How far past the scan clock an event may still be dated.
+///
+/// `now_unix` truncates to milliseconds while a file mtime carries
+/// nanoseconds, so a Gemini record that falls back to its file's mtime reads
+/// as slightly in the future whenever the scan lands in the same millisecond
+/// as the write. That is clock granularity, not implausible data — a genuinely
+/// wrong date is days or years out, and is still rejected.
+const CLOCK_GRANULARITY_SECONDS: f64 = 2.0;
+
 fn now_unix() -> f64 {
     Utc::now().timestamp_millis() as f64 / 1_000.0
 }
@@ -384,6 +393,7 @@ fn collect_gemini_chat_files(home: &Path) -> (Vec<SourceFile>, bool) {
     (files, truncated)
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum DirectoryState {
     Ready,
     Missing,
@@ -396,8 +406,45 @@ fn checked_directory(path: &Path) -> DirectoryState {
             DirectoryState::Ready
         }
         Ok(_) => DirectoryState::Unusable,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => DirectoryState::Missing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => not_found_state(path),
         Err(_) => DirectoryState::Unusable,
+    }
+}
+
+/// Tell a genuinely absent directory apart from one whose parent is not a
+/// directory at all.
+///
+/// The two look identical to `symlink_metadata` on Windows: a path traversing
+/// a regular file reports `NotFound` there, while Unix reports `ENOTDIR`.
+/// Without this the scanner would report "no data" on Windows where it fails
+/// closed on Unix, and a user whose `.codex` is somehow a file would be told
+/// their usage is zero rather than that the scan could not complete.
+fn not_found_state(path: &Path) -> DirectoryState {
+    if genuinely_absent(path) {
+        DirectoryState::Missing
+    } else {
+        DirectoryState::Unusable
+    }
+}
+
+/// True when nothing along `path` contradicts the claim that it is simply
+/// missing. False when the first existing ancestor cannot hold a child, which
+/// means discovery hit something unexpected rather than an empty machine.
+///
+/// Both discovery paths need this and neither can use the io error kind alone:
+/// Windows reports `NotFound` for a path that traverses a regular file, where
+/// Unix reports `ENOTDIR`.
+fn genuinely_absent(path: &Path) -> bool {
+    let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    else {
+        return true;
+    };
+    match fs::symlink_metadata(parent) {
+        Ok(metadata) => metadata.is_dir() && !metadata.file_type().is_symlink(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => genuinely_absent(parent),
+        Err(_) => false,
     }
 }
 
@@ -546,7 +593,7 @@ fn collect_jsonl(
     let root_metadata = match fs::symlink_metadata(root) {
         Ok(metadata) => metadata,
         Err(error) => {
-            mark_discovery_error(&error, optional_root, budget);
+            mark_discovery_error(&error, root, optional_root, budget);
             return;
         }
     };
@@ -557,7 +604,7 @@ fn collect_jsonl(
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) => {
-            mark_discovery_error(&error, false, budget);
+            mark_discovery_error(&error, root, false, budget);
             return;
         }
     };
@@ -565,7 +612,7 @@ fn collect_jsonl(
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                mark_discovery_error(&error, false, budget);
+                mark_discovery_error(&error, root, false, budget);
                 continue;
             }
         };
@@ -578,7 +625,7 @@ fn collect_jsonl(
         let file_type = match entry.file_type() {
             Ok(file_type) => file_type,
             Err(error) => {
-                mark_discovery_error(&error, false, budget);
+                mark_discovery_error(&error, root, false, budget);
                 continue;
             }
         };
@@ -597,7 +644,7 @@ fn collect_jsonl(
             let metadata = match entry.metadata() {
                 Ok(metadata) => metadata,
                 Err(error) => {
-                    mark_discovery_error(&error, false, budget);
+                    mark_discovery_error(&error, root, false, budget);
                     continue;
                 }
             };
@@ -616,10 +663,15 @@ fn collect_jsonl(
 
 fn mark_discovery_error(
     error: &std::io::Error,
+    root: &Path,
     optional_root: bool,
     budget: &mut DiscoveryBudget,
 ) {
     if error.kind() != std::io::ErrorKind::NotFound || !optional_root {
+        budget.mark_incomplete();
+        return;
+    }
+    if !genuinely_absent(root) {
         budget.mark_incomplete();
     }
 }
@@ -723,9 +775,7 @@ fn scan_file(
                 &source_key,
                 &mut parsed_events,
             ),
-            ToolType::Claude => {
-                parse_claude(&value, &source.path, &source_key, &mut parsed_events)
-            }
+            ToolType::Claude => parse_claude(&value, &source.path, &source_key, &mut parsed_events),
             ToolType::Gemini => parse_gemini(
                 &value,
                 gemini_fallback_time,
@@ -1277,22 +1327,26 @@ const GEMINI_PRICES: &[PricingEntry] = &[
         ModelPricing::simple(1.25, 10.0, Some(0.31))
             .above_threshold(200_000, 2.5, 15.0, 0.625, 2.5),
     ),
-    ("gemini-2.5-flash", ModelPricing::simple(0.3, 2.5, Some(0.075))),
+    (
+        "gemini-2.5-flash",
+        ModelPricing::simple(0.3, 2.5, Some(0.075)),
+    ),
     (
         "gemini-2.5-flash-lite",
         ModelPricing::simple(0.1, 0.4, Some(0.025)),
     ),
     (
         "gemini-3-pro",
-        ModelPricing::simple(2.0, 12.0, Some(0.5))
-            .above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
+        ModelPricing::simple(2.0, 12.0, Some(0.5)).above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
     ),
     (
         "gemini-3-pro-preview",
-        ModelPricing::simple(2.0, 12.0, Some(0.5))
-            .above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
+        ModelPricing::simple(2.0, 12.0, Some(0.5)).above_threshold(200_000, 4.0, 18.0, 1.0, 4.0),
     ),
-    ("gemini-3-flash", ModelPricing::simple(0.35, 2.8, Some(0.0875))),
+    (
+        "gemini-3-flash",
+        ModelPricing::simple(0.35, 2.8, Some(0.0875)),
+    ),
     (
         "gemini-3-flash-lite",
         ModelPricing::simple(0.125, 0.5, Some(0.031)),
@@ -1503,7 +1557,10 @@ fn aggregate(
     let mut unpriced_events = 0_u64;
 
     for event in events {
-        if !event.date.is_finite() || event.date <= 0.0 || event.date > scanned_at {
+        if !event.date.is_finite()
+            || event.date <= 0.0
+            || event.date > scanned_at + CLOCK_GRANULARITY_SECONDS
+        {
             continue;
         }
         let Some(day) = local_day(event.date) else {
@@ -1862,12 +1919,7 @@ mod tests {
         let mut events = Vec::new();
         let source_path = Path::new("/Users/example/.claude/projects/session.jsonl");
         let source_key: Arc<str> = source_path.to_string_lossy().into_owned().into();
-        parse_claude(
-            &value,
-            source_path,
-            &source_key,
-            &mut events,
-        );
+        parse_claude(&value, source_path, &source_key, &mut events);
 
         assert_eq!(events.len(), 1);
         assert!(Arc::ptr_eq(&events[0].source_key, &source_key));
@@ -2365,7 +2417,10 @@ mod tests {
         assert_eq!(view.all_time.tokens, 145);
         assert_eq!(view.unpriced_events, 1);
         assert!(view.all_time.priced_cost_micros > 0);
-        assert!(view.models.iter().all(|model| model.harness == "Gemini CLI"));
+        assert!(view
+            .models
+            .iter()
+            .all(|model| model.harness == "Gemini CLI"));
     }
 
     #[test]
@@ -2388,6 +2443,54 @@ mod tests {
             source_key: Arc::from(""),
         };
         assert_eq!(priced_cost_micros(&event), Some(500_003));
+    }
+
+    /// A record dated a hair past the scan clock is granularity, not data
+    /// from the future; a record dated next year is the bug this guard exists
+    /// for. Both directions are pinned so the tolerance cannot quietly grow
+    /// into "accept anything".
+    #[test]
+    fn future_guard_tolerates_clock_granularity_but_not_wrong_dates() {
+        let scanned_at = now_unix();
+        let event = |date: f64| UsageEvent {
+            tool: ToolType::Gemini,
+            date,
+            model: "gemini-3-flash".into(),
+            input: 10,
+            cache_read: 0,
+            output: 5,
+            cache_creation_5m: 0,
+            cache_creation_1h: 0,
+            service_tier: None,
+            session_id: None,
+            message_id: None,
+            request_id: None,
+            is_sidechain: false,
+            is_parent_path: true,
+            source_key: Arc::from("synthetic"),
+        };
+        let counted = |date: f64| {
+            aggregate(&[event(date)], 1, 0, false, scanned_at)
+                .all_time
+                .requests
+        };
+
+        assert_eq!(counted(scanned_at - 1.0), 1, "the recent past counts");
+        assert_eq!(
+            counted(scanned_at + 0.001),
+            1,
+            "a millisecond ahead is granularity"
+        );
+        assert_eq!(
+            counted(scanned_at + CLOCK_GRANULARITY_SECONDS / 2.0),
+            1,
+            "inside the tolerance counts"
+        );
+        assert_eq!(
+            counted(scanned_at + 86_400.0),
+            0,
+            "a day ahead is a wrong date, not granularity"
+        );
     }
 
     #[test]
@@ -2431,7 +2534,10 @@ mod tests {
         .unwrap();
         let (files, truncated) = collect_gemini_chat_files(home.path());
         assert_eq!(files.len(), 1);
-        assert!(truncated);
+        // Only the symlink causes truncation here, and only Unix creates one:
+        // the oversized file is discovered and then rejected by the scanner,
+        // which is asserted below.
+        assert_eq!(truncated, cfg!(unix));
         let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
             .refresh()
             .unwrap();
@@ -2482,6 +2588,47 @@ mod tests {
         assert!(truncated);
     }
 
+    /// A path component that is a regular file must fail closed on every
+    /// platform. Unix reports `ENOTDIR` for this and Windows reports
+    /// `NotFound`, so trusting the error kind alone told Windows users their
+    /// usage was zero instead of telling them the scan could not complete.
+    #[test]
+    fn a_file_in_the_path_is_unusable_not_missing() {
+        let home = tempfile::tempdir().unwrap();
+        fs::write(home.path().join(".codex"), "not a directory").unwrap();
+
+        assert_eq!(
+            checked_directory(&home.path().join(".codex/sessions")),
+            DirectoryState::Unusable
+        );
+        // Nested below the offending component, too.
+        assert_eq!(
+            checked_directory(&home.path().join(".codex/sessions/2026/08")),
+            DirectoryState::Unusable
+        );
+        // A chain that simply does not exist stays Missing.
+        assert_eq!(
+            checked_directory(&home.path().join(".gemini/tmp")),
+            DirectoryState::Missing
+        );
+
+        // The other discovery path must agree: this is the one that actually
+        // failed on Windows, because it never consulted checked_directory.
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
+        assert!(files.is_empty());
+        assert!(
+            truncated,
+            "a file in the path must mark discovery incomplete"
+        );
+
+        // And an absent provider root stays quiet on both paths.
+        let (files, truncated) =
+            collect_provider_files(home.path(), ToolType::Claude, &[".claude/projects"], 1);
+        assert!(files.is_empty());
+        assert!(!truncated, "an absent root is not an incomplete scan");
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlinked_discovery_root_is_truncated() {
@@ -2518,7 +2665,9 @@ mod tests {
         );
 
         let root = DataRoot::at_non_demo(home.path().join(".vibebar"));
-        let view = CostEngine::new(root.clone(), home.path()).refresh().unwrap();
+        let view = CostEngine::new(root.clone(), home.path())
+            .refresh()
+            .unwrap();
         assert!(view.truncated);
         assert_eq!(view.scanned_files, 1);
         assert_eq!(view.all_time.requests, 1);

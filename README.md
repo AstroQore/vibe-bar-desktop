@@ -85,8 +85,13 @@ crates/vibebar-desktop-core/   Platform-independent core: shared-data readers,
                                No Tauri, no GUI, tested on all three platforms.
 apps/desktop/                  React + TypeScript UI
 apps/desktop/src-tauri/        Tauri shell: window, tray, IPC
-docs/                          Architecture and the shared-storage contract
+docs/                          Architecture, the shared-storage rules, and
+                               the design record for cross-client writes
 ```
+
+The `core` crate is tested on macOS, Linux, and Windows on every pull request.
+The app job — workspace tests, frontend build, and the Tauri build — runs on
+macOS only, and the GUI has had its end-to-end pass there only.
 
 Session reading comes from [`agent-session-core`](https://github.com/AstroQore/agent-session-kit),
 the Rust lane of `agent-session-kit` — the same kit the native app's Swift
@@ -126,6 +131,13 @@ cd apps/desktop && pnpm typecheck && pnpm build
 Point the app at a synthetic data root with `VIBEBAR_DEMO_HOME=<dir>` — the
 same environment variable the native app's demo mode uses. In demo mode
 Desktop makes no network requests and reads no credentials.
+
+There is also a read-only diagnostic that prints what Desktop can see from a
+data root without starting the GUI:
+
+```sh
+cargo run -p vibebar-desktop-core --example inspect -- <data-root>
+```
 
 ## License
 

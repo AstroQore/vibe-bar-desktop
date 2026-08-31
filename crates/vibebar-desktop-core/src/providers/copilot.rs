@@ -17,7 +17,7 @@ use crate::model::{AccountQuota, QuotaBucket, QuotaOrigin, ToolType};
 const ACCOUNT_ID: &str = "misc-copilot";
 
 pub async fn fetch(_home: &Path, client: &Client) -> Result<AccountQuota, QuotaError> {
-    let environment: HashMap<String, String> = std::env::vars().collect();
+    let environment = super::read_env(&["COPILOT_TOKEN"]);
     let token = token(&environment).ok_or(QuotaError::NoCredential)?;
     let endpoint = usage_url();
 

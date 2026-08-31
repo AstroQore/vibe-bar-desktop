@@ -11,7 +11,13 @@ use vibebar_desktop_core::sessions::{SessionSource, SessionsService};
 use vibebar_desktop_core::shared::{service_status, settings::SharedSettings};
 
 fn main() {
-    let root = match std::env::args().nth(1) {
+    // An explicit argument is either a synthetic demo home or a real data
+    // root on a platform whose default this example cannot guess. Which one
+    // it is decides where sessions and usage are scanned from, and
+    // `DataRoot::at` cannot answer that: its demo flag means "write nothing",
+    // not "this path is synthetic".
+    let explicit_root = std::env::args().nth(1);
+    let root = match &explicit_root {
         Some(path) => DataRoot::at(path),
         None => DataRoot::discover(),
     };
@@ -23,7 +29,11 @@ fn main() {
     println!(
         "\nshared settings: refresh {}s, shows {}, {} menu-bar fields, {} custom labels",
         settings.refresh_interval().as_secs(),
-        if settings.shows_remaining() { "remaining" } else { "used" },
+        if settings.shows_remaining() {
+            "remaining"
+        } else {
+            "used"
+        },
         fields.len(),
         labels.len()
     );
@@ -64,20 +74,25 @@ fn main() {
     println!(
         "\nservice status: {} providers cached, degraded: {}",
         status.len(),
-        if degraded.is_empty() { "none".to_string() } else { degraded.join(", ") }
+        if degraded.is_empty() {
+            "none".to_string()
+        } else {
+            degraded.join(", ")
+        }
     );
 
-    let scan_home = if root.is_demo() {
-        root.shared()
-            .parent()
-            .unwrap_or(root.shared())
-            .to_path_buf()
-    } else {
-        home_directory()
+    // A synthetic home keeps its data root's parent as the scan root, so a
+    // demo tree stays self-contained. Anything else -- including an explicit
+    // real root such as %APPDATA%\\VibeBar -- scans the user's actual home,
+    // because %APPDATA%\\.codex does not exist and reporting zero sessions
+    // there would be a lie rather than a finding.
+    let scan_home = match explicit_root.as_deref().and_then(synthetic_home_of) {
+        Some(home) => home,
+        None => home_directory(),
     };
     // Keep this diagnostic read-only even on a real root. Re-wrapping the
     // exact path as demo suppresses only Desktop snapshot persistence.
-    let cost = CostEngine::new(DataRoot::at(root.shared()), scan_home)
+    let cost = CostEngine::new(DataRoot::at(root.shared()), scan_home.clone())
         .refresh()
         .unwrap_or_default();
     println!(
@@ -89,7 +104,9 @@ fn main() {
         cost.truncated
     );
 
-    let sessions = SessionsService::new(root);
+    // Same scan root as the cost engine above: with a demo root this must
+    // never fall back to the real home's session logs.
+    let sessions = SessionsService::with_home(root, scan_home);
     let listing = sessions.list(5);
     println!(
         "\nsessions: source={:?}{}",
@@ -106,11 +123,31 @@ fn main() {
         println!(
             "  [{}] {}",
             row.harness,
-            row.title.as_deref().unwrap_or("<untitled>").chars().take(60).collect::<String>()
+            row.title
+                .as_deref()
+                .unwrap_or("<untitled>")
+                .chars()
+                .take(60)
+                .collect::<String>()
         );
     }
     if listing.source == SessionSource::Indexed {
         let hits = sessions.search("quota", 3);
         println!("  search 'quota': {} hits", hits.rows.len());
     }
+}
+
+/// The scan root for a synthetic data root, or `None` when the path looks
+/// like a real one.
+///
+/// A demo tree is laid out as `<synthetic-home>/.vibebar`, so the home is the
+/// parent — but only when the leaf is actually `.vibebar`. A platform data
+/// root such as `%APPDATA%\\VibeBar` or `~/Library/Application Support/...`
+/// has a different leaf and a parent that holds no agent logs.
+fn synthetic_home_of(root: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::Path::new(root);
+    if path.file_name()? != std::ffi::OsStr::new(".vibebar") {
+        return None;
+    }
+    Some(path.parent()?.to_path_buf())
 }

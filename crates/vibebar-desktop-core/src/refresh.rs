@@ -106,7 +106,11 @@ impl QuotaEngine {
         }
 
         let mut fetched: Vec<AccountQuota> = Vec::new();
-        for tool in ToolType::ALL.iter().copied().filter(|t| t.has_live_adapter()) {
+        for tool in ToolType::ALL
+            .iter()
+            .copied()
+            .filter(|t| t.has_live_adapter())
+        {
             match crate::providers::fetch(tool, &self.home, &self.client).await {
                 Ok(quota) => {
                     // A failed persist must not lose the observation we
@@ -128,8 +132,7 @@ impl QuotaEngine {
 
         // A cached success hides transient failures, but never hides an
         // authentication problem that requires the user to act.
-        let (ok, failed): (Vec<_>, Vec<_>) =
-            fetched.into_iter().partition(|q| q.error.is_none());
+        let (ok, failed): (Vec<_>, Vec<_>) = fetched.into_iter().partition(|q| q.error.is_none());
 
         // Everything this client knows about, live or previously persisted,
         // so the shared cache's hashed filenames can be matched back to real
@@ -158,7 +161,12 @@ impl QuotaEngine {
     }
 
     fn view(accounts: Vec<AccountQuota>, has_shared_data: bool, is_demo: bool) -> QuotaView {
-        Self::view_at(accounts, has_shared_data, is_demo, crate::providers::now_unix())
+        Self::view_at(
+            accounts,
+            has_shared_data,
+            is_demo,
+            crate::providers::now_unix(),
+        )
     }
 
     fn view_at(
@@ -325,11 +333,7 @@ fn is_auth_failure(quota: &AccountQuota) -> bool {
     quota.error.as_ref().is_some_and(is_auth_error)
 }
 
-fn should_keep_failure(
-    covered: bool,
-    had_desktop_snapshot: bool,
-    failure: &AccountQuota,
-) -> bool {
+fn should_keep_failure(covered: bool, had_desktop_snapshot: bool, failure: &AccountQuota) -> bool {
     !covered || (had_desktop_snapshot && is_auth_failure(failure))
 }
 
@@ -362,7 +366,9 @@ mod tests {
         AccountQuota {
             account_id: id.into(),
             tool,
-            buckets: vec![QuotaBucket::new("weekly", "Weekly", "wk", 10.0, None, None, None)],
+            buckets: vec![QuotaBucket::new(
+                "weekly", "Weekly", "wk", 10.0, None, None, None,
+            )],
             plan: None,
             queried_at: at,
             origin,
@@ -390,12 +396,7 @@ mod tests {
         assert_eq!(merged[0].origin, QuotaOrigin::Live);
     }
 
-    fn quota_with(
-        id: &str,
-        tool: ToolType,
-        at: f64,
-        buckets: &[(&str, f64)],
-    ) -> AccountQuota {
+    fn quota_with(id: &str, tool: ToolType, at: f64, buckets: &[(&str, f64)]) -> AccountQuota {
         AccountQuota {
             account_id: id.into(),
             tool,
@@ -451,7 +452,12 @@ mod tests {
         // The newest route lost a window the older one still has; dropping it
         // would silently delete a real limit from the card.
         let accounts = vec![
-            quota_with("old", ToolType::Codex, NOW - 3600.0, &[("weekly", 50.0), ("five_hour", 20.0)]),
+            quota_with(
+                "old",
+                ToolType::Codex,
+                NOW - 3600.0,
+                &[("weekly", 50.0), ("five_hour", 20.0)],
+            ),
             quota_with("new", ToolType::Codex, NOW - 60.0, &[("weekly", 55.0)]),
         ];
         let card = &QuotaEngine::view_at(accounts, true, false, NOW).accounts[0];
@@ -466,12 +472,7 @@ mod tests {
 
     #[test]
     fn consolidated_windows_from_multiple_sources_are_labeled_mixed() {
-        let mut desktop = quota_with(
-            "desktop",
-            ToolType::Codex,
-            NOW - 60.0,
-            &[("weekly", 55.0)],
-        );
+        let mut desktop = quota_with("desktop", ToolType::Codex, NOW - 60.0, &[("weekly", 55.0)]);
         desktop.origin = QuotaOrigin::DesktopCache;
         let shared = quota_with(
             "shared",
@@ -490,7 +491,12 @@ mod tests {
     fn future_timestamps_and_empty_accounts_never_reach_the_ui() {
         let accounts = vec![
             // Stamped months ahead — cannot be an observation.
-            quota_with("bogus", ToolType::Claude, NOW + 86_400.0 * 150.0, &[("weekly", 1.0)]),
+            quota_with(
+                "bogus",
+                ToolType::Claude,
+                NOW + 86_400.0 * 150.0,
+                &[("weekly", 1.0)],
+            ),
             quota_with("real", ToolType::Claude, NOW - 60.0, &[("weekly", 34.0)]),
             // No windows and no failure: not information.
             quota_with("empty", ToolType::Grok, NOW - 60.0, &[]),
@@ -610,7 +616,12 @@ mod tests {
 
         // Once we have fetched it ourselves, both entries are one account.
         ClientStore::new(root)
-            .save_quota(&quota(account_id, ToolType::Codex, 1_788_038_500.0, QuotaOrigin::Live))
+            .save_quota(&quota(
+                account_id,
+                ToolType::Codex,
+                1_788_038_500.0,
+                QuotaOrigin::Live,
+            ))
             .unwrap();
         let view = engine.cached_view();
         assert_eq!(view.accounts.len(), 1, "got {:?}", view.accounts);
@@ -624,7 +635,9 @@ mod tests {
         let quotas_dir = root.quotas_dir();
         std::fs::create_dir_all(&quotas_dir).unwrap();
         let file = quotas_dir
-            .join(crate::shared::quota_cache::cache_file_component("misc-kimi"))
+            .join(crate::shared::quota_cache::cache_file_component(
+                "misc-kimi",
+            ))
             .with_extension("json");
         std::fs::write(
             &file,

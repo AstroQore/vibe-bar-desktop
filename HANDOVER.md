@@ -106,10 +106,10 @@ demo Sessions had been scanning the real home. The final app uses
 `SessionsService::with_home` with the demo scan root. The synthetic shared
 root stayed unchanged; only Desktop-private Mini state changed.
 
-This fix is not yet universal: `examples/inspect.rs` still constructs
-`SessionsService::new(root)`. Running that diagnostic with a demo root can
-therefore scan real-home session metadata. Do not use the example as
-demo-isolation proof until that call site is fixed.
+`examples/inspect.rs` had the same leak and no longer does: it resolves its
+scan root from the shape of the path it was given, so a synthetic
+`<home>/.vibebar` scans that synthetic home while an explicit real data root
+scans the user's actual home.
 
 GitHub Actions on the final PR did not execute a single step. Every job ended
 in about two seconds with the GitHub annotation that the job was not started
@@ -138,8 +138,8 @@ the SQLite `session_index.sqlite3-shm` mtime.
 9. Keep the MCP surface read-only unless the user explicitly authorizes a
    particular local-data exposure or writer role.
 10. On a demo root, quota, sessions, cost, status, geometry, and all scans must
-    stay inside that demo root. The app runtime complies; the
-    `examples/inspect.rs` Sessions call is a documented outstanding violation.
+    stay inside that demo root. Both the app runtime and
+    `examples/inspect.rs` comply.
 
 ## 6. Deliberately not done
 
@@ -197,8 +197,10 @@ narrow.
   just before the boundary are not included.
 - Bare slash commands are not used as session titles.
 - A demo root must supply both the data root and scan home; otherwise synthetic
-  QA can leak real session metadata into the UI. App state now supplies both,
-  but `examples/inspect.rs` still needs the same correction.
+  QA can leak real session metadata into the UI. App state supplies both, and
+  `examples/inspect.rs` derives the scan home from the path shape rather than
+  from the write-suppression flag, so an explicit real data root still scans
+  the user's actual home.
 - A disappearing MCP peer must not terminate the app through SIGPIPE. Native
   dev.53+ and the session kit include that socket hardening; preserve it in any
   future transport work.

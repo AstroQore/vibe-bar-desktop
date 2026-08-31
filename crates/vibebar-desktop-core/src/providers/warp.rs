@@ -256,11 +256,9 @@ fn buckets(snapshot: Snapshot) -> ParsedBuckets {
             snapshot.bonus_next_expiration,
             snapshot.bonus_next_expiration_remaining,
         ) {
-            (Some(expiry), remaining) if remaining > 0 => format!(
-                "{} bonus left · expires {}",
-                remaining,
-                format_date(expiry)
-            ),
+            (Some(expiry), remaining) if remaining > 0 => {
+                format!("{} bonus left · expires {}", remaining, format_date(expiry))
+            }
             _ => format!("{} bonus credits left", snapshot.bonus_remaining),
         };
         result.push(QuotaBucket::new(
@@ -318,30 +316,26 @@ fn bonus_summary(
             }
         }
     }
-    grants.retain(|grant| {
-        grant
-            .expiration
-            .is_none_or(|expiration| expiration > now)
-    });
-    let remaining = checked_total(grants.iter().map(|grant| grant.remaining)).ok_or_else(|| {
-        QuotaError::ParseFailure("Warp bonus grant totals overflow".into())
-    })?;
-    let total = checked_total(grants.iter().map(|grant| grant.granted)).ok_or_else(|| {
-        QuotaError::ParseFailure("Warp bonus grant totals overflow".into())
-    })?;
+    grants.retain(|grant| grant.expiration.is_none_or(|expiration| expiration > now));
+    let remaining = checked_total(grants.iter().map(|grant| grant.remaining))
+        .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant totals overflow".into()))?;
+    let total = checked_total(grants.iter().map(|grant| grant.granted))
+        .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant totals overflow".into()))?;
     let next_expiration = grants
         .iter()
         .filter(|grant| grant.remaining > 0)
         .filter_map(|grant| grant.expiration)
         .min_by(f64::total_cmp);
     let next_expiration_remaining = if let Some(earliest) = next_expiration {
-        checked_total(grants
-            .iter()
-            .filter(|grant| {
-                grant.remaining > 0
-                    && grant.expiration.map(|value| value as i64) == Some(earliest as i64)
-            })
-            .map(|grant| grant.remaining))
+        checked_total(
+            grants
+                .iter()
+                .filter(|grant| {
+                    grant.remaining > 0
+                        && grant.expiration.map(|value| value as i64) == Some(earliest as i64)
+                })
+                .map(|grant| grant.remaining),
+        )
         .ok_or_else(|| QuotaError::ParseFailure("Warp bonus grant totals overflow".into()))?
     } else {
         0
@@ -579,7 +573,10 @@ mod tests {
             let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
             root["data"]["user"]["user"]["bonusGrants"] = Value::Array(vec![grant]);
             let body = serde_json::to_vec(&root).unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
     }
 
@@ -589,7 +586,10 @@ mod tests {
             let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
             root["data"]["user"]["user"]["bonusGrants"][0]["expiration"] = expiration;
             let body = serde_json::to_vec(&root).unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
     }
 
@@ -602,7 +602,10 @@ mod tests {
         ]);
         root["data"]["user"]["user"]["workspaces"] = Value::Array(Vec::new());
         let body = serde_json::to_vec(&root).unwrap();
-        assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+        assert!(matches!(
+            parse(&body, 0.0),
+            Err(QuotaError::ParseFailure(_))
+        ));
     }
 
     #[test]
@@ -614,7 +617,10 @@ mod tests {
             let mut root: Value = serde_json::from_slice(&payload(false)).unwrap();
             root["data"]["user"]["user"][path] = value;
             let body = serde_json::to_vec(&root).unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
     }
 
@@ -654,7 +660,10 @@ mod tests {
                 }}
             }))
             .unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
     }
 
@@ -678,7 +687,10 @@ mod tests {
                 }}
             }))
             .unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
     }
 
@@ -702,7 +714,10 @@ mod tests {
                 }}
             }))
             .unwrap();
-            assert!(matches!(parse(&body, 0.0), Err(QuotaError::ParseFailure(_))));
+            assert!(matches!(
+                parse(&body, 0.0),
+                Err(QuotaError::ParseFailure(_))
+            ));
         }
     }
 }

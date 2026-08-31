@@ -29,7 +29,10 @@ impl ClaudeCredential {
 }
 
 pub fn load(home: &Path) -> Result<ClaudeCredential, QuotaError> {
-    for relative in [".claude/.credentials.json", ".config/claude/.credentials.json"] {
+    for relative in [
+        ".claude/.credentials.json",
+        ".config/claude/.credentials.json",
+    ] {
         let path = home.join(relative);
         if path.is_file() {
             if let Ok(bytes) = std::fs::read(&path) {

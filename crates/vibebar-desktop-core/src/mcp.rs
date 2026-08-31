@@ -471,9 +471,10 @@ fn parse_since(value: Option<&Value>) -> Result<Option<i64>, Problem> {
     }
     chrono::DateTime::parse_from_rfc3339(raw)
         .map(|date| {
-            Some(date.timestamp().saturating_add(i64::from(
-                date.timestamp_subsec_nanos() > 0,
-            )))
+            Some(
+                date.timestamp()
+                    .saturating_add(i64::from(date.timestamp_subsec_nanos() > 0)),
+            )
         })
         .map_err(|_| Problem::invalid_params())
 }
@@ -969,7 +970,7 @@ mod tests {
             .save_status_snapshot(&crate::status::StoredStatusSnapshot {
                 schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
                 saved_at: now,
-                providers: vec![crate::status::StoredProviderStatus {
+                providers: vec![crate::status::ProviderStatus {
                     tool: ToolType::Gemini,
                     indicator: "minor".into(),
                     description: "Synthetic Google AI issue".into(),
@@ -1003,7 +1004,7 @@ mod tests {
             .save_status_snapshot(&crate::status::StoredStatusSnapshot {
                 schema_version: crate::status::STATUS_SNAPSHOT_SCHEMA_VERSION,
                 saved_at: now,
-                providers: vec![crate::status::StoredProviderStatus {
+                providers: vec![crate::status::ProviderStatus {
                     tool: ToolType::Claude,
                     indicator: "none".into(),
                     description: "Synthetic recovery".into(),

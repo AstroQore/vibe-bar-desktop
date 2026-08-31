@@ -43,10 +43,7 @@ pub fn load(root: &DataRoot) -> HashMap<String, DiscoveredField> {
     let file: RegistryFile =
         super::read_json_file(&root.quota_field_registry_file(), MAX_REGISTRY_BYTES)
             .unwrap_or_default();
-    file.fields
-        .into_iter()
-        .map(|f| (f.id.clone(), f))
-        .collect()
+    file.fields.into_iter().map(|f| (f.id.clone(), f)).collect()
 }
 
 #[cfg(test)]
