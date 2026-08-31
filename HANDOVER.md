@@ -39,7 +39,7 @@ visual parity pass against every dev.56 Mini variant.
 | Mini | One Desktop-owned quota layout, tray toggle, private geometry and visibility state |
 | Status | Public OpenAI, Claude, Google AI, and Cursor status with last-good state stored only under Desktop's private namespace |
 | Usage and cost | Read-only local Codex, Claude, and Gemini CLI scan; aggregate snapshot stays Desktop-private |
-| Resets | Provider-declared upcoming reset times from current quota observations; no forecasting or historical inference |
+| Resets | Provider-declared upcoming reset times from current quota observations, each with its forecast; cycle history is inferred from recorded observations, never invented |
 | Skills | Read-only inventory from fixed local SSOT and harness roots; no install, delete, or sync |
 | Sessions | Shared index when compatible; otherwise bounded local Codex and Claude discovery |
 | Search and transcripts | Indexed FTS or bounded metadata fallback, paged transcript reads, opaque expiring capabilities, and page-local find |
