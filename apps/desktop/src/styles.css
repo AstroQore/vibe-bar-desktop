@@ -786,3 +786,34 @@ input[type="text"] {
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
+
+/* Cycles that refilled before their window was up. Marked rather than smoothed
+   away: on real data one provider does this to 85% of its weekly cycles, and
+   whether the next reset moved with it decides whether the extra capacity is
+   usable or easy to waste.
+
+   The row sits above the bars because a cycle that spent all of its quota
+   fills the track to the top, and a marker inside would be the same colour as
+   the fill under it. The slots mirror the bars' flex sizing so the dots stay
+   over the cycles they describe. */
+.reset-history-marks {
+  display: flex;
+  height: 4px;
+}
+.reset-history-mark {
+  flex: 1 1 0;
+  min-width: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.reset-history-early {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+.reset-history-note {
+  font-size: 8.5px;
+  color: var(--text-faint);
+}

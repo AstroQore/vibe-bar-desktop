@@ -45,6 +45,31 @@ pub enum CompletionReason {
     ScheduledReset,
 }
 
+/// What the provider did when it refilled, which is not the same question as
+/// how we noticed.
+///
+/// A window that refills before it said it would is an event worth showing,
+/// and there are two kinds with opposite consequences. Measured over ~600 real
+/// boundaries: OpenAI's weekly buckets refill early and restart the clock in
+/// 85% of their cycles, while Anthropic's ran on schedule 128 times out of 128.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ResetKind {
+    /// The window ended within a tenth of a window of when it said it would.
+    OnSchedule,
+    /// Refilled early, and the next reset moved out to a full window from the
+    /// refill. A whole window lies ahead, so the extra capacity is usable.
+    EarlyClockRestarted,
+    /// Refilled early and the next reset did not move. Less than a window
+    /// remains, so the refill is easier to leave unused than to spend.
+    EarlyClockUnchanged,
+    /// Early, but the new reset matched neither rule — a plan change, a
+    /// provider correction, or a boundary seen across a gap in observation.
+    EarlyUnclear,
+    /// No previous boundary to measure against.
+    Unknown,
+}
+
 /// One inferred cycle. The one still open carries `completion: None`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +90,13 @@ pub struct CycleSummary {
     pub last_seen_at: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completion: Option<CompletionReason>,
+    /// What the provider did to the clock when this cycle ended.
+    pub reset_kind: ResetKind,
+    /// How long after the previous refill this one arrived. Compare it against
+    /// `raw_window_seconds` to see a bucket that does not keep to its own
+    /// stated window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval_seconds: Option<f64>,
 }
 
 impl CycleSummary {
@@ -165,6 +197,7 @@ fn completion_reason(
 pub fn summarize(observations: &[DatedObservation]) -> (Vec<CycleSummary>, Option<CycleSummary>) {
     let mut completed = Vec::new();
     let mut current: Option<CycleSummary> = None;
+    let mut previous_end: Option<f64> = None;
 
     for point in observations {
         let Some(reset_at) = point.reset_at else {
@@ -184,9 +217,17 @@ pub fn summarize(observations: &[DatedObservation]) -> (Vec<CycleSummary>, Optio
         match completion_reason(open, used, reset_at, at) {
             Some(reason) => {
                 open.completion = Some(reason);
+                open.reset_kind = classify_reset(
+                    open.window_end,
+                    reset_at,
+                    at,
+                    open.raw_window_seconds,
+                );
+                open.interval_seconds = previous_end.map(|end| at - end);
                 // The observed refill time beats a stale reset forecast when a
                 // provider resets early or late.
                 open.window_end = at;
+                previous_end = Some(at);
                 completed.push(*open);
                 current = Some(new_cycle(used, reset_at, point.raw_window_seconds, at));
             }
@@ -212,6 +253,36 @@ pub fn summarize(observations: &[DatedObservation]) -> (Vec<CycleSummary>, Optio
     (completed, current)
 }
 
+/// How early is early, and how close does a new reset have to be to count as
+/// restarted or unchanged. A tenth of the window on each side: wide enough to
+/// absorb the minute or two a provider takes to publish a new boundary, narrow
+/// enough that a genuinely different schedule does not slip through.
+const RESET_TOLERANCE_FRACTION: f64 = 0.10;
+
+/// Did the window end when it said it would, and if not, what happened to the
+/// next boundary?
+fn classify_reset(
+    reported_reset_at: f64,
+    new_reset_at: f64,
+    observed_at: f64,
+    raw_window_seconds: Option<i64>,
+) -> ResetKind {
+    let Some(window) = raw_window_seconds.map(|s| s as f64).filter(|w| *w > 0.0) else {
+        return ResetKind::Unknown;
+    };
+    let tolerance = window * RESET_TOLERANCE_FRACTION;
+    if reported_reset_at - observed_at <= tolerance {
+        return ResetKind::OnSchedule;
+    }
+    if (new_reset_at - (observed_at + window)).abs() <= tolerance {
+        return ResetKind::EarlyClockRestarted;
+    }
+    if (new_reset_at - reported_reset_at).abs() <= tolerance {
+        return ResetKind::EarlyClockUnchanged;
+    }
+    ResetKind::EarlyUnclear
+}
+
 fn new_cycle(
     used: f64,
     reset_at: f64,
@@ -228,6 +299,8 @@ fn new_cycle(
         first_seen_at: now,
         last_seen_at: now,
         completion: None,
+        reset_kind: ResetKind::Unknown,
+        interval_seconds: None,
     }
 }
 
@@ -361,6 +434,73 @@ mod tests {
         assert!(completed.is_empty());
     }
 
+    /// A window that ends when it said it would.
+    #[test]
+    fn a_window_that_runs_its_full_length_is_on_schedule() {
+        let points = [
+            point(0.0, 40.0, 18_000.0),
+            // The reset arrives; the next window is a full one from here.
+            point(18_000.0, 2.0, 36_000.0),
+        ];
+        let (completed, _) = summarize(&points);
+        assert_eq!(completed[0].reset_kind, ResetKind::OnSchedule);
+    }
+
+    /// OpenAI's shape: refilled early, and the next reset moved out to a full
+    /// window from the refill. A whole window lies ahead.
+    #[test]
+    fn an_early_refill_that_restarts_the_clock_is_recognised() {
+        let points = [
+            point(0.0, 40.0, 18_000.0),
+            // Refilled at 5_000s with 13_000s still on the old clock, and the
+            // new reset is 18_000s out from here.
+            point(5_000.0, 2.0, 23_000.0),
+        ];
+        let (completed, _) = summarize(&points);
+        assert_eq!(completed[0].reset_kind, ResetKind::EarlyClockRestarted);
+    }
+
+    /// The opposite consequence: refilled early and the boundary did not move,
+    /// so under four hours of a five-hour window remain to spend it in.
+    #[test]
+    fn an_early_refill_that_leaves_the_clock_alone_is_recognised() {
+        let points = [
+            point(0.0, 40.0, 18_000.0),
+            point(5_000.0, 2.0, 18_000.0),
+        ];
+        let (completed, _) = summarize(&points);
+        assert_eq!(completed[0].reset_kind, ResetKind::EarlyClockUnchanged);
+    }
+
+    /// Neither rule: a plan change, a correction, or a boundary seen across a
+    /// gap. Called out rather than filed under one of the two real shapes.
+    #[test]
+    fn an_early_refill_onto_an_unrelated_schedule_is_left_unclear() {
+        let points = [
+            point(0.0, 40.0, 18_000.0),
+            point(5_000.0, 2.0, 60_000.0),
+        ];
+        let (completed, _) = summarize(&points);
+        assert_eq!(completed[0].reset_kind, ResetKind::EarlyUnclear);
+    }
+
+    /// How long the provider actually took between refills, which is the fact
+    /// that shows a bucket ignoring its own stated window.
+    #[test]
+    fn the_interval_between_refills_is_recorded() {
+        let points = [
+            point(0.0, 40.0, 18_000.0),
+            point(18_000.0, 2.0, 36_000.0),
+            point(30_000.0, 30.0, 36_000.0),
+            point(36_000.0, 3.0, 54_000.0),
+        ];
+        let (completed, _) = summarize(&points);
+        assert_eq!(completed.len(), 2);
+        // Nothing to measure the first against.
+        assert_eq!(completed[0].interval_seconds, None);
+        assert_eq!(completed[1].interval_seconds, Some(18_000.0));
+    }
+
     #[test]
     fn observations_without_a_reset_time_are_skipped() {
         let points = [
@@ -406,6 +546,8 @@ mod tests {
             first_seen_at: 2_100.0,
             last_seen_at: 19_900.0,
             completion: Some(CompletionReason::ScheduledReset),
+            reset_kind: ResetKind::OnSchedule,
+            interval_seconds: None,
         }];
         let input = as_forecast_input(&cycles);
         assert_eq!(input[0].window_start, 2_000.0);
@@ -429,6 +571,8 @@ mod tests {
             first_seen_at: 18_500.0,
             last_seen_at: 19_900.0,
             completion: Some(CompletionReason::RefillDetected),
+            reset_kind: ResetKind::OnSchedule,
+            interval_seconds: None,
         }];
         let input = as_forecast_input(&cycles);
         assert_eq!(input[0].window_start, 18_500.0);
@@ -446,6 +590,8 @@ mod tests {
             first_seen_at: 0.0,
             last_seen_at: 1.0,
             completion: None,
+            reset_kind: ResetKind::Unknown,
+            interval_seconds: None,
         };
         assert_eq!(cycle.remaining_percent_at_reset(), 0.0);
     }
@@ -530,43 +676,72 @@ mod real_data {
     }
 
 
+    /// What each provider does to the clock, over the whole real history. The
+    /// two shapes have opposite consequences for the forecast, so this is
+    /// worth being able to re-run rather than trusting a number in a comment.
     #[test]
-    #[ignore = "compares stored spans against observed cadence"]
-    fn is_a_short_span_wrong_or_just_short() {
-        let home = std::env::var_os("HOME").unwrap();
-        let native = std::path::PathBuf::from(&home).join(".vibebar").join("fill_timeline.sqlite3");
-        if !native.is_file() { return; }
-        let dir = tempfile::tempdir().unwrap();
-        let root = crate::paths::DataRoot::at_non_demo(dir.path().join(".vibebar"));
-        let now = crate::providers::now_unix();
-        let store = crate::forecast::ObservationStore::open(&root).unwrap();
-        store.seed_from_native(&native, now);
-        for (account, bucket) in store.distinct_series().unwrap() {
-            let points = store.dated_observations(&account, &bucket, 0.0, now).unwrap();
-            let (completed, _) = summarize(&points);
-            if completed.len() < 6 { continue; }
-            let window = points.iter().rev().find_map(|p| p.raw_window_seconds).unwrap_or(0) as f64;
-            let mut stored_matches = 0usize;
-            let mut window_matches = 0usize;
-            let mut total = 0usize;
-            for pair in completed.windows(2) {
-                let observed = pair[1].window_end - pair[0].window_end;
-                if !(observed.is_finite() && observed > 0.0) { continue; }
-                let Some(start) = pair[1].window_start else { continue };
-                let stored = pair[1].window_end - start;
-                total += 1;
-                // Within 25% of the interval the provider actually took.
-                if (stored - observed).abs() <= observed * 0.25 { stored_matches += 1; }
-                if (window - observed).abs() <= observed * 0.25 { window_matches += 1; }
-            }
-            if total == 0 { continue; }
-            eprintln!(
-                "{bucket}: window {:.0}h | of {total} cycles, stored start right {:.0}%, window-length right {:.0}%",
-                window / 3600.0,
-                100.0 * stored_matches as f64 / total as f64,
-                100.0 * window_matches as f64 / total as f64,
-            );
+    #[ignore = "reads the developer's own ~/.vibebar"]
+    fn every_bucket_is_classified_by_what_it_does_to_the_clock() {
+        let Some(home) = std::env::var_os("HOME") else { return };
+        let vibebar = std::path::PathBuf::from(&home).join(".vibebar");
+        let native = vibebar.join("fill_timeline.sqlite3");
+        if !native.is_file() {
+            eprintln!("no native timeline at {}", native.display());
+            return;
         }
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let now = crate::providers::now_unix();
+        let store = ObservationStore::open(&root).expect("store");
+        store.seed_from_native(&native, now);
+
+        let mut classified = 0usize;
+        for (account, bucket) in store.distinct_series().expect("series") {
+            let points = store
+                .dated_observations(&account, &bucket, 0.0, now)
+                .expect("observations");
+            let (completed, _) = summarize(&points);
+            if completed.is_empty() {
+                continue;
+            }
+            // Account slugs are local labels, but Codex's is the provider's own
+            // identifier, so anything that looks like one is not printed.
+            let label = if account.len() == 36 && account.matches('-').count() == 4 {
+                "provider-account"
+            } else {
+                account.as_str()
+            };
+            let count = |kind: ResetKind| completed.iter().filter(|c| c.reset_kind == kind).count();
+            let window = points
+                .iter()
+                .rev()
+                .find_map(|point| point.raw_window_seconds)
+                .unwrap_or(0) as f64;
+            let intervals: Vec<f64> = completed.iter().filter_map(|c| c.interval_seconds).collect();
+            let median = if intervals.is_empty() {
+                0.0
+            } else {
+                let mut sorted = intervals.clone();
+                sorted.sort_by(f64::total_cmp);
+                sorted[sorted.len() / 2]
+            };
+            eprintln!(
+                "{label}/{bucket}: window {:.0}h, span {:.0}d, median gap {:.0}h — on schedule {}, \
+                 early+restarted {}, early+unchanged {}, unclear {}",
+                window / 3600.0,
+                (points.last().unwrap().sampled_at - points.first().unwrap().sampled_at) / 86_400.0,
+                median / 3600.0,
+                count(ResetKind::OnSchedule),
+                count(ResetKind::EarlyClockRestarted),
+                count(ResetKind::EarlyClockUnchanged),
+                count(ResetKind::EarlyUnclear),
+            );
+            classified += 1;
+            // Every completed cycle gets an answer; Unknown means the bucket
+            // never reported a window length, which none of these do.
+            assert_eq!(count(ResetKind::Unknown), 0, "{bucket} has unclassified cycles");
+        }
+        assert!(classified > 0, "nothing was classified");
     }
 
     #[test]

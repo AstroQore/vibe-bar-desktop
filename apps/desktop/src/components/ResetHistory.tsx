@@ -4,6 +4,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { providerAccent } from "../tokens";
 import { useDarkMode } from "../theme";
 
+/// What the provider did to the clock when a cycle ended. The two early kinds
+/// have opposite consequences: after a restarted clock a whole window lies
+/// ahead, while an unchanged one leaves less than a window to spend the refill
+/// in, so it is the easier one to waste.
+export type ResetKind =
+  | "onSchedule"
+  | "earlyClockRestarted"
+  | "earlyClockUnchanged"
+  | "earlyUnclear"
+  | "unknown";
+
 /// One inferred quota cycle, as `quota_cycles` returns it.
 export interface QuotaCycle {
   windowEnd: number;
@@ -14,6 +25,28 @@ export interface QuotaCycle {
   firstSeenAt: number;
   lastSeenAt: number;
   completion?: "refillDetected" | "scheduledReset";
+  resetKind: ResetKind;
+  /// Seconds since the previous refill. Compared against the stated window,
+  /// this is what shows a bucket keeping its own schedule rather than the one
+  /// it advertises.
+  intervalSeconds?: number;
+}
+
+function refilledEarly(cycle: QuotaCycle): boolean {
+  return cycle.resetKind.startsWith("early");
+}
+
+function describeReset(cycle: QuotaCycle): string {
+  switch (cycle.resetKind) {
+    case "earlyClockRestarted":
+      return " · refilled early, next window restarted";
+    case "earlyClockUnchanged":
+      return " · refilled early, next reset unchanged";
+    case "earlyUnclear":
+      return " · refilled early, onto a different schedule";
+    default:
+      return "";
+  }
 }
 
 interface ResetHistoryResponse {
@@ -154,6 +187,21 @@ export function ResetHistory({
           {history === null ? "" : "Waiting for the first quota observation"}
         </div>
       ) : (
+        <>
+        {/* Above the bars rather than inside them: a cycle that used all of
+            its quota fills the track to the top, and a marker in there would
+            be the same colour as the fill it sits on. */}
+        {cycles.some(refilledEarly) && (
+          <div className="reset-history-marks" style={{ gap: BAR_GAP }} aria-hidden>
+            {cycles.map((cycle, index) => (
+              <span key={`${cycle.windowEnd}-${index}`} className="reset-history-mark">
+                {refilledEarly(cycle) && (
+                  <i className="reset-history-early" style={{ background: accent }} />
+                )}
+              </span>
+            ))}
+          </div>
+        )}
         <div
           className="reset-history-strip"
           style={{ height: CHART_HEIGHT, gap: BAR_GAP }}
@@ -178,6 +226,7 @@ export function ResetHistory({
                     opacity: hovered === index ? 1 : 0.86,
                   }}
                 />
+
               </div>
             );
           })}
@@ -185,8 +234,18 @@ export function ResetHistory({
             <div className="reset-history-target" style={{ bottom: `${target}%` }} aria-hidden />
           )}
         </div>
+        </>
       )}
       <div className="reset-history-caption">{caption(cycles, hovered)}</div>
+      {(() => {
+        const early = cycles.filter(refilledEarly).length;
+        return early > 0 ? (
+          <div className="reset-history-note">
+            {early === 1 ? "1 cycle" : `${early} cycles`} refilled before the
+            window was up
+          </div>
+        ) : null;
+      })()}
       {cycles.length > 0 && (
         <div className="reset-history-axis">
           <span>{dayLabel(axisDate(cycles[0]))}</span>
@@ -217,5 +276,5 @@ export function caption(cycles: QuotaCycle[], hovered: number | null): string {
   if (cycle.completion === undefined) {
     return `Current cycle · ${used}% used so far · ${left}% left`;
   }
-  return `${timestampLabel(cycle.windowEnd)} reset · ${used}% used · ${left}% left${samplingGap(cycle)}`;
+  return `${timestampLabel(cycle.windowEnd)} reset · ${used}% used · ${left}% left${describeReset(cycle)}${samplingGap(cycle)}`;
 }
