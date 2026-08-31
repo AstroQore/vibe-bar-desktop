@@ -242,7 +242,6 @@ pub fn as_forecast_input(cycles: &[CycleSummary]) -> Vec<CompletedCycle> {
         .map(|cycle| CompletedCycle {
             window_start: cycle.window_start.unwrap_or(cycle.first_seen_at),
             window_end: cycle.window_end,
-            raw_window_seconds: cycle.raw_window_seconds,
             peak_used_percent: cycle.peak_used_percent,
         })
         .collect()
@@ -528,6 +527,46 @@ mod real_data {
             return false;
         };
         after - before <= OBSERVABLE_GAP_SECONDS
+    }
+
+
+    #[test]
+    #[ignore = "compares stored spans against observed cadence"]
+    fn is_a_short_span_wrong_or_just_short() {
+        let home = std::env::var_os("HOME").unwrap();
+        let native = std::path::PathBuf::from(&home).join(".vibebar").join("fill_timeline.sqlite3");
+        if !native.is_file() { return; }
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::paths::DataRoot::at_non_demo(dir.path().join(".vibebar"));
+        let now = crate::providers::now_unix();
+        let store = crate::forecast::ObservationStore::open(&root).unwrap();
+        store.seed_from_native(&native, now);
+        for (account, bucket) in store.distinct_series().unwrap() {
+            let points = store.dated_observations(&account, &bucket, 0.0, now).unwrap();
+            let (completed, _) = summarize(&points);
+            if completed.len() < 6 { continue; }
+            let window = points.iter().rev().find_map(|p| p.raw_window_seconds).unwrap_or(0) as f64;
+            let mut stored_matches = 0usize;
+            let mut window_matches = 0usize;
+            let mut total = 0usize;
+            for pair in completed.windows(2) {
+                let observed = pair[1].window_end - pair[0].window_end;
+                if !(observed.is_finite() && observed > 0.0) { continue; }
+                let Some(start) = pair[1].window_start else { continue };
+                let stored = pair[1].window_end - start;
+                total += 1;
+                // Within 25% of the interval the provider actually took.
+                if (stored - observed).abs() <= observed * 0.25 { stored_matches += 1; }
+                if (window - observed).abs() <= observed * 0.25 { window_matches += 1; }
+            }
+            if total == 0 { continue; }
+            eprintln!(
+                "{bucket}: window {:.0}h | of {total} cycles, stored start right {:.0}%, window-length right {:.0}%",
+                window / 3600.0,
+                100.0 * stored_matches as f64 / total as f64,
+                100.0 * window_matches as f64 / total as f64,
+            );
+        }
     }
 
     #[test]

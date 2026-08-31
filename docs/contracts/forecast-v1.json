@@ -792,19 +792,16 @@
         "completedCycles": [
           {
             "peakUsedPercent": 68,
-            "rawWindowSeconds": 604800,
             "windowEnd": 1799895200,
             "windowStart": 1799290400
           },
           {
             "peakUsedPercent": 70,
-            "rawWindowSeconds": 604800,
             "windowEnd": 1799290400,
             "windowStart": 1798685600
           },
           {
             "peakUsedPercent": 72,
-            "rawWindowSeconds": 604800,
             "windowEnd": 1798685600,
             "windowStart": 1798080800
           }
@@ -1063,56 +1060,56 @@
           "completedCycleCount": 1,
           "confidence": "learning",
           "confidenceScore": 0.32373743961356305,
-          "historicalProjection": 56.245059288537554,
-          "lower": 42.741027572119805,
+          "historicalProjection": 57.608695652173914,
+          "lower": 42.88561271670495,
           "observationCount": 6,
           "planned": 22.397474879227126,
-          "projected": 54.913753659075674,
+          "projected": 55.05833880366082,
           "recentSampleCount": 5,
           "target": 10.410100483091496,
-          "upper": 67.08647974603154,
+          "upper": 67.2310648906167,
           "verdict": "learning"
         },
         {
           "completedCycleCount": 1,
           "confidence": "medium",
           "confidenceScore": 0.43409118357485643,
-          "historicalProjection": 55.01185770750988,
-          "lower": 46.169528455074335,
+          "historicalProjection": 57.73913043478261,
+          "lower": 46.42427370981959,
           "observationCount": 12,
           "planned": 45.23636473429943,
-          "projected": 56.35588715072693,
+          "projected": 56.61063240547218,
           "recentSampleCount": 11,
           "target": 9.527270531401149,
-          "upper": 66.54224584637952,
+          "upper": 66.79699110112477,
           "verdict": "surplus"
         },
         {
           "completedCycleCount": 1,
           "confidence": "medium",
           "confidenceScore": 0.5079907407402533,
-          "historicalProjection": 53.77865612648221,
-          "lower": 48.14785662607208,
+          "historicalProjection": 57.869565217391305,
+          "lower": 48.529974508189966,
           "observationCount": 18,
           "planned": 68.29794444444151,
-          "projected": 57.00402329274752,
+          "projected": 57.38614117486541,
           "recentSampleCount": 17,
           "target": 8.936074074077974,
-          "upper": 65.86018995942297,
+          "upper": 66.24230784154085,
           "verdict": "surplus"
         },
         {
           "completedCycleCount": 1,
           "confidence": "medium",
           "confidenceScore": 0.43469927536232605,
-          "historicalProjection": 52.95652173913043,
+          "historicalProjection": 55.95652173913043,
           "lower": 52.95652173913043,
           "observationCount": 22,
           "planned": 85.95371449275368,
-          "projected": 55.56600452352054,
+          "projected": 55.84622430374032,
           "recentSampleCount": 17,
           "target": 9.522405797101392,
-          "upper": 65.74141756699868,
+          "upper": 66.02163734721846,
           "verdict": "surplus"
         }
       ],
@@ -1120,7 +1117,6 @@
         "completedCycles": [
           {
             "peakUsedPercent": 60,
-            "rawWindowSeconds": 604800,
             "windowEnd": 1799290400,
             "windowStart": 1799289500
           }
@@ -1344,7 +1340,6 @@
         "completedCycles": [
           {
             "peakUsedPercent": 60,
-            "rawWindowSeconds": 604800,
             "windowEnd": 1799290400,
             "windowStart": 1798685600
           }
