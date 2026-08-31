@@ -384,6 +384,7 @@ fn collect_gemini_chat_files(home: &Path) -> (Vec<SourceFile>, bool) {
     (files, truncated)
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum DirectoryState {
     Ready,
     Missing,
@@ -396,7 +397,33 @@ fn checked_directory(path: &Path) -> DirectoryState {
             DirectoryState::Ready
         }
         Ok(_) => DirectoryState::Unusable,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => DirectoryState::Missing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => not_found_state(path),
+        Err(_) => DirectoryState::Unusable,
+    }
+}
+
+/// Tell a genuinely absent directory apart from one whose parent is not a
+/// directory at all.
+///
+/// The two look identical to `symlink_metadata` on Windows: a path traversing
+/// a regular file reports `NotFound` there, while Unix reports `ENOTDIR`.
+/// Without this the scanner would report "no data" on Windows where it fails
+/// closed on Unix, and a user whose `.codex` is somehow a file would be told
+/// their usage is zero rather than that the scan could not complete.
+fn not_found_state(path: &Path) -> DirectoryState {
+    let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    else {
+        return DirectoryState::Missing;
+    };
+    match fs::symlink_metadata(parent) {
+        // The parent exists but cannot hold this child.
+        Ok(metadata) if !metadata.is_dir() => DirectoryState::Unusable,
+        Ok(_) => DirectoryState::Missing,
+        // The parent is absent too: recurse so a file deep in the chain is
+        // still distinguished from a chain that simply does not exist.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => not_found_state(parent),
         Err(_) => DirectoryState::Unusable,
     }
 }
@@ -2427,7 +2454,10 @@ mod tests {
         .unwrap();
         let (files, truncated) = collect_gemini_chat_files(home.path());
         assert_eq!(files.len(), 1);
-        assert!(truncated);
+        // Only the symlink causes truncation here, and only Unix creates one:
+        // the oversized file is discovered and then rejected by the scanner,
+        // which is asserted below.
+        assert_eq!(truncated, cfg!(unix));
         let view = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path())
             .refresh()
             .unwrap();
@@ -2476,6 +2506,31 @@ mod tests {
             collect_provider_files(home.path(), ToolType::Codex, &[".codex/sessions"], 1);
         assert!(files.is_empty());
         assert!(truncated);
+    }
+
+    /// A path component that is a regular file must fail closed on every
+    /// platform. Unix reports `ENOTDIR` for this and Windows reports
+    /// `NotFound`, so trusting the error kind alone told Windows users their
+    /// usage was zero instead of telling them the scan could not complete.
+    #[test]
+    fn a_file_in_the_path_is_unusable_not_missing() {
+        let home = tempfile::tempdir().unwrap();
+        fs::write(home.path().join(".codex"), "not a directory").unwrap();
+
+        assert_eq!(
+            checked_directory(&home.path().join(".codex/sessions")),
+            DirectoryState::Unusable
+        );
+        // Nested below the offending component, too.
+        assert_eq!(
+            checked_directory(&home.path().join(".codex/sessions/2026/08")),
+            DirectoryState::Unusable
+        );
+        // A chain that simply does not exist stays Missing.
+        assert_eq!(
+            checked_directory(&home.path().join(".gemini/tmp")),
+            DirectoryState::Missing
+        );
     }
 
     #[cfg(unix)]
