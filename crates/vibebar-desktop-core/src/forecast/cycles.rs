@@ -232,13 +232,15 @@ fn new_cycle(
 }
 
 /// The completed cycles in the shape the forecast consumes.
+///
+/// A cycle that never learned its window length falls back to when it was
+/// first seen, which is what native does. Assuming a day instead would hand
+/// the projection a span the data never covered.
 pub fn as_forecast_input(cycles: &[CycleSummary]) -> Vec<CompletedCycle> {
     cycles
         .iter()
         .map(|cycle| CompletedCycle {
-            window_start: cycle
-                .window_start
-                .unwrap_or(cycle.window_end - ASSUMED_WINDOW_SECONDS),
+            window_start: cycle.window_start.unwrap_or(cycle.first_seen_at),
             window_end: cycle.window_end,
             peak_used_percent: cycle.peak_used_percent,
         })
@@ -409,6 +411,27 @@ mod tests {
         assert_eq!(input[0].window_start, 2_000.0);
         assert_eq!(input[0].window_end, 20_000.0);
         assert_eq!(input[0].peak_used_percent, 80.0);
+    }
+
+    /// A cycle whose bucket never reported a window length takes its own first
+    /// observation as the start, matching native's `windowStart ?? firstSeenAt`.
+    /// Assuming a day would hand the historical projection a span the data
+    /// never covered, and it filters observations by that span.
+    #[test]
+    fn a_cycle_with_no_window_length_starts_where_it_was_first_seen() {
+        let cycles = [CycleSummary {
+            window_end: 20_000.0,
+            window_start: None,
+            raw_window_seconds: None,
+            peak_used_percent: 40.0,
+            last_used_percent: 40.0,
+            observation_count: 3,
+            first_seen_at: 18_500.0,
+            last_seen_at: 19_900.0,
+            completion: Some(CompletionReason::RefillDetected),
+        }];
+        let input = as_forecast_input(&cycles);
+        assert_eq!(input[0].window_start, 18_500.0);
     }
 
     #[test]

@@ -79,6 +79,11 @@ interface Props {
   /** `used` fills each bar by how much was consumed, `remaining` by what was
    *  left — the same choice the quota bar above the chart is drawn with. */
   mode: "used" | "remaining";
+  /** The account's `queriedAt`. A refresh records a new observation, which
+   *  can extend the open cycle or close it, so the chart has to re-read when
+   *  this moves — the account and bucket ids alone never change and would
+   *  leave the strip frozen on whatever it drew when the tab opened. */
+  refreshedAt: number;
   /** The forecast's safety target as *percent remaining*, drawn as a dashed
    *  line to compare past cycles against. Taken in one orientation and flipped
    *  here to match `mode`, because a caller passing the already-flipped value
@@ -100,6 +105,7 @@ export function ResetHistory({
   bucketId,
   tool,
   mode,
+  refreshedAt,
   targetRemainingPercent,
 }: Props) {
   const [history, setHistory] = useState<ResetHistoryResponse | null>(null);
@@ -119,7 +125,7 @@ export function ResetHistory({
     return () => {
       live = false;
     };
-  }, [accountId, bucketId]);
+  }, [accountId, bucketId, refreshedAt]);
 
   const cycles = useMemo(() => {
     if (!history) return [];

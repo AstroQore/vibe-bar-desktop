@@ -174,6 +174,7 @@ function QuotaCard({
                 bucketId={bucket.id}
                 tool={account.tool}
                 mode={showsUsed ? "used" : "remaining"}
+                refreshedAt={account.queriedAt}
                 targetRemainingPercent={bucket.forecast?.targetRemainingPercent}
               />
             </div>
