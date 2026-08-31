@@ -84,6 +84,39 @@ pub fn resize_to_content<R: Runtime>(app: &AppHandle<R>, width: f64, height: f64
         width.clamp(MIN_SIZE.0, MAX_SIZE.0),
         height.clamp(MIN_SIZE.1, MAX_SIZE.1),
     ));
+    keep_on_screen(&window);
+}
+
+/// Pull the window back onto its monitor after it has grown.
+///
+/// `set_size` keeps the origin, so a window parked against the right or bottom
+/// edge grows off the screen — and the part that leaves is the part that was
+/// just added, which is the quota the user switched layouts to see.
+fn keep_on_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let (Ok(Some(monitor)), Ok(position), Ok(size)) = (
+        window.current_monitor(),
+        window.outer_position(),
+        window.outer_size(),
+    ) else {
+        return;
+    };
+    let screen = monitor.position();
+    let bounds = monitor.size();
+    // Only ever pulled back towards the origin: a window larger than the
+    // monitor would otherwise be pushed off the opposite edge instead.
+    let max_x = screen
+        .x
+        .saturating_add(bounds.width as i32)
+        .saturating_sub(size.width as i32);
+    let max_y = screen
+        .y
+        .saturating_add(bounds.height as i32)
+        .saturating_sub(size.height as i32);
+    let x = position.x.min(max_x).max(screen.x);
+    let y = position.y.min(max_y).max(screen.y);
+    if x != position.x || y != position.y {
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
 }
 
 pub fn persist<R: Runtime>(app: &AppHandle<R>) {

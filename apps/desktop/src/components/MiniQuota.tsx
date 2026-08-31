@@ -422,7 +422,9 @@ function MiniFocus({ entries, dark }: { entries: Entry[]; dark: boolean }) {
               type="button"
               key={entry.cell.id}
               className="mini-focus-dot"
-              aria-label={`Show ${entry.company} ${entry.cell.label}`}
+              // The group-qualified label, like the heading: two of a
+              // SubProvider's groups otherwise announce as the same "Weekly".
+              aria-label={`Show ${entry.company} ${entryLabel(entry)}`}
               aria-current={dot === index}
               onClick={() => setPage(dot)}
             >
