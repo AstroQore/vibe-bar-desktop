@@ -254,6 +254,17 @@ export interface ModelCost extends CostTotals {
   unpricedEvents: number;
 }
 
+/** Spend grouped by the company that bills for it — a different axis from
+ *  `ModelCost.harness`, which is where the request ran. Two harnesses can bill
+ *  one company, so the two are never mixed in a single list. */
+export interface ProviderCost {
+  company: string;
+  pricedCostMicros: number;
+  tokens: number;
+  requests: number;
+  unpricedEvents: number;
+}
+
 export interface CostView {
   today: CostTotals;
   last7Days: CostTotals;
@@ -261,6 +272,7 @@ export interface CostView {
   allTime: CostTotals;
   daily: DailyCost[];
   models: ModelCost[];
+  providers: ProviderCost[];
   unpricedEvents: number;
   scannedFiles: number;
   malformedLines: number;
