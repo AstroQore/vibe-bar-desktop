@@ -77,3 +77,22 @@ fn gives_back_what_the_body_returns() {
     let directory = tempfile::tempdir().expect("temp dir");
     assert_eq!(file_lock::with_lock("value", directory.path(), || 7), 7);
 }
+
+/// The shared write contract puts the lock file at 0600, like everything else
+/// under the data root. `OpenOptions` defaults to 0666, which the usual umask
+/// leaves at 0644.
+#[test]
+#[cfg(unix)]
+fn creates_its_lock_file_private_to_the_user() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("temp dir");
+    file_lock::with_lock("settings", directory.path(), || {});
+
+    let mode = std::fs::metadata(directory.path().join("run/settings.lock"))
+        .expect("the lock file exists")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600, "the lock file is readable by other users");
+}

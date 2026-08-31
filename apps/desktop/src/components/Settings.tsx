@@ -11,11 +11,13 @@ const REFRESH_INTERVALS = [60, 120, 300, 600, 900, 1800, 3600];
 export function Settings({
   settings,
   replacedKeys,
+  saveError,
   onSave,
   onDismissReplaced,
 }: {
   settings: PresentationSettings | null;
   replacedKeys: string[] | null;
+  saveError: string | null;
   onSave: (changes: Record<string, unknown>) => void;
   onDismissReplaced: () => void;
 }) {
@@ -24,6 +26,14 @@ export function Settings({
   const fieldLabel = (fieldId: string) => settings.customLabels[fieldId] || fieldId;
   return (
     <section className="settings-readonly">
+      {saveError ? (
+        <div className="banner banner-warning">
+          <div>
+            <strong>That setting was not saved</strong>
+            <p>{saveError}</p>
+          </div>
+        </div>
+      ) : null}
       {replacedKeys?.length ? (
         <div className="banner banner-warning">
           <div>

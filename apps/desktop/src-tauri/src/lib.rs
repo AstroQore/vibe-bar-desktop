@@ -186,7 +186,15 @@ fn spawn_refresh_loop(app: tauri::AppHandle) {
                 let _ = app.emit(QUOTA_EVENT, &view);
                 state.engine().refresh_interval()
             };
-            tokio::time::sleep(interval.max(Duration::from_secs(60))).await;
+            // Not a plain sleep: a cadence saved in Settings is meant to take
+            // effect now, not after the wait it was meant to replace. Going
+            // from an hour to a minute would otherwise leave this refreshing
+            // hourly for the rest of the hour.
+            let cadence_changed = app.state::<AppState>().cadence_changed();
+            tokio::select! {
+                _ = tokio::time::sleep(interval.max(Duration::from_secs(60))) => {}
+                _ = cadence_changed.notified() => {}
+            }
         }
     });
 }

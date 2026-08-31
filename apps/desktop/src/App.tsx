@@ -36,6 +36,7 @@ export function App() {
    *  of the time, including for the far commoner case of it changing something
    *  nobody here touched — that is taken on silently, since nothing was lost. */
   const [replacedSettings, setReplacedSettings] = useState<string[] | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Computed once: the row, the filter, the cost card and the detail flag all
   // have to agree about which pages exist, or a stale selection leaves the
   // list empty with no control to escape it.
@@ -97,8 +98,16 @@ export function App() {
     // one in between, and it wins.
     api
       .saveSharedSettings(changes)
-      .then(setPresentation)
-      .catch(() => api.presentationSettings().then(setPresentation).catch(() => undefined));
+      .then((settings) => {
+        setPresentation(settings);
+        setSaveError(null);
+      })
+      .catch((error: unknown) => {
+        // A control that springs back with no explanation reads as a bug in
+        // the app rather than a file it could not write.
+        setSaveError(String(error));
+        api.presentationSettings().then(setPresentation).catch(() => undefined);
+      });
   }, []);
 
   const refresh = useCallback(() => {
@@ -201,6 +210,7 @@ export function App() {
           <Settings
             settings={presentation}
             replacedKeys={replacedSettings}
+            saveError={saveError}
             onSave={saveSettings}
             onDismissReplaced={() => setReplacedSettings(null)}
           />

@@ -73,12 +73,25 @@ pub fn save_shared_settings(
         .settings()
         .lock()
         .map_err(|_| "the settings writer is unavailable".to_string())?
-        .apply(&changes);
+        .apply(&changes)
+        // The window has to hear about this: without it the control snaps
+        // back to its old value and nothing says why.
+        .map_err(|error| error.to_string())?;
+
     // A save re-reads, so it can be the first to see the native app's change.
     // Reported down the same channel the watch uses, or the watch would find
     // a file that already matches what this save recorded, and say nothing.
     if let Some(replaced) = applied.folded.replaced {
         let _ = app.emit(crate::SETTINGS_EVENT, Some(replaced.replaced_keys));
+    }
+    // The menu bar renders from these, and nothing else would redraw it until
+    // the next quota refresh — which, if the cadence is what just changed, is
+    // exactly the wait this save was meant to shorten.
+    if applied.written.iter().any(|key| key == "displayMode" || key == "menuBarColorBasis") {
+        crate::tray::update(&app, &state.engine().cached_view());
+    }
+    if applied.written.iter().any(|key| key == "refreshIntervalSeconds") {
+        state.cadence_changed().notify_one();
     }
     Ok(SharedSettings::load(state.data_root()).presentation())
 }

@@ -91,7 +91,15 @@ one store where the conditions above are met:
   the byte format is checked against a `settings.json` the native app actually
   wrote rather than one this repository imagined.
 - **A writer whitelist**, so a bug cannot take over a setting Desktop does not
-  present. `settings_writer::WRITABLE_KEYS`.
+  present: `settings_writer::WRITABLE_KEYS`, which is exactly the keys with a
+  control in Desktop's own Settings and no more. A test binds the two
+  together, because a key listed there without a control is one nothing can
+  legitimately write and everything can write by mistake.
+- **A refusal to rebuild what it cannot read.** A `settings.json` that is
+  malformed, not an object, or past the size cap makes a save fail. Treating it
+  as empty would replace every setting in it with the handful that save
+  happened to carry, which is the whole loss this guards against, done in one
+  step. A file that is simply *absent* is a different thing, and is created.
 
 No schema negotiation, because the file has no schema version: it is a flat
 object of independent keys, and an unknown one is preserved rather than

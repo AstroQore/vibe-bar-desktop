@@ -35,13 +35,17 @@ fn acquire(name: &str, directory: &Path) -> Option<Held> {
     let run = directory.join("run");
     fs::create_dir_all(&run).ok()?;
     restrict_directory(&run);
-    let file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(run.join(format!("{name}.lock")))
-        .ok()?;
+    let mut options = OpenOptions::new();
+    options.create(true).read(true).write(true).truncate(false);
+    // Explicitly: the default creation mode is 0666, which the usual 0022
+    // umask leaves as 0644. The contract puts this file at 0600, the same as
+    // everything else under the data root.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(run.join(format!("{name}.lock"))).ok()?;
     lock_exclusive(&file).ok()?;
     Some(Held(file))
 }

@@ -13,6 +13,9 @@ pub struct AppState {
     /// what this process has changed since it started, which is what tells a
     /// setting the user chose here from one the native app has always owned.
     settings: std::sync::Mutex<SettingsWriter>,
+    /// Wakes the refresh loop when the cadence it is sleeping on is no longer
+    /// the cadence the settings ask for.
+    cadence_changed: std::sync::Arc<tokio::sync::Notify>,
     sessions: SessionsService,
     status: ServiceStatusEngine,
     cost: CostEngine,
@@ -34,6 +37,7 @@ impl AppState {
         Self {
             engine: QuotaEngine::new(data_root.clone()),
             settings: std::sync::Mutex::new(SettingsWriter::new(data_root.settings_file())),
+            cadence_changed: std::sync::Arc::new(tokio::sync::Notify::new()),
             sessions: SessionsService::with_home(data_root.clone(), scan_home.clone()),
             status: ServiceStatusEngine::new(data_root.clone()),
             cost: CostEngine::new(data_root.clone(), scan_home),
@@ -59,6 +63,10 @@ impl AppState {
 
     pub fn settings(&self) -> &std::sync::Mutex<SettingsWriter> {
         &self.settings
+    }
+
+    pub fn cadence_changed(&self) -> std::sync::Arc<tokio::sync::Notify> {
+        self.cadence_changed.clone()
     }
 
     pub fn data_root(&self) -> &DataRoot {

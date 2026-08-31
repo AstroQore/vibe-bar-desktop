@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use super::file_lock;
 use super::settings_document::{self, Object};
+use crate::error::CoreError;
 
 /// The settings Desktop is allowed to change.
 ///
@@ -25,20 +26,12 @@ use super::settings_document::{self, Object};
 /// it hands over cannot quietly take that setting over from the native app,
 /// whose Settings window is the only place most of them can be seen.
 ///
-/// Carried over from the earlier design record in
-/// `docs/contracts/settings-document-v1.md`. Growing it is a deliberate act:
-/// add the setting to Desktop's own Settings first.
-pub const WRITABLE_KEYS: &[&str] = &[
-    "coreProviderOrder",
-    "displayMode",
-    "menuBarColorBasis",
-    "menuBarItems",
-    "menuBarTextEnabled",
-    "providerPlanLabels",
-    "refreshIntervalSeconds",
-    "refreshOnPopoverOpen",
-    "visibleCoreProviders",
-];
+/// Exactly the keys with a control in `Settings.tsx`, and no more. A key
+/// listed here without one is a key nothing can legitimately write and
+/// everything can write by mistake. Carried over from the earlier design
+/// record in `docs/contracts/settings-document-v1.md`. Growing it is a
+/// deliberate act: add the control first, then the key.
+pub const WRITABLE_KEYS: &[&str] = &["displayMode", "menuBarColorBasis", "refreshIntervalSeconds"];
 
 /// What another writer took over: settings this process changed which now
 /// hold someone else's value.
@@ -114,19 +107,27 @@ impl SettingsWriter {
     /// including the ones this build has never heard of, because they are
     /// never taken out of the object in the first place.
     ///
-    /// Returns the keys actually written, empty when there was nothing to do.
-    pub fn apply(&mut self, changes: &Object) -> Applied {
+    /// Returns what was written, or an error if nothing could be.
+    pub fn apply(&mut self, changes: &Object) -> Result<Applied, CoreError> {
         let owned = Self::owned();
         let refused: Vec<&String> = changes.keys().filter(|key| !owned.contains(*key)).collect();
         debug_assert!(
             refused.is_empty(),
-            "settings Desktop does not present: {refused:?} — add them to its own Settings first"
+            "settings Desktop does not present: {refused:?} — add the control first, then the key"
         );
 
         let directory = self.directory().to_path_buf();
         file_lock::with_lock("settings", &directory, || {
-            let theirs =
-                settings_document::read(&self.path).unwrap_or_else(|| self.baseline.clone());
+            // A file that exists but cannot be read is not a file to rebuild.
+            // Falling back to an empty document here would replace every
+            // setting in it with the handful this save happens to carry —
+            // which is the exact loss the whole merge exists to prevent, done
+            // in one step. A file that is simply absent may be created.
+            let theirs = match settings_document::read(&self.path) {
+                Some(object) => object,
+                None if !self.path.exists() => Object::new(),
+                None => return Err(CoreError::SharedSettingsUnreadable),
+            };
             // The other writer got here first, and this save is about to put
             // its own keys on top and record the result as the file it has
             // seen. Without saying so, the next `poll` compares the file with
@@ -138,12 +139,13 @@ impl SettingsWriter {
                 if !owned.contains(key) {
                     continue;
                 }
-                if merged.get(key).is_some_and(|existing| {
-                    settings_document::values_equal(existing, value)
-                }) {
-                    // Already what we would write. Recorded as ours anyway: the
-                    // user chose it here, and if the other writer takes it over
-                    // later they should be told.
+                if merged
+                    .get(key)
+                    .is_some_and(|existing| settings_document::values_equal(existing, value))
+                {
+                    // Already what we would write. Recorded as ours anyway:
+                    // the user chose it here, and if the other writer takes it
+                    // over later they should be told.
                     self.edited_keys.insert(key.clone());
                     self.last_mine.insert(key.clone(), value.clone());
                     continue;
@@ -151,18 +153,18 @@ impl SettingsWriter {
                 merged.insert(key.clone(), value.clone());
                 written.insert(key.clone());
             }
+
             let replaced = self.replaced_among(&their_changes, &theirs, &written);
             if written.is_empty() {
                 // Nothing of ours to write, but their change is still news:
                 // leave the baseline where it is so `poll` reports it.
-                return Applied { written, folded: FoldedExternalChange { replaced } };
+                return Ok(Applied { written, folded: FoldedExternalChange { replaced } });
             }
-            let Ok(bytes) = settings_document::to_bytes(&merged) else {
-                return Applied::default();
-            };
-            if write_atomically(&self.path, &bytes).is_err() {
-                return Applied::default();
-            }
+            let bytes = settings_document::to_bytes(&merged)?;
+            // Only after it lands: a save that failed has changed nothing, and
+            // a process that recorded these as written would leave them out of
+            // the next save and off the disk until it restarted.
+            write_atomically(&self.path, &bytes)?;
             for key in &written {
                 self.edited_keys.insert(key.clone());
                 if let Some(value) = merged.get(key) {
@@ -182,7 +184,7 @@ impl SettingsWriter {
                 self.edited_keys.remove(key);
             }
             self.baseline = merged;
-            Applied { written, folded: FoldedExternalChange { replaced } }
+            Ok(Applied { written, folded: FoldedExternalChange { replaced } })
         })
     }
 

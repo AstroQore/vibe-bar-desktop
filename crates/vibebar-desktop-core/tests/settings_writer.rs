@@ -51,7 +51,7 @@ fn a_key_this_build_cannot_decode_survives_a_save() {
     }));
     let mut writer = fixture.writer();
 
-    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 })));
+    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 }))).expect("the save succeeded");
 
     let saved = fixture.on_disk();
     assert_eq!(saved["refreshIntervalSeconds"], json!(900));
@@ -70,7 +70,7 @@ fn another_writers_edit_is_not_undone() {
     let mut writer = fixture.writer();
 
     fixture.write_externally(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 120 }));
-    writer.apply(&object(json!({ "displayMode": "used" })));
+    writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
 
     let saved = fixture.on_disk();
     assert_eq!(saved["displayMode"], json!("used"), "our own edit was dropped");
@@ -93,7 +93,9 @@ fn a_setting_desktop_does_not_present_is_refused() {
     let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         writer.apply(&object(json!({ "skillsSyncMethod": "copy" })))
     }));
-    assert!(written.map(|applied| applied.written.is_empty()).unwrap_or(true));
+    assert!(written
+        .map(|applied| applied.map(|applied| applied.written.is_empty()).unwrap_or(true))
+        .unwrap_or(true));
     assert_eq!(fixture.on_disk()["skillsSyncMethod"], json!("symlink"));
 }
 
@@ -103,7 +105,7 @@ fn a_save_of_the_value_already_there_does_not_touch_the_file() {
     let mut writer = fixture.writer();
 
     let before = std::fs::read(&fixture.path).expect("read");
-    assert!(writer.apply(&object(json!({ "displayMode": "remaining" }))).written.is_empty());
+    assert!(writer.apply(&object(json!({ "displayMode": "remaining" }))).expect("ok").written.is_empty());
     assert_eq!(std::fs::read(&fixture.path).expect("read"), before);
 }
 
@@ -113,7 +115,7 @@ fn a_save_of_the_value_already_there_does_not_touch_the_file() {
 fn a_saved_file_is_in_the_shape_the_native_app_writes() {
     let fixture = Fixture::new(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 600 }));
     let mut writer = fixture.writer();
-    writer.apply(&object(json!({ "displayMode": "used" })));
+    writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
 
     let text = std::fs::read_to_string(&fixture.path).expect("read");
     assert!(text.contains("\"displayMode\" : \"used\""), "not the native separator: {text}");
@@ -141,7 +143,7 @@ fn reports_an_edit_of_ours_being_replaced() {
     let fixture = Fixture::new(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 600 }));
     let mut writer = fixture.writer();
 
-    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 })));
+    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 }))).expect("the save succeeded");
     fixture.write_externally(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 120 }));
 
     let replaced = writer.poll().expect("something changed").replaced.expect("our edit replaced");
@@ -153,7 +155,7 @@ fn our_own_save_is_not_reported_as_someone_elses_change() {
     let fixture = Fixture::new(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 600 }));
     let mut writer = fixture.writer();
 
-    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 })));
+    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 }))).expect("the save succeeded");
     assert!(writer.poll().is_none(), "our own save came back as news");
 }
 
@@ -165,7 +167,7 @@ fn a_setting_taken_over_is_only_reported_once() {
     let fixture = Fixture::new(json!({ "displayMode": "remaining" }));
     let mut writer = fixture.writer();
 
-    writer.apply(&object(json!({ "displayMode": "used" })));
+    writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
     fixture.write_externally(json!({ "displayMode": "remaining" }));
     assert!(writer.poll().expect("changed").replaced.is_some(), "the first loss was not reported");
 
@@ -182,11 +184,11 @@ fn choosing_again_after_a_loss_is_reported_again() {
     let fixture = Fixture::new(json!({ "displayMode": "remaining" }));
     let mut writer = fixture.writer();
 
-    writer.apply(&object(json!({ "displayMode": "used" })));
+    writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
     fixture.write_externally(json!({ "displayMode": "remaining" }));
     writer.poll();
 
-    writer.apply(&object(json!({ "displayMode": "used" })));
+    writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
     fixture.write_externally(json!({ "displayMode": "remaining" }));
     assert!(writer.poll().expect("changed").replaced.is_some());
 }
@@ -201,11 +203,11 @@ fn a_save_reports_the_external_change_it_folded_in() {
     let fixture = Fixture::new(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 600 }));
     let mut writer = fixture.writer();
 
-    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 })));
+    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 }))).expect("the save succeeded");
 
     // Theirs lands, and this client saves something else before polling.
     fixture.write_externally(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 120 }));
-    let applied = writer.apply(&object(json!({ "displayMode": "used" })));
+    let applied = writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
 
     let replaced = applied
         .folded
@@ -224,7 +226,7 @@ fn a_save_that_writes_nothing_leaves_their_change_to_be_polled() {
     let mut writer = fixture.writer();
 
     fixture.write_externally(json!({ "displayMode": "used" }));
-    let applied = writer.apply(&object(json!({ "displayMode": "used" })));
+    let applied = writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
     assert!(applied.written.is_empty(), "wrote a value that was already there");
 
     assert!(writer.poll().is_some(), "their change was consumed by a save that wrote nothing");
@@ -238,11 +240,11 @@ fn no_notice_when_our_own_save_is_the_value_that_wins() {
     let fixture = Fixture::new(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 600 }));
     let mut writer = fixture.writer();
 
-    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 })));
+    writer.apply(&object(json!({ "refreshIntervalSeconds": 900 }))).expect("the save succeeded");
     fixture.write_externally(json!({ "displayMode": "remaining", "refreshIntervalSeconds": 120 }));
 
     // Ours again, before polling: this save is the one that lands.
-    let applied = writer.apply(&object(json!({ "refreshIntervalSeconds": 1800 })));
+    let applied = writer.apply(&object(json!({ "refreshIntervalSeconds": 1800 }))).expect("the save succeeded");
 
     assert_eq!(fixture.on_disk()["refreshIntervalSeconds"], json!(1800));
     assert!(
@@ -250,4 +252,74 @@ fn no_notice_when_our_own_save_is_the_value_that_wins() {
         "reported a loss for the setting this save had just won: {:?}",
         applied.folded.replaced
     );
+}
+
+/// A file that exists but cannot be read is not a file to rebuild. Treating it
+/// as empty would replace every setting in it with the handful this save
+/// happens to carry — the whole loss the merge exists to prevent, in one step.
+#[test]
+fn refuses_to_replace_a_settings_file_it_cannot_read() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let path = directory.path().join("settings.json");
+    let corrupt = b"{ this is not json";
+    std::fs::write(&path, corrupt).expect("seed");
+
+    let mut writer = SettingsWriter::new(path.clone());
+    let result = writer.apply(&object(json!({ "displayMode": "used" })));
+
+    assert!(result.is_err(), "rebuilt a settings file it could not read");
+    assert_eq!(std::fs::read(&path).expect("read"), corrupt, "the file was touched anyway");
+}
+
+/// A file that is simply absent is not the same thing: there is nothing to
+/// lose, and settings have to be able to exist for the first time.
+#[test]
+fn creates_a_settings_file_that_is_not_there_yet() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let path = directory.path().join("settings.json");
+
+    let mut writer = SettingsWriter::new(path.clone());
+    writer
+        .apply(&object(json!({ "displayMode": "used" })))
+        .expect("the save succeeded");
+
+    let saved = settings_document::read(&path).expect("an object");
+    assert_eq!(saved["displayMode"], json!("used"));
+}
+
+/// A save that could not be written must say so, or the window reports success
+/// and quietly snaps the control back to its old value.
+#[test]
+#[cfg(unix)]
+fn reports_a_save_that_could_not_be_written() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new(json!({ "displayMode": "remaining" }));
+    let mut writer = fixture.writer();
+
+    let parent = fixture.path.parent().expect("parent").to_path_buf();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o500)).expect("chmod");
+    let result = writer.apply(&object(json!({ "displayMode": "used" })));
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).expect("chmod back");
+
+    assert!(result.is_err(), "a save that could not be written reported success");
+    assert_eq!(fixture.on_disk()["displayMode"], json!("remaining"));
+}
+
+/// Every setting Desktop may write has a control in its own Settings. A key
+/// here without one is a key nothing can legitimately write and everything can
+/// write by mistake.
+#[test]
+fn the_whitelist_is_only_what_desktop_presents() {
+    use vibebar_desktop_core::shared::settings_writer::WRITABLE_KEYS;
+    let controls = std::fs::read_to_string(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps/desktop/src/components/Settings.tsx"),
+    )
+    .expect("Settings.tsx");
+    for key in WRITABLE_KEYS {
+        assert!(
+            controls.contains(&format!("{key}:")),
+            "{key} may be written but Desktop's Settings has no control that submits it"
+        );
+    }
 }
