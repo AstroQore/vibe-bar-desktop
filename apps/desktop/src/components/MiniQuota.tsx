@@ -131,10 +131,14 @@ export function MiniQuotaBody({
   if (drawn) {
     // One wrapper for every layout so the size report has a single element to
     // watch, whichever one is drawn.
-    return <div ref={measured}>{drawn}</div>;
+    return (
+      <div ref={measured} style={{ width: "max-content" }}>
+        {drawn}
+      </div>
+    );
   }
   return (
-    <div ref={measured}>
+    <div ref={measured} style={{ width: "max-content" }}>
       {loading ? (
         <p className="mini-empty">Loading quota…</p>
       ) : companies.length === 0 ? (
@@ -201,48 +205,72 @@ export function MiniQuotaBody({
 /**
  * Report the size the whole window needs, whenever it changes.
  *
- * The numbers come from the document's scroll size, not from an element's box.
- * The wrapper this hook is attached to is a block inside `.mini-quota`, so its
- * width is the *container's* — 244 in a 272 window — and stays 244 while a
- * 284-wide ledger or a 525-wide tile grid overflows it. Its height leaves out
- * the title and the surface's padding. Both are wrong in exactly the case the
- * resize exists for.
+ * Measured from the content's intrinsic size, and nothing that the current
+ * window size can influence. Both obvious shortcuts are viewport-bound and
+ * fail in opposite directions:
  *
- * Measured after every render, not only from the observer. A `ResizeObserver`
- * fires on its target's border box, and content that grows only in overflow
- * never changes that box: a tile grid going from one bucket to four stays one
- * row, and the wrapper is the same size it was. The observer is still here for
- * the changes a render does not cause — the window's own resize, a font or
- * theme change — and the effect covers the rest.
+ * - the wrapper's border box is the *container's* width, so it reads 244 in a
+ *   272 window and stays 244 while a 284 ledger or a 525 tile grid overflows —
+ *   the window can never grow;
+ * - `documentElement.scrollWidth` is floored by the viewport, so after tiles
+ *   have widened the window to 525, switching to focus still reads 525 — the
+ *   window can never shrink.
+ *
+ * So the wrapper is laid out at `max-content`, which makes its box the layout's
+ * own size, and the surface's padding and title are added explicitly.
+ *
+ * Measured after every render as well as from the observer: content that grows
+ * only in overflow does not move the box a `ResizeObserver` watches — a tile
+ * grid going from one bucket to four stays one row — and a render is the only
+ * thing that changes the content.
  */
 function useContentSize(report?: (width: number, height: number) => void) {
+  const node = useRef<HTMLDivElement | null>(null);
   const observer = useRef<ResizeObserver | null>(null);
   const lastSent = useRef<[number, number] | null>(null);
 
   const send = useCallback(() => {
-    if (!report) return;
-    const root = document.documentElement;
-    const width = root.scrollWidth;
-    const height = root.scrollHeight;
+    const content = node.current;
+    if (!report || !content) return;
+    const surface = content.parentElement;
+    if (!surface) return;
+
+    const style = getComputedStyle(surface);
+    const chromeWidth = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    let chromeHeight = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    // Everything in the surface that is not the layout: the title, and its
+    // margins. Summed rather than taken from the surface's own box, which is
+    // the viewport's. Only heights — the title stretches to whatever width the
+    // layout asks for, so its own width says nothing about what is needed.
+    for (const sibling of surface.children) {
+      if (sibling === content) continue;
+      const siblingStyle = getComputedStyle(sibling);
+      chromeHeight +=
+        sibling.getBoundingClientRect().height +
+        parseFloat(siblingStyle.marginTop) +
+        parseFloat(siblingStyle.marginBottom);
+    }
+
+    const width = content.scrollWidth + chromeWidth;
+    const height = content.scrollHeight + chromeHeight;
     if (width <= 0 || height <= 0) return;
     const [lastWidth, lastHeight] = lastSent.current ?? [0, 0];
-    if (width === lastWidth && height === lastHeight) return;
+    if (Math.abs(width - lastWidth) < 1 && Math.abs(height - lastHeight) < 1) return;
     lastSent.current = [width, height];
     report(width, height);
   }, [report]);
 
-  // After every render: the content it drew is what decides the size, and a
-  // render is the only thing that changes the content.
   useEffect(send);
 
   return useCallback(
-    (node: HTMLDivElement | null) => {
+    (next: HTMLDivElement | null) => {
       observer.current?.disconnect();
       observer.current = null;
-      if (!node || !report) return;
-      const next = new ResizeObserver(send);
-      next.observe(node);
-      observer.current = next;
+      node.current = next;
+      if (!next || !report) return;
+      const watcher = new ResizeObserver(send);
+      watcher.observe(next);
+      observer.current = watcher;
     },
     [report, send],
   );
