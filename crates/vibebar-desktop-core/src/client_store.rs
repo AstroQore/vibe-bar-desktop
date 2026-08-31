@@ -833,11 +833,31 @@ mod tests {
         assert!(!root.settings_file().exists());
     }
 
+    /// Snapshots are compared field-for-field after a JSON round-trip, so the
+    /// timestamps the product writes have to survive one exactly. Millisecond
+    /// quantisation is what makes that true; a raw `as_secs_f64()` does not
+    /// reliably round-trip at epoch magnitudes, which is a property of the
+    /// value rather than of any one platform.
+    #[test]
+    fn product_timestamps_survive_a_json_round_trip_exactly() {
+        for offset_ms in [0_i64, 1, 7, 999, 1_000, 86_400_000] {
+            let stamp = (chrono::Utc::now().timestamp_millis() + offset_ms) as f64 / 1_000.0;
+            let encoded = serde_json::to_string(&stamp).unwrap();
+            let decoded: f64 = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(
+                decoded.to_bits(),
+                stamp.to_bits(),
+                "millisecond-quantised {stamp} did not round-trip through {encoded}"
+            );
+        }
+    }
+
     fn completed_cost_view() -> CostView {
-        let scanned_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
+        // Millisecond-quantised, like every timestamp the product actually
+        // writes. A raw `as_secs_f64()` carries sub-millisecond digits that
+        // no scan produces and that a JSON round-trip need not preserve
+        // bit-for-bit, which made this test fail on Linux and pass on macOS.
+        let scanned_at = chrono::Utc::now().timestamp_millis() as f64 / 1_000.0;
         CostView {
             scanned_at,
             pricing_version: crate::cost::PRICING_VERSION.into(),
