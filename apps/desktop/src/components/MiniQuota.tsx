@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { PresentationSettings, QuotaBucket, QuotaView } from "../api";
-import { api, formatCountdown, hierarchyFor, severityFor } from "../api";
+import { api, formatCountdown, hierarchyFor, quotaBarColor } from "../api";
 
 const DEFAULT_FIELDS = ["codex.weekly", "claude.weekly", "claude.five_hour"];
 
@@ -75,12 +75,24 @@ function resolveField(view: QuotaView, settings: PresentationSettings | null, fi
     label: settings?.customLabels[field] || `${hierarchyFor(tool).product} ${bucketLabel}`,
     bucket,
     value: used ? bucket.usedPercent : remaining,
+    showsUsed: used,
     suffix: used ? "used" : "left",
   }];
 }
 
-function MiniRow({ label, bucket, value, suffix }: { label: string; bucket: QuotaBucket; value: number; suffix: string }) {
-  const remaining = Math.max(0, 100 - bucket.usedPercent);
+function MiniRow({
+  label,
+  bucket,
+  value,
+  showsUsed,
+  suffix,
+}: {
+  label: string;
+  bucket: QuotaBucket;
+  value: number;
+  showsUsed: boolean;
+  suffix: string;
+}) {
   return (
     <section className="mini-row">
       <div className="mini-row-head">
@@ -88,7 +100,12 @@ function MiniRow({ label, bucket, value, suffix }: { label: string; bucket: Quot
         {formatCountdown(bucket.resetAt) ? <small>{formatCountdown(bucket.resetAt)}</small> : null}
         <strong>{Math.round(value)}% {suffix}</strong>
       </div>
-      <div className="track"><div className={`fill ${severityFor(remaining)}`} style={{ width: `${value}%` }} /></div>
+      <div className="track">
+        <div
+          className="fill"
+          style={{ width: `${value}%`, background: quotaBarColor(value, showsUsed) }}
+        />
+      </div>
     </section>
   );
 }

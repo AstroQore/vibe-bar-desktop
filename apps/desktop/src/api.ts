@@ -317,12 +317,6 @@ export function hierarchyFor(tool: string) {
   return HIERARCHY[tool] ?? { vendor: tool, product: tool };
 }
 
-export function severityFor(remainingPercent: number): "ok" | "warning" | "critical" {
-  if (remainingPercent < QUOTA_BAR.remaining.criticalBelow) return "critical";
-  if (remainingPercent < QUOTA_BAR.remaining.warningBelow) return "warning";
-  return "ok";
-}
-
 /**
  * The quota bar's fill colour, from the shared token contract.
  *
