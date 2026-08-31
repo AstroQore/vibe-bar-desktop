@@ -199,12 +199,18 @@ export function MiniQuotaBody({
  * notch on an arc, for the same reason.
  */
 /**
- * Report the drawn size to whoever can act on it, whenever it changes.
+ * Report the size the whole window needs, whenever the content changes.
  *
- * A `ResizeObserver` rather than a computed size: the layouts are different
- * shapes and their heights depend on how many buckets there are and how the
- * text wraps, so the element that draws is the only thing that knows. Returns
- * a ref callback, which fires again when the layout swaps the element.
+ * The measured element is not the one observed. The wrapper this watches is a
+ * block inside `.mini-quota`, so its width is the *container's* — 244 in a 272
+ * window — and stays 244 while a 284-wide ledger or a 525-wide tile grid
+ * overflows it. Its height leaves out the title and the surface's own padding.
+ * Both are wrong in exactly the case that matters, so the numbers come from
+ * the document's scroll size, which includes the chrome and the overflow.
+ *
+ * A `ResizeObserver` rather than a computed size: the layouts are React and
+ * their heights depend on how many buckets there are and how the text wraps,
+ * so the thing that draws is the only thing that knows.
  */
 function useContentSize(report?: (width: number, height: number) => void) {
   const observer = useRef<ResizeObserver | null>(null);
@@ -214,13 +220,16 @@ function useContentSize(report?: (width: number, height: number) => void) {
       observer.current = null;
       if (!node || !report) return;
       const send = () => {
-        const box = node.getBoundingClientRect();
-        if (box.width > 0 && box.height > 0) report(box.width, box.height);
+        const root = document.documentElement;
+        const width = Math.max(root.scrollWidth, node.scrollWidth);
+        const height = Math.max(root.scrollHeight, node.scrollHeight);
+        if (width > 0 && height > 0) report(width, height);
       };
       const next = new ResizeObserver(send);
       next.observe(node);
       observer.current = next;
-      send();
+      // After layout, so the first report is not of a half-built tree.
+      requestAnimationFrame(send);
     },
     [report],
   );
@@ -375,13 +384,20 @@ function MiniFocus({ entries, dark }: { entries: Entry[]; dark: boolean }) {
               aria-label={`Show ${entry.company} ${entry.cell.label}`}
               aria-current={dot === index}
               onClick={() => setPage(dot)}
-              style={{
-                background:
-                  dot === index
-                    ? providerAccent(entry.tool, dark)
-                    : "color-mix(in srgb, currentColor 18%, transparent)",
-              }}
-            />
+            >
+              {/* The button is the target; this is the 5px dot. A transparent
+                  box-shadow paints a larger circle but is not hit-tested, so
+                  it made the dots look bigger than they were to click. */}
+              <span
+                className="mini-focus-dot-mark"
+                style={{
+                  background:
+                    dot === index
+                      ? providerAccent(entry.tool, dark)
+                      : "color-mix(in srgb, currentColor 18%, transparent)",
+                }}
+              />
+            </button>
           ))
         ) : (
           <span className="mini-focus-count">

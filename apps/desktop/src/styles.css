@@ -1392,18 +1392,33 @@ input[type="text"] {
 .mini-focus-pager {
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* The dot buttons carry their own spacing now, so this is only for the
+     chevron beside them. */
+  gap: 0;
   margin-top: 3px;
 }
+.mini-focus-pager > .mini-focus-count,
+.mini-focus-pager > .mini-focus-next {
+  margin-left: 6px;
+}
+/* The button is the hit box, the span inside is the dot. A transparent
+   box-shadow paints a larger circle but takes no part in hit-testing, so the
+   first version of this was a 5px target wearing a 13px halo. */
 .mini-focus-dot {
-  width: 5px;
-  height: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  background: none;
   cursor: pointer;
-  /* The dot is 5px; the target is not. */
-  box-shadow: 0 0 0 4px transparent;
+}
+.mini-focus-dot-mark {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
 }
 .mini-focus-count {
   font-size: 8.5px;
