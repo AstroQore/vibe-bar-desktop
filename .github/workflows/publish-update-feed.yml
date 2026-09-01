@@ -20,7 +20,21 @@ jobs:
     name: Rebuild latest-main.json and latest-dev.json
     runs-on: ubuntu-latest
     steps:
+      # The default branch, not the tag that triggered this.
+      #
+      # A `release` event runs the workflow from the released tag's ref, so
+      # the builder would be whatever version that tag happened to carry. The
+      # feed is not a property of one release — every run rebuilds both
+      # documents from everything published — so its contents would flip
+      # between builder versions depending on which release last fired an
+      # event. Editing an old release's notes would be enough to regress it.
+      #
+      # This happened: v0.1.0-dev.1 published with a builder fix already on
+      # main, and the feed came out with two platforms instead of six because
+      # the run used the tag's older copy.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Read the published releases
         env:
