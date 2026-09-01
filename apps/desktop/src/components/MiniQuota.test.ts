@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AccountQuota, PresentationSettings, QuotaForecast, QuotaView } from "../api";
-import { arrange, flatten, forecastLine } from "./MiniQuota";
+import { arrange, fannedOffsets, flatten, forecastLine, railEvents } from "./MiniQuota";
 
 const NOW = 1_800_000_000;
 
@@ -255,5 +255,73 @@ describe("flattening the tree for the layouts that page or tile", () => {
 
     expect(entries.map((entry) => entry.groupLabel)).toEqual(["All", "Opus"]);
     expect(entries.map((entry) => entry.subProvider)).toEqual(["Claude", "Claude"]);
+  });
+});
+
+describe("the rail's seven-day horizon", () => {
+  function entryAt(id: string, secondsAhead: number, used: number) {
+    const b = bucket(id, "Weekly", "Weekly");
+    return {
+      cell: {
+        id: `claude.${id}`,
+        bucket: { ...b, resetAt: NOW + secondsAhead, usedPercent: used },
+        label: "Weekly",
+        value: 100 - used,
+        showsUsed: false,
+      },
+      company: "Anthropic",
+      tool: "claude",
+      subProvider: "Claude",
+      groupLabel: null,
+    } as unknown as Parameters<typeof railEvents>[0][number];
+  }
+
+  it("keeps only what refills inside the horizon, soonest first", () => {
+    const events = railEvents(
+      [
+        entryAt("far", 9 * 86_400, 50),
+        entryAt("soon", 3600, 50),
+        entryAt("mid", 3 * 86_400, 50),
+      ],
+      NOW,
+    );
+    expect(events.map((e) => e.entry.cell.id)).toEqual(["claude.soon", "claude.mid"]);
+  });
+
+  /// A reset already behind us is not a refill to come.
+  it("drops a reset in the past", () => {
+    expect(railEvents([entryAt("gone", -60, 50)], NOW)).toHaveLength(0);
+  });
+
+  /// A bucket nothing has been spent from has no refill to draw, and a marker
+  /// of no height would claim something happens when nothing does.
+  it("drops a bucket with nothing to come back", () => {
+    expect(railEvents([entryAt("untouched", 3600, 0)], NOW)).toHaveLength(0);
+    expect(railEvents([entryAt("barely", 3600, 1)], NOW)).toHaveLength(1);
+  });
+
+  it("reads the gain and what is left from the same bucket", () => {
+    const [event] = railEvents([entryAt("half", 3600, 63)], NOW);
+    expect(event.gain).toBe(63);
+    expect(event.remaining).toBe(37);
+  });
+});
+
+describe("fanning markers that would overlap", () => {
+  const at = (fraction: number) => ({ fraction }) as Parameters<typeof fannedOffsets>[0][number];
+
+  /// Two quotas refilling minutes apart are one blob otherwise, and the lane's
+  /// whole job is saying how many are coming and when.
+  it("spreads markers that land in one slot, centred on it", () => {
+    const offsets = fannedOffsets([at(0.5), at(0.5), at(0.5)], 536);
+    expect(offsets).toEqual([-9, 0, 9]);
+  });
+
+  it("leaves a marker alone when nothing shares its slot", () => {
+    expect(fannedOffsets([at(0), at(0.5), at(1)], 536)).toEqual([0, 0, 0]);
+  });
+
+  it("moves nothing on its own", () => {
+    expect(fannedOffsets([at(0.42)], 536)).toEqual([0]);
   });
 });

@@ -113,24 +113,29 @@ export function MiniQuotaBody({
   /** Called with the size the content needs, so the shell can fit the window
    *  to it. Absent in the preview page, which is a page and not a window. */
   onContentSize?: (width: number, height: number) => void;
-  /** Which of native's layouts to draw: regular, compact, ledger, tile or
-   *  focus. The two not ported fall back to regular in the core, so only
-   *  these five arrive here. */
+  /** Which of native's layouts to draw: regular, compact, ledger, tile,
+   *  focus or rail. Strip is not ported and falls back to regular in the
+   *  core, so only these six arrive here. */
   layout?: string;
 }) {
   const dark = useDarkMode();
   const measured = useContentSize(onContentSize);
+  // The layouts that are not the tree. Looked up rather than chained: five
+  // of them is where a ternary stops being readable, and the condition they
+  // share belongs in one place.
   const drawn =
-    !loading && companies.length > 0 && layout === "ledger" ? (
-      <MiniLedger companies={companies} dark={dark} />
-    ) : !loading && companies.length > 0 && layout === "tile" ? (
-      <MiniTiles entries={flatten(companies, order)} dark={dark} />
-    ) : !loading && companies.length > 0 && layout === "focus" ? (
-      <MiniFocus entries={flatten(companies, order)} dark={dark} />
-    ) : null;
+    loading || companies.length === 0
+      ? null
+      : layout === "ledger"
+        ? <MiniLedger companies={companies} dark={dark} />
+        : layout === "tile"
+          ? <MiniTiles entries={flatten(companies, order)} dark={dark} />
+          : layout === "focus"
+            ? <MiniFocus entries={flatten(companies, order)} dark={dark} />
+            : layout === "rail"
+              ? <MiniRail entries={flatten(companies, order)} dark={dark} />
+              : null;
   if (drawn) {
-    // One wrapper for every layout so the size report has a single element to
-    // watch, whichever one is drawn.
     // One wrapper for every layout, laid out at its content's size so the
     // measurement is the layout's and not the window's.
     return (
@@ -333,6 +338,154 @@ export function flatten(companies: Company[], order?: string[]): Entry[] {
         (rank.get(right.entry.cell.id) ?? order.length + right.index),
     )
     .map((ranked) => ranked.entry);
+}
+
+/** Seven days, in seconds. The rail's horizon. */
+const RAIL_HORIZON_SECONDS = 7 * 86_400;
+/** How far apart two markers have to be before they stop being one blob. */
+const RAIL_FAN_STEP = 9;
+
+interface RailEvent {
+  entry: Entry;
+  /** Where it sits along the horizon, 0 to 1. */
+  fraction: number;
+  /** What comes back at the reset. */
+  gain: number;
+  /** What is left now, which is what colours it. */
+  remaining: number;
+  resetAt: number;
+}
+
+/**
+ * The buckets that actually refill inside the horizon, soonest first.
+ *
+ * Filtered the way native filters: a reset in the future, inside seven days,
+ * and something to come back — a bucket at 0% used has no refill to draw, and
+ * a marker of zero height on the lane is a claim that nothing happens.
+ */
+export function railEvents(entries: Entry[], now: number): RailEvent[] {
+  return entries
+    .flatMap((entry) => {
+      const resetAt = entry.cell.bucket.resetAt;
+      const used = entry.cell.bucket.usedPercent;
+      if (!resetAt || resetAt <= now) return [];
+      const ahead = resetAt - now;
+      if (ahead > RAIL_HORIZON_SECONDS || used < 1) return [];
+      return [
+        {
+          entry,
+          fraction: Math.min(1, ahead / RAIL_HORIZON_SECONDS),
+          gain: used,
+          remaining: Math.max(0, 100 - used),
+          resetAt,
+        },
+      ];
+    })
+    .sort((left, right) => left.resetAt - right.resetAt);
+}
+
+/**
+ * Nudge markers that would land on top of each other.
+ *
+ * Bucketed into `RAIL_FAN_STEP`-wide slots; where a slot holds more than one,
+ * they spread evenly around it. Two quotas refilling within minutes of each
+ * other are one blob otherwise, and the lane's whole job is saying how many
+ * are coming and when.
+ */
+export function fannedOffsets(events: RailEvent[], width: number): number[] {
+  const slots = new Map<number, number[]>();
+  events.forEach((event, index) => {
+    const slot = Math.round((width * event.fraction) / RAIL_FAN_STEP);
+    const members = slots.get(slot);
+    if (members) members.push(index);
+    else slots.set(slot, [index]);
+  });
+  const offsets = new Array(events.length).fill(0);
+  for (const members of slots.values()) {
+    if (members.length < 2) continue;
+    const span = (members.length - 1) * RAIL_FAN_STEP;
+    members.forEach((index, position) => {
+      offsets[index] = position * RAIL_FAN_STEP - span / 2;
+    });
+  }
+  return offsets;
+}
+
+/**
+ * The next seven days as a refill lane, with the coming resets listed.
+ *
+ * A marker's height is how much comes back, its colour is how much is left
+ * now, and its position is when. The legend under it names the first few,
+ * because a lane of bars says when and how much but never which.
+ */
+function MiniRail({ entries, dark }: { entries: Entry[]; dark: boolean }) {
+  const now = Date.now() / 1000;
+  const events = railEvents(entries, now);
+  const width = 536;
+  const laneHeight = 64;
+  const offsets = fannedOffsets(events, width);
+
+  return (
+    <div className="mini-rail">
+      <div className="mini-rail-title">QUOTA RESETS · NEXT 7 DAYS</div>
+      {events.length === 0 ? (
+        <p className="mini-rail-empty">Nothing selected refills in the next seven days.</p>
+      ) : (
+        <>
+          <div className="mini-rail-lane" style={{ width, height: laneHeight }}>
+            <span className="mini-rail-baseline" style={{ top: laneHeight - 14 }} />
+            <span className="mini-rail-now" />
+            {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+              <span key={day} className="mini-rail-tick" style={{ left: (width * day) / 7 }}>
+                <span className="mini-rail-tick-mark" style={{ top: laneHeight - 18 }} />
+                <span className="mini-rail-tick-label" style={{ top: laneHeight - 11 }}>
+                  +{day}d
+                </span>
+              </span>
+            ))}
+            {events.map((event, index) => {
+              const height = 6 + ((laneHeight - 30) * event.gain) / 100;
+              const x = Math.max(4, Math.min(width - 4, width * event.fraction + offsets[index]));
+              return (
+                <span
+                  key={event.entry.cell.id}
+                  className="mini-rail-marker"
+                  style={{
+                    left: x - 3.5,
+                    top: laneHeight - 14 - height,
+                    height,
+                    background: quotaBarColor(event.remaining, false),
+                  }}
+                  title={`${entryLabel(event.entry)} — ${Math.round(event.remaining)}% now, +${Math.round(event.gain)}% ${formatRemaining(event.resetAt) ?? ""}`}
+                />
+              );
+            })}
+          </div>
+          <div className="mini-rail-legend" style={{ width }}>
+            {events.slice(0, 4).map((event) => (
+              <div className="mini-rail-legend-row" key={event.entry.cell.id}>
+                <span
+                  className="mini-company-dot"
+                  style={{ background: providerAccent(event.entry.tool, dark) }}
+                  aria-hidden
+                />
+                <span className="mini-rail-legend-label">{entryLabel(event.entry)}</span>
+                <span
+                  className="mini-rail-legend-gain"
+                  style={{ color: quotaBarColor(event.remaining, false) }}
+                >
+                  +{Math.round(event.gain)}%
+                </span>
+                <span className="mini-rail-legend-when">
+                  {formatRemaining(event.resetAt) || "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 /**
