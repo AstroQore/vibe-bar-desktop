@@ -115,10 +115,13 @@ pub fn run() {
         // the tray item is not clickable — macOS hides an item that outgrows
         // the menu bar, and without this the app is running, has no window,
         // and cannot be reached by any means at all.
-        RunEvent::Reopen {
-            has_visible_windows: false,
-            ..
-        } => tray::show_main_window(app),
+        //
+        // Not gated on `has_visible_windows`: the mini window is a window and
+        // is restored on launch whenever it was open, so that flag is true in
+        // exactly the state this exists to rescue — mini floating, main
+        // hidden, tray unreachable. Showing an already-visible main window
+        // just focuses it.
+        RunEvent::Reopen { .. } => tray::show_main_window(app),
         _ => {}
     });
 }
