@@ -76,14 +76,31 @@ Tauri's updater fetches JSON per platform and has no channel concept, so the
 channel becomes the endpoint:
 
 ```
-updates branch
-  latest-main.json
-  latest-dev.json
+https://raw.githubusercontent.com/AstroQore/vibe-bar-desktop/updates/latest-main.json
+https://raw.githubusercontent.com/AstroQore/vibe-bar-desktop/updates/latest-dev.json
 ```
 
+Written out because this section named them as one of the three things that
+cannot be changed later, and "an `updates` branch and two filenames" is not a
+URL — it leaves the next person to pick between raw branch content, Pages, or
+a domain, and two independently built releases could then embed endpoints that
+never see each other's updates.
+
+Raw branch content, the same host and shape the native client's
+`SUFeedURL` uses:
+`raw.githubusercontent.com/AstroQore/vibe-bar/updates/appcast.xml`. It needs no
+Pages build and no domain that can lapse.
+
 The app reads `updateChannel` from the shared `settings.json` — the same key
-the native client uses, so choosing Dev in either window sets it for both. It
-is a read; `settings_writer`'s whitelist does not need to grow.
+the native client uses, so choosing Dev in one window applies to both.
+
+**Desktop has to be able to set it too, not only read it.** On a machine with
+no native client there is otherwise no way into the Dev channel at all: the key
+is not in `settings_writer::WRITABLE_KEYS` and Desktop's Settings presents
+three controls, none of them this one. So the updater work includes a channel
+control in Settings and `updateChannel` in the whitelist — which is the rule
+that list already states, that a key may be writable only when a control
+submits it.
 
 Each file is the Tauri updater's shape:
 
@@ -123,7 +140,12 @@ not work on a machine you cannot reach.
 
 ## The pipeline
 
-1. **Bump** `tauri.conf.json` on a `release/<version>` branch of its own.
+1. **Bump all three version files** — `tauri.conf.json`,
+   `apps/desktop/package.json`, the workspace `Cargo.toml` — on a
+   `release/<version>` branch of its own. All three, because the gate below
+   refuses a build where they disagree, and the SSOT section chose checking
+   over generating: a release prepared by bumping only the source of truth
+   would be rejected by its own pipeline.
    Never in a feature PR: tags are first-come, and two agents bumping in
    parallel means one of them loses the tag it just wrote.
 2. **Merge**, then **tag** — `vX.Y.Z` or `vX.Y.Z-dev.N`.
@@ -146,6 +168,14 @@ not work on a machine you cannot reach.
   version;
 - the updater artifact exists and its signature verifies against the public key
   in the config.
+
+## What the first version includes beyond the pipeline
+
+- A **channel control** in Desktop's Settings, and `updateChannel` in
+  `settings_writer::WRITABLE_KEYS`. Without it a standalone install cannot
+  reach the Dev channel at all.
+- The **version check** in CI, so the three copies cannot drift apart between
+  releases rather than only at one.
 
 ## What is deliberately not in the first version
 
