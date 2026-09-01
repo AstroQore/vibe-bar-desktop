@@ -95,7 +95,9 @@ jobs:
           key: ${{ matrix.target }}
 
       # webkit2gtk is the webview, appindicator is the tray, patchelf is what
-      # makes the AppImage relocatable.
+      # makes the AppImage relocatable, and xdg-utils is what the AppImage
+      # bundler copies in to open links — absent from the arm64 runner image
+      # though present on the x86_64 one, which is why only that job failed.
       - name: Linux build dependencies
         if: startsWith(matrix.runner, 'ubuntu')
         run: |
@@ -106,7 +108,8 @@ jobs:
             librsvg2-dev \
             patchelf \
             build-essential \
-            curl wget file libssl-dev libgtk-3-dev libxdo-dev
+            curl wget file libssl-dev libgtk-3-dev libxdo-dev \
+            xdg-utils
 
       - uses: pnpm/action-setup@v4
         with:
