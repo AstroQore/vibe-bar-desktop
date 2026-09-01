@@ -153,19 +153,26 @@ and arm64.
 
 | Target | Runner | Bundle |
 | --- | --- | --- |
-| `darwin-aarch64` | `macos-latest` | `.app` + `.dmg`, updater artifact `.app.tar.gz` |
+| `darwin-aarch64` | `macos-latest`, `--target aarch64-apple-darwin` | `.app` + `.dmg`, updater artifact `.app.tar.gz` |
 | `darwin-x86_64` | `macos-latest`, `--target x86_64-apple-darwin` | same |
 | `windows-x86_64` | `windows-latest` | NSIS `.exe`, updater artifact `.nsis.zip` |
 | `windows-aarch64` | `windows-latest`, `--target aarch64-pc-windows-msvc` | same |
 | `linux-x86_64` | `ubuntu-22.04` | `.AppImage`, updater artifact `.AppImage.tar.gz` |
-| `linux-aarch64` | `ubuntu-24.04-arm` | same |
+| `linux-aarch64` | `ubuntu-22.04-arm` | same |
 
 Linux arm64 builds on an arm runner rather than cross-compiling: the webkit2gtk
 and appindicator dependencies make a cross build far more work than renting the
 right machine.
 
-Ubuntu 22.04 rather than the newest, because the glibc a binary is built
-against is the floor of what can run it.
+**22.04 on both architectures**, because the glibc a binary is built against is
+the floor of what can run it — and an AppImage does not change that, since it
+bundles the application and not the C library. Building arm64 on a newer runner
+would hand every arm64 user still on 22.04 a binary that will not start.
+
+Every target passes an explicit `--target`, including the arm64 macOS one.
+`macos-latest` is an alias: the day it points at an Intel runner, a row relying
+on the host architecture silently produces a second x86_64 bundle and the
+arm64 updater artifact goes missing.
 
 ### What each platform still needs
 
@@ -206,8 +213,11 @@ usage scan that reads the same session files, work on all three platforms.
 ## The pipeline
 
 1. **Bump all three version files** — `tauri.conf.json`,
-   `apps/desktop/package.json`, the workspace `Cargo.toml` — on a
-   `release/<version>` branch of its own. All three, because the gate below
+   `apps/desktop/package.json`, the workspace `Cargo.toml` — **and regenerate
+   `Cargo.lock`**, on a `release/<version>` branch of its own. The lockfile
+   records the workspace crates' own versions, so a bump without it leaves a
+   tagged tree where `--locked` fails and an unlocked build silently rewrites
+   the lockfile inside the runner instead. All three, because the gate below
    refuses a build where they disagree, and the SSOT section chose checking
    over generating: a release prepared by bumping only the source of truth
    would be rejected by its own pipeline.
@@ -257,10 +267,15 @@ usage scan that reads the same session files, work on all three platforms.
 - **Delta updates.** Sparkle does not use them here either.
 - **A "check now" button.** Native's daily ask-first check is the behaviour to
   match, and it needs the settings pane before it needs a button.
-- **Rollback.** The channel switch covers it: a Dev user who hits a bad build
-  moves to Main and stays there until the next Main release. Automatic
-  rollback needs a signal that a build is bad, and there is nothing that
-  produces one.
+- **Rollback.** There is none, and the channel switch is not one — which is
+  worth stating because it is the obvious thing to assume. The updater only
+  offers versions *newer* than the installed one, so someone on a bad
+  `0.3.0-dev.5` who switches to Main is offered nothing at all until a Main
+  release passes that version. They are on the bad build until then.
+
+  The recovery in the first version is to download and reinstall an earlier
+  release by hand. Anything better needs a downgrade path in the updater and a
+  signal that a build is bad, and neither exists.
 
 ## The one-way doors
 
