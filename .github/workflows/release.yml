@@ -21,20 +21,29 @@ jobs:
       matrix:
         include:
           - label: darwin-aarch64
+            bundles: app,dmg
             runner: macos-latest
             target: aarch64-apple-darwin
           - label: darwin-x86_64
+            bundles: app,dmg
             runner: macos-latest
             target: x86_64-apple-darwin
+          # NSIS only. The MSI bundler rejects a version whose pre-release
+          # identifier is not numeric, so `0.1.0-dev.1` cannot be packaged as
+          # an MSI at all — and the Windows updater artifact is the NSIS zip,
+          # so MSI would add an installer that no update path uses.
           - label: windows-x86_64
+            bundles: nsis
             runner: windows-latest
             target: x86_64-pc-windows-msvc
           - label: windows-aarch64
+            bundles: nsis
             runner: windows-latest
             target: aarch64-pc-windows-msvc
           # Ubuntu 22.04, not the newest: the glibc a binary is built against
           # is the floor of what can run it.
           - label: linux-x86_64
+            bundles: appimage
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           # An arm runner rather than a cross build — webkit2gtk and
@@ -43,6 +52,7 @@ jobs:
           # not the C library, so building against a newer glibc would hand
           # every arm64 user still on 22.04 a binary that does not start.
           - label: linux-aarch64
+            bundles: appimage
             runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
@@ -120,7 +130,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          args: --target ${{ matrix.target }} -- --locked
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           # Draft, always. The assets are checked before anyone's updater can

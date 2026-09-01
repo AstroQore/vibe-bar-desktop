@@ -179,9 +179,15 @@ arm64 updater artifact goes missing.
 - **Linux system packages** on the runner: `libwebkit2gtk-4.1-dev`,
   `libayatana-appindicator3-dev`, `librsvg2-dev`, `patchelf`.
 - **AppImage is the only updatable Linux bundle.** Tauri's updater cannot
-  replace a `.deb` or `.rpm` in place. Either those are not shipped, or they
-  ship as one-time downloads that will never update themselves — which is a
-  product decision, not a build one.
+  replace a `.deb` or `.rpm` in place, so only AppImage is built: a bundle
+  that can never update itself is a support burden, not a convenience.
+- **No MSI.** The bundler refuses a version whose pre-release identifier is
+  not numeric, so `0.1.0-dev.1` cannot be packaged as an MSI at all — it
+  fails the build rather than producing something. NSIS drops the pre-release
+  from `VIProductVersion` and carries on, and the Windows updater artifact is
+  the NSIS zip either way, so MSI would only add an installer no update path
+  uses. Each target names its bundles explicitly for this reason; the default
+  is every format the platform supports.
 - **Windows code signing.** Unsigned installers meet SmartScreen. A
   certificate is a cost and a decision; without one the first-run experience
   is a warning dialog.
