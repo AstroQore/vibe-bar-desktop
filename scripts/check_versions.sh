@@ -45,6 +45,6 @@ if [[ $status -ne 0 ]]; then
     exit 1
 fi
 
-python3 "$ROOT/Scripts/check_lockfile_version.py" "$ROOT/Cargo.lock" "$truth" || exit 1
+python3 "$ROOT/scripts/check_lockfile_version.py" "$ROOT/Cargo.lock" "$truth" || exit 1
 
 echo "version $truth, in all three files and the lockfile"

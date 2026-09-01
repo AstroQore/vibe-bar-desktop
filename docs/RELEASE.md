@@ -17,7 +17,7 @@ Read from the repository rather than from memory:
 | --- | --- |
 | Version SSOT | `Resources/Info.plist` — `CFBundleShortVersionString` (1.5.0) and `CFBundleVersion` (58) |
 | Tags | `v<version>` for Main, `v<version>-dev.<CFBundleVersion>` for Dev |
-| Gate | `Scripts/release_app.sh` refuses a tag that disagrees with the plist, and refuses a bundle carrying an `app-sandbox` entitlement |
+| Gate | `scripts/release_app.sh` refuses a tag that disagrees with the plist, and refuses a bundle carrying an `app-sandbox` entitlement |
 | Feed | one `appcast.xml` on the `updates` branch holding **both** channel heads |
 | Channel marking | Main entries carry no `<sparkle:channel>`; Dev entries carry `<sparkle:channel>dev</sparkle:channel>` |
 | Ordering | `sparkle:version` — the build number, monotonic across both channels |
@@ -235,14 +235,21 @@ usage scan that reads the same session files, work on all three platforms.
 
 ## The gate
 
-`Scripts/release_app.sh`, mirroring `release_app.sh` on the native side:
+`scripts/check_versions.sh` and `scripts/check_release_tag.py`, run by
+`release.yml` before the build and by CI on every pull request. The native
+side's `release_app.sh` does this locally; here it runs where the tag does,
+because a tag pushed from a laptop skips a local script and cannot be taken
+back.
 
+- the three version files agree, and the lockfile records the same versions;
 - the tag matches `tauri.conf.json`;
-- the three version files agree;
-- the Dev tag's `-dev.N` is present;
+- **the tag is one the feed can read at all** — `X.Y.Z` or `X.Y.Z-dev.N`.
+  `v0.2.0-rc.1` is valid SemVer and builds green, and both documents skip it
+  forever;
 - **the candidate outranks the head its channel currently serves**, compared
-  as a whole semver against the same set that document considers — Main
-  against Main, Dev against Main and Dev together.
+  as a whole semver against the document that channel publishes — Main against
+  `latest-main.json`, Dev against `latest-dev.json`, which already holds the
+  newer of the two channels.
 
   Counting `-dev.N` upwards is not enough on its own. After `0.2.0` ships,
   `0.2.0-dev.9` has a higher counter than every earlier Dev tag and still

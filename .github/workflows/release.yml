@@ -48,17 +48,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: The tag has to be the version in the bundle
+      - name: The tag has to be one the feeds can serve
         shell: bash
         run: |
-          ./Scripts/check_versions.sh
-          version="$(python3 -c 'import json;print(json.load(open("apps/desktop/src-tauri/tauri.conf.json"))["version"])')"
-          tag="${GITHUB_REF_NAME#v}"
-          if [[ "$tag" != "$version" ]]; then
-            echo "tag $GITHUB_REF_NAME does not match tauri.conf.json version $version" >&2
-            exit 1
+          ./scripts/check_versions.sh
+          # The comparison is against what the channel serves *now*, which is
+          # the published document rather than the release list: that is what
+          # an installed copy actually reads.
+          feed="$(mktemp -d)"
+          if git fetch --depth=1 origin updates; then
+            for document in latest-main.json latest-dev.json; do
+              git show FETCH_HEAD:"$document" > "$feed/$document" 2>/dev/null \
+                || rm -f "$feed/$document"
+            done
           fi
-          echo "building $GITHUB_REF_NAME"
+          python3 scripts/check_release_tag.py "$GITHUB_REF_NAME" --feed-dir "$feed"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -103,7 +107,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} -- --locked
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           # Draft, always. The assets are checked before anyone's updater can

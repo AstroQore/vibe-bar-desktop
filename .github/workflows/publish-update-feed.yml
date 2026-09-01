@@ -47,8 +47,8 @@ jobs:
 
       - name: Build the documents
         run: |
-          python3 Scripts/tests/test_update_feed.py
-          python3 Scripts/build_update_feed.py releases.json --out feed
+          python3 scripts/tests/run_tests.py
+          python3 scripts/build_update_feed.py releases.json --out feed
 
       - name: Commit them to the updates branch
         run: |

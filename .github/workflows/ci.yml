@@ -22,8 +22,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p vibebar-desktop-core
-      - run: cargo clippy -p vibebar-desktop-core --all-targets -- -D warnings
+      - run: cargo test -p vibebar-desktop-core --locked
+      - run: cargo clippy -p vibebar-desktop-core --all-targets --locked -- -D warnings
 
   app:
     name: app (macOS)
@@ -53,13 +53,13 @@ jobs:
         working-directory: apps/desktop
         run: pnpm build
       - name: The version is one fact, in three files
-        run: ./Scripts/check_versions.sh
-      - name: Test the update feed builder
-        run: python3 Scripts/tests/test_update_feed.py
+        run: ./scripts/check_versions.sh
+      - name: Test the release scripts
+        run: python3 scripts/tests/run_tests.py
       - name: Test and lint the whole workspace
         run: |
-          cargo test --workspace
-          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Build the app
         working-directory: apps/desktop
-        run: pnpm tauri build --no-bundle
+        run: pnpm tauri build --no-bundle -- --locked

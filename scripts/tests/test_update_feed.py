@@ -1,6 +1,6 @@
 """The feed's selection rule, which is the part that is easy to get backwards.
 
-Run with `python3 -m pytest Scripts/tests` or plain `python3 Scripts/tests/test_update_feed.py`.
+Run with `python3 -m pytest scripts/tests` or plain `python3 scripts/tests/test_update_feed.py`.
 """
 
 import importlib.util
@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("feed", ROOT / "Scripts/build_update_feed.py")
+spec = importlib.util.spec_from_file_location("feed", ROOT / "scripts/build_update_feed.py")
 feed = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(feed)
 
@@ -116,14 +116,6 @@ def test_writes_both_documents():
 
 
 if __name__ == "__main__":
-    failures = 0
-    for name, function in sorted(globals().items()):
-        if not name.startswith("test_"):
-            continue
-        try:
-            function()
-            print(f"ok   {name}")
-        except AssertionError:
-            failures += 1
-            print(f"FAIL {name}")
-    raise SystemExit(1 if failures else 0)
+    import run_tests
+
+    raise SystemExit(run_tests.run_one(__file__))
