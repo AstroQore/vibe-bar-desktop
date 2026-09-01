@@ -70,6 +70,7 @@ pub fn run() {
             commands::hide_mini,
             commands::resize_mini,
             commands::check_for_update,
+            commands::install_update,
             commands::session_list,
             commands::session_search,
             commands::session_transcript,

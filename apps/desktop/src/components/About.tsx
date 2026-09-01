@@ -5,30 +5,64 @@ import type { AppInfo, QuotaView } from "../api";
 import { api, formatRelative } from "../api";
 
 /**
- * Asks, and says what it found. It does not install.
+ * Asks, then installs if told to.
  *
- * An update that arrives without being asked for is not a surprise this app
- * has any business springing on someone mid-session; the native client asks
- * first too. Which channel it looks at is `updateChannel` in Settings.
+ * Two steps, because installing replaces the running application and restarts
+ * it. An update that arrives without being asked for is not a surprise this
+ * app has any business springing on someone mid-session; the native client
+ * asks first too. Which channel it looks at is `updateChannel` in Settings.
  */
 function UpdateCheck() {
-  const [state, setState] = useState<"idle" | "checking" | string>("idle");
+  const [state, setState] = useState<
+    | { at: "idle" | "checking" | "installing" }
+    | { at: "found"; version: string }
+    | { at: "said"; message: string }
+  >({ at: "idle" });
 
-  if (state === "checking") return <span className="status-line"> checking…</span>;
-  if (state !== "idle") return <span className="status-line"> {state}</span>;
+  if (state.at === "checking") return <span className="status-line"> checking…</span>;
+  if (state.at === "installing")
+    return <span className="status-line"> downloading and installing…</span>;
+  if (state.at === "said") return <span className="status-line"> {state.message}</span>;
+
+  if (state.at === "found") {
+    return (
+      <span className="status-line">
+        {" "}
+        {state.version} is available{" "}
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            setState({ at: "installing" });
+            api.installUpdate().catch((error: unknown) =>
+              setState({ at: "said", message: `could not install: ${String(error)}` }),
+            );
+          }}
+        >
+          Install and restart
+        </button>
+      </span>
+    );
+  }
 
   return (
     <button
       type="button"
       className="link-button"
       onClick={() => {
-        setState("checking");
+        setState({ at: "checking" });
         api
           .checkForUpdate()
           .then((version) =>
-            setState(version ? `${version} is available` : "up to date"),
+            setState(
+              version
+                ? { at: "found", version }
+                : { at: "said", message: "up to date" },
+            ),
           )
-          .catch((error: unknown) => setState(`could not check: ${String(error)}`));
+          .catch((error: unknown) =>
+            setState({ at: "said", message: `could not check: ${String(error)}` }),
+          );
       }}
     >
       Check for updates
@@ -64,7 +98,7 @@ export function About({ info, view }: { info: AppInfo | null; view: QuotaView | 
         <dt>Version</dt>
         <dd>
           {info.version} <span className="pill">preview</span>
-          <UpdateCheck />
+          {info.isDemo ? null : <UpdateCheck />}
         </dd>
 
         <dt>Vibe Bar data</dt>

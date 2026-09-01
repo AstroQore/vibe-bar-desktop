@@ -156,11 +156,21 @@ pub fn resize_mini(app: AppHandle, width: f64, height: f64) {
 /// Reports rather than installs. An update that arrives without being asked
 /// for is the kind of surprise this app has no business springing on someone
 /// mid-session, and the native client asks first too.
+/// The feed to ask, or the reason not to ask anything.
+///
+/// Demo mode's own banner promises no network requests, and a check is one.
+/// The refusal lives here rather than only in the control that starts it: a
+/// hidden button is a hidden button, not a guarantee.
+fn update_endpoint(root: &vibebar_desktop_core::paths::DataRoot) -> Result<&'static str, String> {
+    if root.is_demo() {
+        return Err("update checks are off in demo mode".to_string());
+    }
+    Ok(SharedSettings::load(root).update_channel().endpoint())
+}
+
 #[tauri::command]
 pub async fn check_for_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let channel = SharedSettings::load(state.data_root()).update_channel();
-    let endpoint = channel
-        .endpoint()
+    let endpoint = update_endpoint(state.data_root())?
         .parse()
         .map_err(|_| "the update endpoint is not a URL".to_string())?;
     let updater = app
@@ -170,10 +180,35 @@ pub async fn check_for_update(app: AppHandle, state: State<'_, AppState>) -> Res
         .build()
         .map_err(|error| error.to_string())?;
     match updater.check().await {
-        Ok(Some(update)) => Ok(Some(update.version)),
-        Ok(None) => Ok(None),
+        Ok(Some(update)) => {
+            let version = update.version.clone();
+            // Held so that installing puts on exactly the version that was
+            // named, rather than whatever the feed says a minute later.
+            state.hold_update(update);
+            Ok(Some(version))
+        }
+        Ok(None) => {
+            state.drop_update();
+            Ok(None)
+        }
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// Installs the update the last check found, and restarts into it.
+///
+/// Separate from the check because this is the irreversible half: it replaces
+/// the running application. Nothing calls it without the person asking.
+#[tauri::command]
+pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let update = state
+        .take_update()
+        .ok_or_else(|| "check for an update first".to_string())?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| error.to_string())?;
+    app.restart();
 }
 
 #[tauri::command]
@@ -256,4 +291,19 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
 #[tauri::command]
 pub fn skills_inventory(state: State<'_, AppState>) -> SkillsInventoryView {
     vibebar_desktop_core::skills::scan(state.data_root())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vibebar_desktop_core::paths::DataRoot;
+
+    #[test]
+    fn demo_mode_refuses_to_reach_the_feed() {
+        // `DataRoot::at` is a demo root: the banner over this control says the
+        // mode makes no network requests.
+        let refusal = update_endpoint(&DataRoot::at(std::env::temp_dir().join("vibebar-demo")))
+            .expect_err("a demo root must not produce an endpoint to fetch");
+        assert!(refusal.contains("demo"), "{refusal}");
+    }
 }

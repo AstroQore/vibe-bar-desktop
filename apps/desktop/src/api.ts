@@ -330,9 +330,11 @@ export const api = {
    *  window to it. */
   resizeMini: (width: number, height: number) =>
     invoke<void>("resize_mini", { width, height }),
-  /** The version waiting on this machine's channel, or null. Reports; it does
-   *  not install. */
+  /** The version waiting on this machine's channel, or null. Checking never
+   *  installs — `installUpdate` is the step that does, and only when asked. */
   checkForUpdate: () => invoke<string | null>("check_for_update"),
+  /** Installs what the last check found and restarts into it. */
+  installUpdate: () => invoke<void>("install_update"),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
   /** The shared settings file changed. The payload names the settings chosen

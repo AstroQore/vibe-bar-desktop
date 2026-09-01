@@ -20,9 +20,31 @@ pub struct AppState {
     status: ServiceStatusEngine,
     cost: CostEngine,
     data_root: DataRoot,
+    /// What the last update check found, kept so that installing puts on the
+    /// version the person was shown rather than whatever the feed serves by
+    /// the time they click. Cleared once taken: an `Update` is consumed by
+    /// installing it, and a stale one would offer to reinstall what is
+    /// already running.
+    pending_update: std::sync::Mutex<Option<tauri_plugin_updater::Update>>,
 }
 
 impl AppState {
+    pub fn hold_update(&self, update: tauri_plugin_updater::Update) {
+        if let Ok(mut pending) = self.pending_update.lock() {
+            *pending = Some(update);
+        }
+    }
+
+    pub fn take_update(&self) -> Option<tauri_plugin_updater::Update> {
+        self.pending_update.lock().ok().and_then(|mut p| p.take())
+    }
+
+    pub fn drop_update(&self) {
+        if let Ok(mut pending) = self.pending_update.lock() {
+            *pending = None;
+        }
+    }
+
     pub fn new() -> Self {
         let data_root = DataRoot::discover();
         let scan_home: PathBuf = if data_root.is_demo() {
@@ -42,6 +64,7 @@ impl AppState {
             status: ServiceStatusEngine::new(data_root.clone()),
             cost: CostEngine::new(data_root.clone(), scan_home),
             data_root,
+            pending_update: std::sync::Mutex::new(None),
         }
     }
 
