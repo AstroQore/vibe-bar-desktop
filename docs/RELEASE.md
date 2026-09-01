@@ -133,10 +133,60 @@ updated in place.
 
 ## Platforms
 
-macOS only to begin with, `aarch64` and `x86_64`. The core crate is tested on
-Windows and Linux, but the GUI has only had a macOS pass, and shipping an
-updater to a platform nobody has run is how you find out that the tray does
-not work on a machine you cannot reach.
+Six targets from the first release: macOS, Windows and Linux, each on x86_64
+and arm64.
+
+| Target | Runner | Bundle |
+| --- | --- | --- |
+| `darwin-aarch64` | `macos-latest` | `.app` + `.dmg`, updater artifact `.app.tar.gz` |
+| `darwin-x86_64` | `macos-latest`, `--target x86_64-apple-darwin` | same |
+| `windows-x86_64` | `windows-latest` | NSIS `.exe`, updater artifact `.nsis.zip` |
+| `windows-aarch64` | `windows-latest`, `--target aarch64-pc-windows-msvc` | same |
+| `linux-x86_64` | `ubuntu-22.04` | `.AppImage`, updater artifact `.AppImage.tar.gz` |
+| `linux-aarch64` | `ubuntu-24.04-arm` | same |
+
+Linux arm64 builds on an arm runner rather than cross-compiling: the webkit2gtk
+and appindicator dependencies make a cross build far more work than renting the
+right machine.
+
+Ubuntu 22.04 rather than the newest, because the glibc a binary is built
+against is the floor of what can run it.
+
+### What each platform still needs
+
+- **Linux system packages** on the runner: `libwebkit2gtk-4.1-dev`,
+  `libayatana-appindicator3-dev`, `librsvg2-dev`, `patchelf`.
+- **AppImage is the only updatable Linux bundle.** Tauri's updater cannot
+  replace a `.deb` or `.rpm` in place. Either those are not shipped, or they
+  ship as one-time downloads that will never update themselves — which is a
+  product decision, not a build one.
+- **Windows code signing.** Unsigned installers meet SmartScreen. A
+  certificate is a cost and a decision; without one the first-run experience
+  is a warning dialog.
+- **macOS stays ad-hoc signed**, as the native client is. Downloads carry the
+  quarantine flag and need the usual first-open dance.
+
+### The honest risk
+
+The GUI has only ever run on macOS. The core crate is tested on all three
+platforms and the credential and scan paths are written portably — but the
+tray, the undecorated always-on-top mini window, `data-tauri-drag-region`, and
+window placement have never been exercised on Windows or Linux. Some Linux
+desktops have no tray at all, and this is a tray application.
+
+Shipping there means shipping something no one has run. That is a reason to
+start on the Dev channel and to say so in the release notes, not a reason to
+hold the other four targets back.
+
+### What does work off macOS
+
+Worth stating precisely, because "macOS-only features" sounds worse than it
+is. `credentials/keychain.rs` returns `None` off macOS, so anything that
+*only* lives in the macOS Keychain is unavailable. But Codex and Claude
+credentials are also read from files — `~/.codex/auth.json`,
+`~/.claude/.credentials.json`, `~/.config/claude/.credentials.json` — and
+`home_directory()` falls back to `USERPROFILE`. Those providers, and the local
+usage scan that reads the same session files, work on all three platforms.
 
 ## The pipeline
 
@@ -179,7 +229,8 @@ not work on a machine you cannot reach.
 
 ## What is deliberately not in the first version
 
-- **Windows and Linux updates.** They follow the GUI pass, not before.
+- **A Windows signing certificate.** Until there is one, Windows installers
+  meet SmartScreen. That is a purchase and a decision, not a build step.
 - **Delta updates.** Sparkle does not use them here either.
 - **A "check now" button.** Native's daily ask-first check is the behaviour to
   match, and it needs the settings pane before it needs a button.
