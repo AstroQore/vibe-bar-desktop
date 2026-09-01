@@ -157,7 +157,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | MCP tools | ● 12 | ◐ 6 | Read-only subset. `cost.snapshot` reports what the last local scan found, in the shape native's does |
 | Remote probe sync | ● | ○ | |
 | Launch at login | ● | ○ | |
-| In-app updates | ● Sparkle | ○ | Planned on the Tauri updater |
+| In-app updates | ● Sparkle | ○ | Designed, not built: [docs/RELEASE.md](docs/RELEASE.md). Tauri updater, Main and Dev endpoints on an `updates` branch, channel read from the shared `updateChannel` |
 | App Sandbox | ○ by design | ○ for now | Neither ships sandboxed. Native **cannot**: reading browser cookies, probing AntiGravity with `ps`/`lsof`, and driving Terminal by Apple events are all blocked inside it, and the release script refuses a sandboxed bundle. Desktop needs none of that while it stays read-only, so it is the one that *could* — an option that closes as soon as it grows cookie providers |
 | Windows and Linux | — | ◐ | Core is tested on all three; the GUI has only had a macOS pass |
 

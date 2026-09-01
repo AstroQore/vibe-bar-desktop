@@ -31,6 +31,12 @@ lives in the core crate, which has no Tauri dependency and is tested on
 macOS, Windows, and Linux without a GUI. The shell is thin enough to read in
 one sitting.
 
+## Releasing
+
+Not yet possible: there is no release workflow, no tag, and no signing key.
+[RELEASE.md](RELEASE.md) is the design, including the three things that cannot
+be changed once a version has reached someone.
+
 ## Looking at the mini layouts
 
 `pnpm -C apps/desktop dev`, then `/preview.html`. It renders every ported
