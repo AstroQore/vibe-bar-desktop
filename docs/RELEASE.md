@@ -17,7 +17,7 @@ Read from the repository rather than from memory:
 | --- | --- |
 | Version SSOT | `Resources/Info.plist` — `CFBundleShortVersionString` (1.5.0) and `CFBundleVersion` (58) |
 | Tags | `v<version>` for Main, `v<version>-dev.<CFBundleVersion>` for Dev |
-| Gate | `Scripts/release_app.sh` refuses a tag that disagrees with the plist, and refuses a bundle carrying an `app-sandbox` entitlement |
+| Gate | `scripts/release_app.sh` refuses a tag that disagrees with the plist, and refuses a bundle carrying an `app-sandbox` entitlement |
 | Feed | one `appcast.xml` on the `updates` branch holding **both** channel heads |
 | Channel marking | Main entries carry no `<sparkle:channel>`; Dev entries carry `<sparkle:channel>dev</sparkle:channel>` |
 | Ordering | `sparkle:version` — the build number, monotonic across both channels |
@@ -179,9 +179,15 @@ arm64 updater artifact goes missing.
 - **Linux system packages** on the runner: `libwebkit2gtk-4.1-dev`,
   `libayatana-appindicator3-dev`, `librsvg2-dev`, `patchelf`.
 - **AppImage is the only updatable Linux bundle.** Tauri's updater cannot
-  replace a `.deb` or `.rpm` in place. Either those are not shipped, or they
-  ship as one-time downloads that will never update themselves — which is a
-  product decision, not a build one.
+  replace a `.deb` or `.rpm` in place, so only AppImage is built: a bundle
+  that can never update itself is a support burden, not a convenience.
+- **No MSI.** The bundler refuses a version whose pre-release identifier is
+  not numeric, so `0.1.0-dev.1` cannot be packaged as an MSI at all — it
+  fails the build rather than producing something. NSIS drops the pre-release
+  from `VIProductVersion` and carries on, and the Windows updater artifact is
+  the NSIS zip either way, so MSI would only add an installer no update path
+  uses. Each target names its bundles explicitly for this reason; the default
+  is every format the platform supports.
 - **Windows code signing.** Unsigned installers meet SmartScreen. A
   certificate is a cost and a decision; without one the first-run experience
   is a warning dialog.
@@ -229,28 +235,56 @@ usage scan that reads the same session files, work on all three platforms.
    updater sees them.
 4. **Verify before publishing**: the SHA-256 of each asset independently, the
    version inside the bundle, and that the bundle launches.
-5. **Publish.** Main releases are marked latest; Dev releases are prereleases.
+5. **Publish** with `scripts/publish_release.py vX.Y.Z[-dev.N]`, which
+   re-checks the ordering against the document the channel is serving right
+   then and flips the draft in the same breath. The tag-time gate cannot be
+   the last word: two tags on the same channel can both build while both
+   drafts sit unpublished, and both pass against the same head. Main releases
+   are marked latest; Dev releases are prereleases.
 6. **`publish-update-feed.yml`** rebuilds both JSON files from the published
    releases.
 
 ## The gate
 
-`Scripts/release_app.sh`, mirroring `release_app.sh` on the native side:
+`scripts/check_versions.sh` and `scripts/check_release_tag.py`, run by
+`release.yml` before the build and by CI on every pull request. The native
+side's `release_app.sh` does this locally; here it runs where the tag does,
+because a tag pushed from a laptop skips a local script and cannot be taken
+back.
 
+- the three version files agree, and the lockfile records the same versions;
 - the tag matches `tauri.conf.json`;
-- the three version files agree;
-- the Dev tag's `-dev.N` is present;
+- **the tag is one the feed can read at all** — `X.Y.Z` or `X.Y.Z-dev.N`.
+  `v0.2.0-rc.1` is valid SemVer and builds green, and both documents skip it
+  forever;
 - **the candidate outranks the head its channel currently serves**, compared
-  as a whole semver against the same set that document considers — Main
-  against Main, Dev against Main and Dev together.
+  as a whole semver against the document that channel publishes — Main against
+  `latest-main.json`, Dev against `latest-dev.json`, which already holds the
+  newer of the two channels.
 
   Counting `-dev.N` upwards is not enough on its own. After `0.2.0` ships,
   `0.2.0-dev.9` has a higher counter than every earlier Dev tag and still
   orders *below* `0.2.0`: publishing it would put a version in the Dev feed
   that no current subscriber can install. An older Main version passes every
   other check here for the same reason.
-- the updater artifact exists and its signature verifies against the public key
-  in the config.
+- at publication, and against both the document being served then **and the
+  releases already published**: the ordering again, and that the draft
+  carries at least one updater artifact **with its `.sig`**. Both sources,
+  because the document lags publication by one workflow run — publish two
+  drafts within a minute and each would read the same stale document.
+
+  What this does **not** close: two people running the publish command in
+  the same few seconds. Both read the same state before either flips its
+  draft, and the lower version can still be published. Closing it needs a
+  lock the GitHub API does not offer for releases — a `workflow_dispatch`
+  job with a `concurrency` group would do it. Left open deliberately: it
+  needs two simultaneous publishers on one channel, and the damage is a
+  published release the feed does not serve, not a subscriber stranded on a
+  broken one. If publishing ever stops being one person's deliberate act,
+  this is the thing to fix first — matched by the same rule the feed builder uses, so "publishable"
+  and "will appear in the feed" cannot diverge. That the signature *verifies*
+  against the public key is still step 4's manual check; this only asserts it
+  is there.
 
 ## What the first version includes beyond the pipeline
 

@@ -20,3 +20,7 @@ apps/desktop/src-tauri/gen/
 .gemini/
 .cursor/
 .agents/
+
+# Python leaves these next to the release scripts.
+__pycache__/
+*.pyc
