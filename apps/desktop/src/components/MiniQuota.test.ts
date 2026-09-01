@@ -355,3 +355,33 @@ describe("fanned groups at the ends of the lane", () => {
     expect(xs[2] - xs[1]).toBe(9);
   });
 });
+
+describe("markers that collide across slot boundaries", () => {
+  const width = 536;
+  const at = (x: number) => ({ fraction: x / width }) as Parameters<typeof fannedOffsets>[0][number];
+  const positions = (xs: number[]) => {
+    const events = xs.map(at);
+    const offsets = fannedOffsets(events, width);
+    return events.map((e, i) => width * e.fraction + offsets[i]);
+  };
+
+  /// The bars are 7 wide and a step is 9, so landing in *neighbouring* slots
+  /// is not separation. Grouping by a rounded slot id left these overlapped.
+  it("separates two markers a fraction of a pixel apart", () => {
+    const [a, b] = positions([94.4, 94.6]);
+    expect(Math.abs(b - a)).toBeGreaterThanOrEqual(7);
+  });
+
+  it("separates two pairs that straddle a boundary", () => {
+    const xs = positions([94.4, 94.6, 95.1, 95.4]);
+    const sorted = [...xs].sort((l, r) => l - r);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(7);
+    }
+  });
+
+  /// And markers genuinely far apart are still left where they belong.
+  it("leaves markers that do not collide alone", () => {
+    expect(positions([100, 200, 300])).toEqual([100, 200, 300]);
+  });
+});

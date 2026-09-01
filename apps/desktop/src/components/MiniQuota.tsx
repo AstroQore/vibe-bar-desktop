@@ -389,35 +389,47 @@ export function railEvents(entries: Entry[], now: number): RailEvent[] {
 /**
  * Nudge markers that would land on top of each other.
  *
- * Bucketed into `RAIL_FAN_STEP`-wide slots; where a slot holds more than one,
- * they spread evenly around it. Two quotas refilling within minutes of each
- * other are one blob otherwise, and the lane's whole job is saying how many
- * are coming and when.
+ * Grouped by where they actually fall, not by a rounded slot id: two resets a
+ * fifth of a second apart can round into neighbouring slots, be "alone" in
+ * each, and still overlap — the bars are 7 wide and the slots are 9 apart, so
+ * adjacency is not separation. Anything within a step of the group so far
+ * joins it.
+ *
+ * A group then spreads evenly around its own centre, and shifts as a whole
+ * where that would run off the lane. Clamping each marker on its own would put
+ * the group back on one x, which is where fanning is needed most: several
+ * quotas resetting within the hour, or all at the far edge of the horizon.
  */
 export function fannedOffsets(events: RailEvent[], width: number): number[] {
-  const slots = new Map<number, number[]>();
-  events.forEach((event, index) => {
-    const slot = Math.round((width * event.fraction) / RAIL_FAN_STEP);
-    const members = slots.get(slot);
-    if (members) members.push(index);
-    else slots.set(slot, [index]);
-  });
+  const placed = events
+    .map((event, index) => ({ index, x: width * event.fraction }))
+    .sort((left, right) => left.x - right.x);
+
   const offsets = new Array(events.length).fill(0);
-  for (const [slot, members] of slots) {
-    if (members.length < 2) continue;
-    const span = (members.length - 1) * RAIL_FAN_STEP;
-    // Shift the group as a whole where it would run off the lane. Clamping
-    // each marker on its own puts the whole group back on one x — which is
-    // where fanning is needed most: quotas resetting within the hour, or all
-    // at the far end of the horizon.
-    const centre = slot * RAIL_FAN_STEP;
-    const shift =
-      Math.max(RAIL_MARKER_INSET, Math.min(width - RAIL_MARKER_INSET - span, centre - span / 2)) -
-      (centre - span / 2);
-    members.forEach((index, position) => {
-      offsets[index] = position * RAIL_FAN_STEP - span / 2 + shift;
-    });
+  let group: typeof placed = [];
+
+  const settle = () => {
+    if (group.length > 1) {
+      const span = (group.length - 1) * RAIL_FAN_STEP;
+      const centre = (group[0].x + group[group.length - 1].x) / 2;
+      const start = Math.max(
+        RAIL_MARKER_INSET,
+        Math.min(width - RAIL_MARKER_INSET - span, centre - span / 2),
+      );
+      group.forEach((member, position) => {
+        offsets[member.index] = start + position * RAIL_FAN_STEP - member.x;
+      });
+    }
+    group = [];
+  };
+
+  for (const marker of placed) {
+    if (group.length > 0 && marker.x - group[group.length - 1].x >= RAIL_FAN_STEP) {
+      settle();
+    }
+    group.push(marker);
   }
+  settle();
   return offsets;
 }
 
