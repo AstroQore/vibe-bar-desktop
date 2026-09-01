@@ -22,8 +22,27 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+
+      # The shell crate needs these to build at all on Linux; the core crate
+      # does not, which is why they were not here before.
+      - name: Linux build dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            build-essential curl wget file libssl-dev libgtk-3-dev libxdo-dev
+
       - run: cargo test -p vibebar-desktop-core --locked
       - run: cargo clippy -p vibebar-desktop-core --all-targets --locked -- -D warnings
+
+      # The shell too, not just the core. Half of Tauri's API is behind a
+      # platform cfg, so code that compiles here can fail to exist there —
+      # `RunEvent::Reopen` is macOS-only, and a release built four broken
+      # targets before anyone found out. A check rather than a build: this
+      # is about whether the code exists on the platform, and a bundle takes
+      # ten times as long to say the same thing.
+      - run: cargo check -p vibe-bar-desktop --locked
 
   app:
     name: app (macOS)
