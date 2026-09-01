@@ -54,8 +54,8 @@ moves into the prerelease field:
 
 | Channel | Version | Tag |
 | --- | --- | --- |
-| Main | `X.Y.Z` | `v X.Y.Z` |
-| Dev | `X.Y.Z-dev.N` | `v X.Y.Z-dev.N` |
+| Main | `X.Y.Z` | `vX.Y.Z` |
+| Dev | `X.Y.Z-dev.N` | `vX.Y.Z-dev.N` |
 
 Semver already orders these the way the pipeline needs:
 `0.2.0-dev.7 < 0.2.0-dev.8 < 0.2.0`. Dev builds are previews *of the next
@@ -119,6 +119,21 @@ Rebuilt from the published releases on every run, serialized with
 `concurrency`, for the same reason native rebuilds its appcast: a feed that is
 appended to can end up describing a release that was deleted or never
 finished.
+
+**Which release goes in which document**, since each one can only name a
+single version:
+
+| Document | Considers | Takes |
+| --- | --- | --- |
+| `latest-main.json` | Main releases only | the greatest semver among them |
+| `latest-dev.json` | Main **and** Dev releases | the greatest semver among them |
+
+The second row is the whole point and is easy to get backwards. The obvious
+builder — Main takes the newest stable, Dev takes the newest prerelease —
+strands every Dev user the moment a release ships: someone on `0.2.0-dev.8`
+would never be offered `0.2.0`, because it is not a prerelease. Dev is *the
+channel that sees more*, exactly as a Dev subscriber to native's appcast sees
+both channel tags, and semver ordering then does the rest.
 
 ## Signing
 
@@ -214,8 +229,16 @@ usage scan that reads the same session files, work on all three platforms.
 
 - the tag matches `tauri.conf.json`;
 - the three version files agree;
-- the Dev tag's `-dev.N` is present and higher than the last Dev tag for that
-  version;
+- the Dev tag's `-dev.N` is present;
+- **the candidate outranks the head its channel currently serves**, compared
+  as a whole semver against the same set that document considers — Main
+  against Main, Dev against Main and Dev together.
+
+  Counting `-dev.N` upwards is not enough on its own. After `0.2.0` ships,
+  `0.2.0-dev.9` has a higher counter than every earlier Dev tag and still
+  orders *below* `0.2.0`: publishing it would put a version in the Dev feed
+  that no current subscriber can install. An older Main version passes every
+  other check here for the same reason.
 - the updater artifact exists and its signature verifies against the public key
   in the config.
 
