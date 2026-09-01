@@ -31,7 +31,8 @@ use crate::error::CoreError;
 /// everything can write by mistake. Carried over from the earlier design
 /// record in `docs/contracts/settings-document-v1.md`. Growing it is a
 /// deliberate act: add the control first, then the key.
-pub const WRITABLE_KEYS: &[&str] = &["displayMode", "menuBarColorBasis", "refreshIntervalSeconds"];
+pub const WRITABLE_KEYS: &[&str] =
+    &["displayMode", "menuBarColorBasis", "refreshIntervalSeconds", "updateChannel"];
 
 /// What another writer took over: settings this process changed which now
 /// hold someone else's value.

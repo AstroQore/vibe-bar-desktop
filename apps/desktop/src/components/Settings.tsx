@@ -94,6 +94,26 @@ export function Settings({
         </div>
       </SettingsGroup>
 
+      <SettingsGroup title="Updates">
+        <div className="setting-row">
+          <span>Channel</span>
+          <select
+            value={settings.updateChannel === "dev" ? "dev" : "main"}
+            onChange={(event) => onSave({ updateChannel: event.target.value })}
+          >
+            <option value="main">Stable</option>
+            <option value="dev">Dev previews</option>
+          </select>
+        </div>
+        {/* Shared with the menu-bar app: this is the same setting in both.
+            It is also the only way onto Dev on a machine that has no native
+            client, which is why it is writable here rather than read-only. */}
+        <p className="status-line">
+          Shared with the Vibe Bar menu-bar app. Dev previews arrive before a
+          stable release and can be less stable.
+        </p>
+      </SettingsGroup>
+
       <SettingsGroup title="Overview">
         <Setting name="Core order" value={providerList(settings.coreProviderOrder)} />
         <Setting

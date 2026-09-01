@@ -37,6 +37,7 @@ pub fn run() {
     let close_tray_available = Arc::clone(&tray_available);
     let setup_tray_available = Arc::clone(&tray_available);
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // A second launch focuses the running window instead of starting a
         // rival tray icon and refresh loop against the same data root.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -68,6 +69,8 @@ pub fn run() {
             commands::refresh_quota,
             commands::hide_mini,
             commands::resize_mini,
+            commands::check_for_update,
+            commands::install_update,
             commands::session_list,
             commands::session_search,
             commands::session_transcript,
