@@ -389,47 +389,62 @@ export function railEvents(entries: Entry[], now: number): RailEvent[] {
 /**
  * Nudge markers that would land on top of each other.
  *
- * Grouped by where they actually fall, not by a rounded slot id: two resets a
- * fifth of a second apart can round into neighbouring slots, be "alone" in
- * each, and still overlap — the bars are 7 wide and the slots are 9 apart, so
- * adjacency is not separation. Anything within a step of the group so far
- * joins it.
+ * Two passes, because centring a cluster and keeping clusters apart are
+ * different problems and doing only the first creates the second.
  *
- * A group then spreads evenly around its own centre, and shifts as a whole
- * where that would run off the lane. Clamping each marker on its own would put
- * the group back on one x, which is where fanning is needed most: several
- * quotas resetting within the hour, or all at the far edge of the horizon.
+ * First, markers that fall within a step of each other are spread evenly
+ * around their own centre — native's behaviour, and what keeps a cluster
+ * reading as "these all reset at about the same time" rather than as a line
+ * marching rightwards.
+ *
+ * Then a sweep out and back enforces the spacing and the lane's edges over
+ * *every* marker, not within a group. Centring alone is not enough: a group
+ * pushed inward at an edge can land on the marker beside it — centres at 0, 8
+ * and 17 become 4, 13 and 17, and the last two 7-wide bars overlap. The sweep
+ * settles that by construction, so there is no grouping rule left to get
+ * wrong.
  */
 export function fannedOffsets(events: RailEvent[], width: number): number[] {
   const placed = events
     .map((event, index) => ({ index, x: width * event.fraction }))
     .sort((left, right) => left.x - right.x);
+  if (placed.length === 0) return [];
+
+  // Pass one: centre each cluster on itself.
+  const desired = placed.map((marker) => marker.x);
+  let start = 0;
+  const centreCluster = (end: number) => {
+    const size = end - start;
+    if (size > 1) {
+      const span = (size - 1) * RAIL_FAN_STEP;
+      const centre = (placed[start].x + placed[end - 1].x) / 2;
+      for (let i = start; i < end; i += 1) {
+        desired[i] = centre - span / 2 + (i - start) * RAIL_FAN_STEP;
+      }
+    }
+    start = end;
+  };
+  for (let i = 1; i < placed.length; i += 1) {
+    if (placed[i].x - placed[i - 1].x >= RAIL_FAN_STEP) centreCluster(i);
+  }
+  centreCluster(placed.length);
+
+  // Pass two: no two markers closer than a step, none off the lane.
+  const settled = desired.slice();
+  settled[0] = Math.max(settled[0], RAIL_MARKER_INSET);
+  for (let i = 1; i < settled.length; i += 1) {
+    settled[i] = Math.max(settled[i], settled[i - 1] + RAIL_FAN_STEP);
+  }
+  const last = settled.length - 1;
+  settled[last] = Math.min(settled[last], width - RAIL_MARKER_INSET);
+  for (let i = last - 1; i >= 0; i -= 1) {
+    settled[i] = Math.min(settled[i], settled[i + 1] - RAIL_FAN_STEP);
+  }
 
   const offsets = new Array(events.length).fill(0);
-  let group: typeof placed = [];
-
-  const settle = () => {
-    if (group.length > 1) {
-      const span = (group.length - 1) * RAIL_FAN_STEP;
-      const centre = (group[0].x + group[group.length - 1].x) / 2;
-      const start = Math.max(
-        RAIL_MARKER_INSET,
-        Math.min(width - RAIL_MARKER_INSET - span, centre - span / 2),
-      );
-      group.forEach((member, position) => {
-        offsets[member.index] = start + position * RAIL_FAN_STEP - member.x;
-      });
-    }
-    group = [];
-  };
-
-  for (const marker of placed) {
-    if (group.length > 0 && marker.x - group[group.length - 1].x >= RAIL_FAN_STEP) {
-      settle();
-    }
-    group.push(marker);
-  }
-  settle();
+  placed.forEach((marker, i) => {
+    offsets[marker.index] = settled[i] - marker.x;
+  });
   return offsets;
 }
 

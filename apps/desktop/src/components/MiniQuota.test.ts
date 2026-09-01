@@ -317,8 +317,14 @@ describe("fanning markers that would overlap", () => {
     expect(offsets).toEqual([-9, 0, 9]);
   });
 
-  it("leaves a marker alone when nothing shares its slot", () => {
-    expect(fannedOffsets([at(0), at(0.5), at(1)], 536)).toEqual([0, 0, 0]);
+  /// Markers that do not collide keep their position — except at the very
+  /// ends, where a 7-wide bar centred on the edge would hang half off the
+  /// lane. The inset belongs here rather than in a clamp at draw time: a
+  /// clamp applied after the fanning is what used to put whole groups back
+  /// on one x.
+  it("leaves a marker alone unless the lane's edge is in the way", () => {
+    expect(fannedOffsets([at(0.25), at(0.5), at(0.75)], 536)).toEqual([0, 0, 0]);
+    expect(fannedOffsets([at(0), at(0.5), at(1)], 536)).toEqual([4, 0, -4]);
   });
 
   it("moves nothing on its own", () => {
@@ -383,5 +389,23 @@ describe("markers that collide across slot boundaries", () => {
   /// And markers genuinely far apart are still left where they belong.
   it("leaves markers that do not collide alone", () => {
     expect(positions([100, 200, 300])).toEqual([100, 200, 300]);
+  });
+});
+
+describe("a shifted group must not land on the marker beside it", () => {
+  const width = 536;
+  const at = (x: number) => ({ fraction: x / width }) as Parameters<typeof fannedOffsets>[0][number];
+
+  /// Centres at 0, 8, 17: the first two cluster and get pushed inward off the
+  /// edge, which used to put them at 4 and 13 — four pixels from the 17 that
+  /// had been classified as a separate group, so two 7-wide bars overlapped.
+  it("keeps every marker a bar apart after the group is moved inward", () => {
+    const events = [0, 8, 17].map(at);
+    const offsets = fannedOffsets(events, width);
+    const xs = events.map((e, i) => width * e.fraction + offsets[i]).sort((l, r) => l - r);
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(7);
+    }
+    expect(xs[0]).toBeGreaterThanOrEqual(4);
   });
 });
