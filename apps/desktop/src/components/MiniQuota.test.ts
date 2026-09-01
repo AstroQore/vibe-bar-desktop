@@ -325,3 +325,33 @@ describe("fanning markers that would overlap", () => {
     expect(fannedOffsets([at(0.42)], 536)).toEqual([0]);
   });
 });
+
+describe("fanned groups at the ends of the lane", () => {
+  const at = (fraction: number) => ({ fraction }) as Parameters<typeof fannedOffsets>[0][number];
+  const positions = (fractions: number[], width = 536) => {
+    const events = fractions.map(at);
+    const offsets = fannedOffsets(events, width);
+    return events.map((e, i) => Math.round(width * e.fraction + offsets[i]));
+  };
+
+  /// Clamping each marker on its own puts the whole group back on one x —
+  /// exactly where fanning is needed: several quotas resetting within the hour.
+  it("keeps a group at the near end spread out", () => {
+    const xs = positions([0, 0, 0]);
+    expect(new Set(xs).size).toBe(3);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(4);
+  });
+
+  it("keeps a group at the far end spread out", () => {
+    const xs = positions([1, 1, 1]);
+    expect(new Set(xs).size).toBe(3);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(536 - 4);
+  });
+
+  /// And the spacing itself survives the shift.
+  it("moves the group without squashing it", () => {
+    const xs = positions([0, 0, 0]);
+    expect(xs[1] - xs[0]).toBe(9);
+    expect(xs[2] - xs[1]).toBe(9);
+  });
+});

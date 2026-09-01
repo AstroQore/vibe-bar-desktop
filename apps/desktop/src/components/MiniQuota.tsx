@@ -344,6 +344,8 @@ export function flatten(companies: Company[], order?: string[]): Entry[] {
 const RAIL_HORIZON_SECONDS = 7 * 86_400;
 /** How far apart two markers have to be before they stop being one blob. */
 const RAIL_FAN_STEP = 9;
+/** How close a marker's centre may come to the end of the lane. */
+const RAIL_MARKER_INSET = 4;
 
 interface RailEvent {
   entry: Entry;
@@ -401,11 +403,19 @@ export function fannedOffsets(events: RailEvent[], width: number): number[] {
     else slots.set(slot, [index]);
   });
   const offsets = new Array(events.length).fill(0);
-  for (const members of slots.values()) {
+  for (const [slot, members] of slots) {
     if (members.length < 2) continue;
     const span = (members.length - 1) * RAIL_FAN_STEP;
+    // Shift the group as a whole where it would run off the lane. Clamping
+    // each marker on its own puts the whole group back on one x — which is
+    // where fanning is needed most: quotas resetting within the hour, or all
+    // at the far end of the horizon.
+    const centre = slot * RAIL_FAN_STEP;
+    const shift =
+      Math.max(RAIL_MARKER_INSET, Math.min(width - RAIL_MARKER_INSET - span, centre - span / 2)) -
+      (centre - span / 2);
     members.forEach((index, position) => {
-      offsets[index] = position * RAIL_FAN_STEP - span / 2;
+      offsets[index] = position * RAIL_FAN_STEP - span / 2 + shift;
     });
   }
   return offsets;
@@ -445,7 +455,12 @@ function MiniRail({ entries, dark }: { entries: Entry[]; dark: boolean }) {
             ))}
             {events.map((event, index) => {
               const height = 6 + ((laneHeight - 30) * event.gain) / 100;
-              const x = Math.max(4, Math.min(width - 4, width * event.fraction + offsets[index]));
+              // The group shift has already kept fanned markers on the lane;
+              // this catches a lone marker at either end.
+              const x = Math.max(
+                RAIL_MARKER_INSET,
+                Math.min(width - RAIL_MARKER_INSET, width * event.fraction + offsets[index]),
+              );
               return (
                 <span
                   key={event.entry.cell.id}
@@ -469,6 +484,10 @@ function MiniRail({ entries, dark }: { entries: Entry[]; dark: boolean }) {
                   style={{ background: providerAccent(event.entry.tool, dark) }}
                   aria-hidden
                 />
+                {/* The SubProvider as well as the bucket: Codex and Claude
+                    both have a "Weekly", and a coloured dot is not a name.
+                    The other flat layouts carry the same context. */}
+                <span className="mini-rail-legend-sub">{event.entry.subProvider}</span>
                 <span className="mini-rail-legend-label">{entryLabel(event.entry)}</span>
                 <span
                   className="mini-rail-legend-gain"

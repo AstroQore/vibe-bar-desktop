@@ -1515,6 +1515,18 @@ input[type="text"] {
   gap: 7px;
   height: 17px;
 }
+.mini-rail-legend-sub {
+  flex: none;
+  max-width: 96px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mini-rail-legend-label {
   flex: 1;
   min-width: 0;
