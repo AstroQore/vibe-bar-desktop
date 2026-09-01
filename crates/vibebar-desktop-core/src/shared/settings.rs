@@ -27,6 +27,20 @@ const MAX_SETTINGS_BYTES: u64 = 8 * 1024 * 1024;
 pub struct MiniWindowSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_mode: Option<String>,
+    /// The native app's per-window configs. This client draws one window, so
+    /// it reads the first — the strip's density lives here rather than at the
+    /// top level, and there is nowhere else to find it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<Vec<MiniWindowConfig>>,
+    #[serde(flatten)]
+    pub unknown: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniWindowConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strip_density: Option<String>,
     #[serde(flatten)]
     pub unknown: BTreeMap<String, serde_json::Value>,
 }
@@ -145,6 +159,9 @@ pub struct PresentationSettings {
     pub provider_plan_labels: BTreeMap<String, String>,
     /// The mini-window layout, among the ones this client draws.
     pub mini_display_mode: String,
+    /// The strip's density. Native stores it per window rather than per
+    /// layout, so it travels alongside the layout rather than inside it.
+    pub mini_strip_density: String,
     /// "main" | "dev" — which release channel this machine follows.
     pub update_channel: String,
 }
@@ -209,12 +226,30 @@ impl SharedSettings {
             Some("tile") => "tile",
             Some("focus") => "focus",
             Some("rail") => "rail",
+            Some("strip") => "strip",
             _ => "regular",
         }
     }
 
     pub fn update_channel(&self) -> UpdateChannel {
         UpdateChannel::from_settings_value(self.update_channel.as_deref())
+    }
+
+    /// Which density the strip draws at. Per-window in the native app; this
+    /// client has one window, so it reads the first. `roomy` is native's
+    /// default and the fallback for a value this build does not know.
+    pub fn mini_strip_density(&self) -> &'static str {
+        match self
+            .mini_window
+            .as_ref()
+            .and_then(|mini| mini.windows.as_ref())
+            .and_then(|windows| windows.first())
+            .and_then(|window| window.strip_density.as_deref())
+        {
+            Some("twoLine") => "twoLine",
+            Some("narrow") => "narrow",
+            _ => "roomy",
+        }
     }
 
     pub fn cost_privacy_mode(&self) -> bool {
@@ -294,6 +329,7 @@ impl SharedSettings {
             visible_misc_providers,
             provider_plan_labels: self.provider_plan_labels.clone().unwrap_or_default(),
             mini_display_mode: self.mini_display_mode().to_string(),
+            mini_strip_density: self.mini_strip_density().to_string(),
             update_channel: self.update_channel().as_settings_value().to_string(),
         }
     }
@@ -443,6 +479,42 @@ mod tests {
     }
 
     #[test]
+    fn the_strip_density_comes_from_the_first_window_config() {
+        let density = |json: &str| {
+            serde_json::from_str::<SharedSettings>(json)
+                .expect("settings parse")
+                .mini_strip_density()
+        };
+
+        // Native stores it per window; this client draws one, so it reads the
+        // first. There is nowhere else to find it.
+        assert_eq!(
+            density(r#"{"miniWindow":{"windows":[{"stripDensity":"narrow"}]}}"#),
+            "narrow"
+        );
+        assert_eq!(
+            density(r#"{"miniWindow":{"windows":[{"stripDensity":"twoLine"}]}}"#),
+            "twoLine"
+        );
+        // A second window's density is not this window's.
+        assert_eq!(
+            density(
+                r#"{"miniWindow":{"windows":[{"stripDensity":"roomy"},{"stripDensity":"narrow"}]}}"#
+            ),
+            "roomy"
+        );
+        for missing in [
+            r#"{}"#,
+            r#"{"miniWindow":{}}"#,
+            r#"{"miniWindow":{"windows":[]}}"#,
+            r#"{"miniWindow":{"windows":[{}]}}"#,
+            r#"{"miniWindow":{"windows":[{"stripDensity":"spacious"}]}}"#,
+        ] {
+            assert_eq!(density(missing), "roomy", "{missing}");
+        }
+    }
+
+    #[test]
     fn an_unported_mini_layout_falls_back_to_the_one_that_exists() {
         let with_mode = |mode: &str| {
             serde_json::from_str::<SharedSettings>(&format!(
@@ -457,8 +529,12 @@ mod tests {
         assert_eq!(with_mode("tile"), "tile");
         assert_eq!(with_mode("focus"), "focus");
         assert_eq!(with_mode("rail"), "rail");
+        assert_eq!(with_mode("strip"), "strip");
         assert_eq!(with_mode("regular"), "regular");
-        for unported in ["strip", "somethingNewer"] {
+        // All seven of native's are drawn now, so the fallback is only for a
+        // layout a *newer* native adds — which is the case that matters: this
+        // build must not blank the window over a mode it has never heard of.
+        for unported in ["somethingNewer", "", "REGULAR"] {
             assert_eq!(with_mode(unported), "regular", "{unported}");
         }
         assert_eq!(

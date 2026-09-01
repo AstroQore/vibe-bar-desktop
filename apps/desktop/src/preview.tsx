@@ -81,11 +81,27 @@ const panel = {
 
 createRoot(document.getElementById("root")!).render(
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-    {["regular", "compact", "ledger", "tile", "focus", "rail"].map((layout) => (
-      <div key={layout}>
-        <p style={{ font: "12px system-ui", opacity: 0.6, margin: "0 0 6px" }}>{layout}</p>
-        <div style={{ ...panel, padding: layout === "regular" || layout === "compact" ? 8 : 0 }}>
-          <MiniQuotaBody companies={companies} layout={layout} />
+    {[
+      "regular",
+      "compact",
+      "ledger",
+      "tile",
+      "focus",
+      "rail",
+      // The strip is one layout at three densities, and they differ enough
+      // that seeing one says little about the others.
+      "strip:roomy",
+      "strip:twoLine",
+      "strip:narrow",
+    ].map((entry) => (
+      <div key={entry}>
+        <p style={{ font: "12px system-ui", opacity: 0.6, margin: "0 0 6px" }}>{entry}</p>
+        <div style={{ ...panel, padding: entry === "regular" || entry === "compact" ? 8 : 0 }}>
+          <MiniQuotaBody
+            companies={companies}
+            layout={entry.split(":")[0]}
+            density={entry.split(":")[1]}
+          />
         </div>
       </div>
     ))}
