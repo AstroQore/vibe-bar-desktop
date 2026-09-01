@@ -26,22 +26,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Signatures are the contents of the .sig assets, which the API does
-          # not inline — fetched per asset and folded into the same shape the
-          # builder expects.
+          # The bundler's own manifest carries a signature and URL per target;
+          # the API does not inline asset contents, so it is fetched and folded
+          # onto the asset as `_contents`, which is what the builder reads.
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases" > releases.raw.json
           python3 - <<'PY'
           import json, os, subprocess
           releases = json.load(open("releases.raw.json"))
           for release in releases:
               for asset in release.get("assets", []):
-                  if not asset["name"].endswith(".sig"):
+                  if asset["name"] != "latest.json":
                       continue
                   asset["_contents"] = subprocess.run(
                       ["gh", "api", "-H", "Accept: application/octet-stream",
                        f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/assets/{asset['id']}"],
                       capture_output=True, text=True, check=True,
-                  ).stdout.strip()
+                  ).stdout
           json.dump(releases, open("releases.json", "w"))
           PY
 
