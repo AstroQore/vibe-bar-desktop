@@ -261,9 +261,11 @@ back.
   orders *below* `0.2.0`: publishing it would put a version in the Dev feed
   that no current subscriber can install. An older Main version passes every
   other check here for the same reason.
-- at publication, and against the document being served then: the ordering
-  again, and that the draft carries at least one updater artifact **with its
-  `.sig`** — matched by the same rule the feed builder uses, so "publishable"
+- at publication, and against both the document being served then **and the
+  releases already published**: the ordering again, and that the draft
+  carries at least one updater artifact **with its `.sig`**. Both sources,
+  because the document lags publication by one workflow run — publish two
+  drafts within a minute and each would read the same stale document — matched by the same rule the feed builder uses, so "publishable"
   and "will appear in the feed" cannot diverge. That the signature *verifies*
   against the public key is still step 4's manual check; this only asserts it
   is there.

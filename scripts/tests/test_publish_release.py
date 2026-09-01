@@ -64,6 +64,42 @@ def test_the_asset_rule_is_the_feed_builders():
     )
 
 
+def released(tag, is_draft=False):
+    return {"tag_name": tag, "draft": is_draft}
+
+
+def test_a_release_published_a_minute_ago_counts_as_the_head():
+    # The feed workflow has not run yet, so the document still says 0.2.0.
+    # Publishing 0.2.1 after 0.2.2 would leave 0.2.1 permanently unserved.
+    head = publish.effective_head("0.2.0", [released("v0.2.2")], include_dev=False)
+    assert head == "0.2.2"
+    assert publish.check_publishable("v0.2.1", draft(), head) is not None
+
+
+def test_drafts_are_not_a_head():
+    # A draft is not a commitment; it may never be published.
+    assert publish.effective_head("0.2.0", [released("v0.9.0", is_draft=True)],
+                                  include_dev=False) == "0.2.0"
+
+
+def test_the_document_still_counts_when_it_is_the_higher_one():
+    assert publish.effective_head("0.3.0", [released("v0.2.0")], include_dev=False) == "0.3.0"
+
+
+def test_a_main_publication_is_a_head_for_dev_too():
+    # The Dev document serves the newer of both channels.
+    assert publish.effective_head(None, [released("v0.4.0")], include_dev=True) == "0.4.0"
+    assert publish.effective_head(None, [released("v0.4.0")], include_dev=False) == "0.4.0"
+
+
+def test_a_dev_publication_is_not_a_head_for_main():
+    assert publish.effective_head(None, [released("v0.4.0-dev.1")], include_dev=False) is None
+
+
+def test_nothing_published_and_no_document_is_the_first_release():
+    assert publish.effective_head(None, [], include_dev=True) is None
+
+
 if __name__ == "__main__":
     import run_tests
 

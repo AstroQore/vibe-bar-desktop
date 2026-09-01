@@ -55,6 +55,23 @@ def served(repository: str, document: str) -> str | None:
     return json.loads(result.stdout)["version"]
 
 
+def effective_head(document: str | None, releases: list[dict], include_dev: bool) -> str | None:
+    """The highest version this channel is committed to, however recently.
+
+    The served document lags publication by one workflow run, so it is not the
+    whole answer: publish two drafts in a minute and both read the same stale
+    document. The published releases are what the next run will read, so the
+    head is the higher of the two.
+    """
+    candidates = [document] if document else []
+    published = feed.head(releases, include_dev)
+    if published is not None:
+        candidates.append(published["tag_name"].removeprefix("v"))
+    if not candidates:
+        return None
+    return max(candidates, key=feed.parse_version)
+
+
 def check_publishable(tag: str, release: dict, head: str | None) -> str | None:
     """The reason not to publish this draft, or None to publish it."""
     version = tag.removeprefix("v")
@@ -90,10 +107,16 @@ def main() -> int:
         gh("release", "view", arguments.tag, "--repo", arguments.repo,
            "--json", "isDraft,assets,tagName")
     )
-    document = DOCUMENTS[feed.is_dev(arguments.tag.removeprefix("v"))]
-    refusal = check_publishable(
-        arguments.tag, release, served(arguments.repo, document)
+    include_dev = feed.is_dev(arguments.tag.removeprefix("v"))
+    listed = json.loads(
+        gh("release", "list", "--repo", arguments.repo, "--limit", "200",
+           "--json", "tagName,isDraft")
     )
+    releases = [{"tag_name": r["tagName"], "draft": r["isDraft"]} for r in listed]
+    head = effective_head(
+        served(arguments.repo, DOCUMENTS[include_dev]), releases, include_dev
+    )
+    refusal = check_publishable(arguments.tag, release, head)
     if refusal is not None:
         print(refusal, file=sys.stderr)
         return 1
