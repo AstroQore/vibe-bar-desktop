@@ -253,7 +253,12 @@ usage scan that reads the same session files, work on all three platforms.
    drafts sit unpublished, and both pass against the same head. Main releases
    are marked latest; Dev releases are prereleases.
 6. **`publish-update-feed.yml`** rebuilds both JSON files from the published
-   releases.
+   releases, using the builder on `main` rather than the one on the released
+   tag — a `release` event otherwise runs the workflow from the tag's ref, and
+   the feed would then depend on which release last fired an event rather than
+   on what is published. It can also be dispatched by hand, which is how to
+   republish after changing the builder: a fix does not reach a feed that no
+   release event has triggered since.
 
 ## The gate
 
