@@ -121,6 +121,11 @@ pub fn run() {
         // exactly the state this exists to rescue — mini floating, main
         // hidden, tray unreachable. Showing an already-visible main window
         // just focuses it.
+        //
+        // macOS-only: `Reopen` is the Dock/`open -a` event and the enum
+        // variant does not exist elsewhere, so this arm has to be compiled
+        // away rather than merely unreachable.
+        #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => tray::show_main_window(app),
         _ => {}
     });
