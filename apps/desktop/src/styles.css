@@ -1564,3 +1564,46 @@ input[type="text"] {
 .link-button:hover {
   color: var(--text);
 }
+
+/* The strip. Every measurement here is native's, and the width the shell sizes
+   the window to comes from `stripBands`, not from this — so nothing in these
+   rules may make a cell wider or let a band wrap on its own. */
+.mini-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  box-sizing: border-box;
+}
+.mini-strip-band {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+.mini-strip-unit {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.mini-strip-cell {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+.mini-strip-label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Native shrinks the label to fit and CSS cannot, so it clips — the tooltip
+   is what carries the full text, as it does in the tile layout. */
+.mini-strip-percent {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
+}

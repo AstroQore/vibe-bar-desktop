@@ -85,6 +85,7 @@ export function MiniQuota() {
         companies={companies}
         loading={view === null}
         layout={settings?.miniDisplayMode}
+        density={settings?.miniStripDensity}
         order={fields.slice(0, MAX_CELLS)}
         onContentSize={api.resizeMini}
       />
@@ -102,6 +103,7 @@ export function MiniQuotaBody({
   companies,
   loading = false,
   layout = "regular",
+  density = "roomy",
   order,
   onContentSize,
 }: {
@@ -114,27 +116,27 @@ export function MiniQuotaBody({
    *  to it. Absent in the preview page, which is a page and not a window. */
   onContentSize?: (width: number, height: number) => void;
   /** Which of native's layouts to draw: regular, compact, ledger, tile,
-   *  focus or rail. Strip is not ported and falls back to regular in the
-   *  core, so only these six arrive here. */
+   *  focus, rail or strip — all seven now. */
   layout?: string;
+  /** The strip's density. Ignored by every other layout, because native
+   *  stores it per window rather than per layout. */
+  density?: string;
 }) {
   const dark = useDarkMode();
   const measured = useContentSize(onContentSize);
-  // The layouts that are not the tree. Looked up rather than chained: five
-  // of them is where a ternary stops being readable, and the condition they
-  // share belongs in one place.
+  // The layouts that are not the tree, looked up rather than chained — six of
+  // them is well past where a ternary stops being readable, and the condition
+  // they share belongs in one place. (The comment said this before the code
+  // did; the chain it described is gone.)
+  const alternatives: Record<string, () => JSX.Element> = {
+    ledger: () => <MiniLedger companies={companies} dark={dark} />,
+    tile: () => <MiniTiles entries={flatten(companies, order)} dark={dark} />,
+    focus: () => <MiniFocus entries={flatten(companies, order)} dark={dark} />,
+    rail: () => <MiniRail entries={flatten(companies, order)} dark={dark} />,
+    strip: () => <MiniStrip entries={flatten(companies, order)} density={density} />,
+  };
   const drawn =
-    loading || companies.length === 0
-      ? null
-      : layout === "ledger"
-        ? <MiniLedger companies={companies} dark={dark} />
-        : layout === "tile"
-          ? <MiniTiles entries={flatten(companies, order)} dark={dark} />
-          : layout === "focus"
-            ? <MiniFocus entries={flatten(companies, order)} dark={dark} />
-            : layout === "rail"
-              ? <MiniRail entries={flatten(companies, order)} dark={dark} />
-              : null;
+    loading || companies.length === 0 ? null : (alternatives[layout]?.() ?? null);
   if (drawn) {
     // One wrapper for every layout, laid out at its content's size so the
     // measurement is the layout's and not the window's.
@@ -670,6 +672,126 @@ function MiniFocus({ entries, dark }: { entries: Entry[]; dark: boolean }) {
  * Four columns at most, like native, so a window with many buckets grows
  * downward rather than off the side of the screen.
  */
+/**
+ * The strip's geometry, which is arithmetic rather than a stylesheet.
+ *
+ * Native computes the window's size from the entry count before drawing
+ * anything, and the cells never shrink to fit: past `MAX_ROW_WIDTH` the row
+ * wraps into further bands instead. Both facts have to hold here too, because
+ * the shell sizes the window from what this reports — a layout that let CSS
+ * decide the wrap would be measured at one width and drawn at another.
+ *
+ * `twoLine` is a column of two stacked cells rather than a wider cell, so its
+ * unit of wrapping is the column and an odd last entry leaves a half-empty one.
+ */
+const STRIP: Record<string, { cell: number; band: number; gap: number; font: number }> = {
+  roomy: { cell: 132, band: 40, gap: 8, font: 11.5 },
+  twoLine: { cell: 128, band: 54, gap: 12, font: 10.5 },
+  narrow: { cell: 96, band: 32, gap: 4, font: 9.5 },
+};
+const STRIP_LEADING = 14;
+// Native reserves this for the window's close button, not for whitespace.
+const STRIP_TRAILING = 26;
+const STRIP_ROW_GAP = 2;
+const STRIP_PAIR_GAP = 2;
+const MAX_ROW_WIDTH = 1180;
+
+export function stripDensity(name: string | undefined): "roomy" | "twoLine" | "narrow" {
+  return name === "twoLine" || name === "narrow" ? name : "roomy";
+}
+
+/**
+ * How the entries divide into bands, and how wide the result is.
+ *
+ * The width is a *full* band even when the last one is partial — native pads
+ * to `perBand` cells rather than to the widest row, so a window holding nine
+ * roomy cells is as wide as one holding sixteen.
+ */
+export function stripBands(count: number, density: string) {
+  const metrics = STRIP[stripDensity(density)];
+  const cells = stripDensity(density) === "twoLine" ? Math.ceil(count / 2) : count;
+  const available = MAX_ROW_WIDTH - STRIP_LEADING - STRIP_TRAILING;
+  const perBand = Math.max(
+    1,
+    Math.min(cells, Math.floor((available + metrics.gap) / (metrics.cell + metrics.gap))),
+  );
+  const bands = cells === 0 ? 0 : Math.ceil(cells / perBand);
+  const width =
+    STRIP_LEADING + STRIP_TRAILING + perBand * metrics.cell + Math.max(0, perBand - 1) * metrics.gap;
+  const height = bands * metrics.band + Math.max(0, bands - 1) * STRIP_ROW_GAP;
+  return { perBand, bands, width, height };
+}
+
+// No `dark`: the strip draws no provider accent, so it has nothing to tint.
+function MiniStrip({ entries, density }: { entries: Entry[]; density: string }) {
+  const chosen = stripDensity(density);
+  const metrics = STRIP[chosen];
+  // Two entries to a column, so the thing that wraps is the column.
+  const units: Entry[][] =
+    chosen === "twoLine"
+      ? Array.from({ length: Math.ceil(entries.length / 2) }, (_, i) =>
+          entries.slice(i * 2, i * 2 + 2),
+        )
+      : entries.map((entry) => [entry]);
+  const { perBand } = stripBands(entries.length, chosen);
+  const bands = Array.from({ length: Math.ceil(units.length / perBand) }, (_, i) =>
+    units.slice(i * perBand, (i + 1) * perBand),
+  );
+
+  return (
+    <div
+      className="mini-strip"
+      style={{
+        paddingLeft: STRIP_LEADING,
+        paddingRight: STRIP_TRAILING,
+        rowGap: STRIP_ROW_GAP,
+        fontSize: metrics.font,
+      }}
+    >
+      {bands.map((band, index) => (
+        <div key={index} className="mini-strip-band" style={{ columnGap: metrics.gap }}>
+          {band.map((unit) => (
+            <div
+              key={unit[0].cell.id}
+              className="mini-strip-unit"
+              style={{ width: metrics.cell, height: metrics.band, rowGap: STRIP_PAIR_GAP }}
+            >
+              {unit.map((entry) => (
+                <StripCell key={entry.cell.id} entry={entry} />
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Label and percentage, and nothing else.
+ *
+ * No bar, no dot, no countdown, in any density — the strip is the layout that
+ * gives up everything but the number, and `narrow` is the same cell at 9.5pt
+ * rather than a different one. Which quota it is survives only in the tooltip,
+ * as it does natively, and that tooltip carries the SubProvider the cell has
+ * no room to name.
+ */
+function StripCell({ entry }: { entry: Entry }) {
+  const { cell } = entry;
+  const label = entryLabel(entry);
+  return (
+    <div className="mini-strip-cell" title={`${entry.subProvider} — ${label}: ${Math.round(cell.value)}%`}>
+      <span className="mini-strip-label">{label}</span>
+      <span
+        className="mini-strip-percent"
+        style={{ color: quotaBarColor(cell.value, cell.showsUsed) }}
+      >
+        {Math.round(cell.value)}%
+      </span>
+    </div>
+  );
+}
+
 function MiniTiles({ entries, dark }: { entries: Entry[]; dark: boolean }) {
   const columns = Math.min(4, Math.max(1, entries.length));
   return (

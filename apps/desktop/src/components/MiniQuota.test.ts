@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { AccountQuota, PresentationSettings, QuotaForecast, QuotaView } from "../api";
-import { arrange, fannedOffsets, flatten, forecastLine, railEvents } from "./MiniQuota";
+import {
+  arrange,
+  fannedOffsets,
+  flatten,
+  forecastLine,
+  railEvents,
+  stripBands,
+  stripDensity,
+} from "./MiniQuota";
 
 const NOW = 1_800_000_000;
 
@@ -407,5 +415,58 @@ describe("a shifted group must not land on the marker beside it", () => {
       expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(7);
     }
     expect(xs[0]).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("the strip's bands", () => {
+  // Native computes these before drawing, and the shell sizes the window from
+  // them; a wrap decided by CSS instead would be measured at one width and
+  // drawn at another.
+  it("fits a full band before wrapping, and pads a partial one to full width", () => {
+    // (1180 - 14 - 26 + 8) / (132 + 8) = 8 roomy cells to a band.
+    expect(stripBands(8, "roomy")).toMatchObject({ perBand: 8, bands: 1 });
+    expect(stripBands(9, "roomy")).toMatchObject({ perBand: 8, bands: 2 });
+    // Nine cells is as wide as sixteen: the width is a whole band either way.
+    expect(stripBands(9, "roomy").width).toBe(stripBands(16, "roomy").width);
+  });
+
+  it("never exceeds the row width it wraps at", () => {
+    for (const density of ["roomy", "twoLine", "narrow"]) {
+      for (const count of [1, 5, 16, 17, 40, 128]) {
+        expect(stripBands(count, density).width).toBeLessThanOrEqual(1180);
+      }
+    }
+  });
+
+  it("narrows the cell rather than the band count", () => {
+    // 96-point cells fit eleven where 132-point ones fit eight.
+    expect(stripBands(20, "narrow").perBand).toBe(11);
+    expect(stripBands(20, "roomy").perBand).toBe(8);
+  });
+
+  it("wraps twoLine by the column, so two entries share one slot", () => {
+    // Sixteen entries are eight columns: one band, same as eight roomy cells.
+    expect(stripBands(16, "twoLine")).toMatchObject({ perBand: 8, bands: 1 });
+    expect(stripBands(17, "twoLine").bands).toBe(2);
+    // An odd count still occupies the whole column.
+    expect(stripBands(15, "twoLine")).toMatchObject({ perBand: 8, bands: 1 });
+  });
+
+  it("is two bands tall plus the gap between them", () => {
+    const one = stripBands(8, "roomy");
+    const two = stripBands(9, "roomy");
+    expect(one.height).toBe(40);
+    expect(two.height).toBe(40 * 2 + 2);
+  });
+
+  it("has no size when there is nothing to draw", () => {
+    expect(stripBands(0, "roomy").bands).toBe(0);
+    expect(stripBands(0, "roomy").height).toBe(0);
+  });
+
+  it("falls back to roomy for a density this build does not know", () => {
+    expect(stripDensity("spacious")).toBe("roomy");
+    expect(stripDensity(undefined)).toBe("roomy");
+    expect(stripBands(9, "spacious")).toMatchObject(stripBands(9, "roomy"));
   });
 });

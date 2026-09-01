@@ -214,9 +214,12 @@ export interface PresentationSettings {
   coreProviderOrder: string[];
   visibleMiscProviders?: string[];
   providerPlanLabels: Record<string, string>;
-  /** The mini-window layout, among the ones this client draws: "regular" or
-   *  "compact". Native's other five fall back to "regular" in the core. */
+  /** The mini-window layout. All seven of native's now: "regular",
+   *  "compact", "ledger", "tile", "focus", "rail" or "strip". */
   miniDisplayMode: string;
+  /** "roomy" | "twoLine" | "narrow" — the strip's density, which native
+   *  stores per window rather than per layout. */
+  miniStripDensity: string;
   /** "main" | "dev" — which release channel this machine follows. Shared with
    *  the native client, so choosing Dev in either window applies to both. */
   updateChannel: string;
