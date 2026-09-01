@@ -217,6 +217,9 @@ export interface PresentationSettings {
   /** The mini-window layout, among the ones this client draws: "regular" or
    *  "compact". Native's other five fall back to "regular" in the core. */
   miniDisplayMode: string;
+  /** "main" | "dev" — which release channel this machine follows. Shared with
+   *  the native client, so choosing Dev in either window applies to both. */
+  updateChannel: string;
 }
 
 export interface StatusIncident {
@@ -327,6 +330,9 @@ export const api = {
    *  window to it. */
   resizeMini: (width: number, height: number) =>
     invoke<void>("resize_mini", { width, height }),
+  /** The version waiting on this machine's channel, or null. Reports; it does
+   *  not install. */
+  checkForUpdate: () => invoke<string | null>("check_for_update"),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
   /** The shared settings file changed. The payload names the settings chosen

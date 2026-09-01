@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_updater::UpdaterExt;
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::forecast::cycles::CycleSummary;
 use vibebar_desktop_core::refresh::QuotaView;
@@ -143,6 +144,36 @@ pub async fn refresh_quota(state: State<'_, AppState>) -> Result<QuotaView, Stri
 #[tauri::command]
 pub fn resize_mini(app: AppHandle, width: f64, height: f64) {
     crate::mini_window::resize_to_content(&app, width, height);
+}
+
+/// Whether a newer build is waiting, on the channel this machine follows.
+///
+/// The endpoint is chosen here rather than in the static config: the config
+/// carries one list, and the two channels are two documents. `updateChannel`
+/// is shared with the native client, so a choice made in either window
+/// applies to both.
+///
+/// Reports rather than installs. An update that arrives without being asked
+/// for is the kind of surprise this app has no business springing on someone
+/// mid-session, and the native client asks first too.
+#[tauri::command]
+pub async fn check_for_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let channel = SharedSettings::load(state.data_root()).update_channel();
+    let endpoint = channel
+        .endpoint()
+        .parse()
+        .map_err(|_| "the update endpoint is not a URL".to_string())?;
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|error| error.to_string())?
+        .build()
+        .map_err(|error| error.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(Some(update.version)),
+        Ok(None) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 #[tauri::command]

@@ -1,7 +1,40 @@
+import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { AppInfo, QuotaView } from "../api";
-import { formatRelative } from "../api";
+import { api, formatRelative } from "../api";
+
+/**
+ * Asks, and says what it found. It does not install.
+ *
+ * An update that arrives without being asked for is not a surprise this app
+ * has any business springing on someone mid-session; the native client asks
+ * first too. Which channel it looks at is `updateChannel` in Settings.
+ */
+function UpdateCheck() {
+  const [state, setState] = useState<"idle" | "checking" | string>("idle");
+
+  if (state === "checking") return <span className="status-line"> checking…</span>;
+  if (state !== "idle") return <span className="status-line"> {state}</span>;
+
+  return (
+    <button
+      type="button"
+      className="link-button"
+      onClick={() => {
+        setState("checking");
+        api
+          .checkForUpdate()
+          .then((version) =>
+            setState(version ? `${version} is available` : "up to date"),
+          )
+          .catch((error: unknown) => setState(`could not check: ${String(error)}`));
+      }}
+    >
+      Check for updates
+    </button>
+  );
+}
 
 export function About({ info, view }: { info: AppInfo | null; view: QuotaView | null }) {
   if (!info) return <p className="empty">Loading…</p>;
@@ -31,6 +64,7 @@ export function About({ info, view }: { info: AppInfo | null; view: QuotaView | 
         <dt>Version</dt>
         <dd>
           {info.version} <span className="pill">preview</span>
+          <UpdateCheck />
         </dd>
 
         <dt>Vibe Bar data</dt>
