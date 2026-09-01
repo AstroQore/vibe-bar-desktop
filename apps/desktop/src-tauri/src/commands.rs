@@ -169,7 +169,10 @@ fn update_endpoint(root: &vibebar_desktop_core::paths::DataRoot) -> Result<&'sta
 }
 
 #[tauri::command]
-pub async fn check_for_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
+pub async fn check_for_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<PendingUpdate>, String> {
     let endpoint = update_endpoint(state.data_root())?
         .parse()
         .map_err(|_| "the update endpoint is not a URL".to_string())?;
@@ -182,10 +185,11 @@ pub async fn check_for_update(app: AppHandle, state: State<'_, AppState>) -> Res
     match updater.check().await {
         Ok(Some(update)) => {
             let version = update.version.clone();
-            // Held so that installing puts on exactly the version that was
-            // named, rather than whatever the feed says a minute later.
-            state.hold_update(update);
-            Ok(Some(version))
+            // Held under an id so that installing puts on exactly what this
+            // check found, rather than whatever the feed says a minute later
+            // or what a second check that is still in flight returns.
+            let id = state.hold_update(update);
+            Ok(Some(PendingUpdate { version, id }))
         }
         Ok(None) => {
             state.drop_update();
@@ -195,20 +199,37 @@ pub async fn check_for_update(app: AppHandle, state: State<'_, AppState>) -> Res
     }
 }
 
-/// Installs the update the last check found, and restarts into it.
+/// What a check found: the version to show, and which check found it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingUpdate {
+    pub version: String,
+    pub id: u64,
+}
+
+/// Installs the update a particular check found, and restarts into it.
 ///
 /// Separate from the check because this is the irreversible half: it replaces
-/// the running application. Nothing calls it without the person asking.
+/// the running application. Nothing calls it without the person asking, and
+/// the id says which answer they were looking at when they did.
 #[tauri::command]
-pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn install_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+) -> Result<(), String> {
     let update = state
-        .take_update()
-        .ok_or_else(|| "check for an update first".to_string())?;
-    update
-        .download_and_install(|_, _| {}, || {})
-        .await
-        .map_err(|error| error.to_string())?;
-    app.restart();
+        .take_update(id)
+        .ok_or_else(|| "that check has been overtaken by a newer one".to_string())?;
+    match update.download_and_install(|_, _| {}, || {}).await {
+        // Nothing after this: the application is being replaced.
+        Ok(()) => app.restart(),
+        Err(error) => {
+            // Put it back, so a network blip does not cost the check.
+            state.restore_update(id, update);
+            Err(error.to_string())
+        }
+    }
 }
 
 #[tauri::command]

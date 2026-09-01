@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { AppInfo, QuotaView } from "../api";
+import type { AppInfo, PendingUpdate, QuotaView } from "../api";
 import { api, formatRelative } from "../api";
 
 /**
@@ -11,62 +11,78 @@ import { api, formatRelative } from "../api";
  * it. An update that arrives without being asked for is not a surprise this
  * app has any business springing on someone mid-session; the native client
  * asks first too. Which channel it looks at is `updateChannel` in Settings.
+ *
+ * Every state that is not in flight offers a way onwards, including the two
+ * failures: a check that could not reach the feed and an install that could
+ * not finish are both worth trying again, and a dead end would mean quitting
+ * the app to get another go.
  */
 function UpdateCheck() {
   const [state, setState] = useState<
-    | { at: "idle" | "checking" | "installing" }
-    | { at: "found"; version: string }
-    | { at: "said"; message: string }
+    | { at: "checking" }
+    | { at: "installing" }
+    | { at: "idle"; note?: string }
+    | { at: "found"; update: PendingUpdate; note?: string }
   >({ at: "idle" });
 
   if (state.at === "checking") return <span className="status-line"> checking…</span>;
   if (state.at === "installing")
     return <span className="status-line"> downloading and installing…</span>;
-  if (state.at === "said") return <span className="status-line"> {state.message}</span>;
+
+  const note = state.note ? <span className="status-line"> {state.note}</span> : null;
 
   if (state.at === "found") {
+    const { update } = state;
     return (
       <span className="status-line">
         {" "}
-        {state.version} is available{" "}
+        {update.version} is available{" "}
         <button
           type="button"
           className="link-button"
           onClick={() => {
             setState({ at: "installing" });
-            api.installUpdate().catch((error: unknown) =>
-              setState({ at: "said", message: `could not install: ${String(error)}` }),
+            api.installUpdate(update.id).catch((error: unknown) =>
+              // Back to the same offer: the backend kept the update, so this
+              // is a retry rather than a fresh check.
+              setState({
+                at: "found",
+                update,
+                note: `could not install: ${String(error)}`,
+              }),
             );
           }}
         >
           Install and restart
         </button>
+        {note}
       </span>
     );
   }
 
   return (
-    <button
-      type="button"
-      className="link-button"
-      onClick={() => {
-        setState({ at: "checking" });
-        api
-          .checkForUpdate()
-          .then((version) =>
-            setState(
-              version
-                ? { at: "found", version }
-                : { at: "said", message: "up to date" },
-            ),
-          )
-          .catch((error: unknown) =>
-            setState({ at: "said", message: `could not check: ${String(error)}` }),
-          );
-      }}
-    >
-      Check for updates
-    </button>
+    <>
+      <button
+        type="button"
+        className="link-button"
+        onClick={() => {
+          setState({ at: "checking" });
+          api
+            .checkForUpdate()
+            .then((update) =>
+              setState(
+                update ? { at: "found", update } : { at: "idle", note: "up to date" },
+              ),
+            )
+            .catch((error: unknown) =>
+              setState({ at: "idle", note: `could not check: ${String(error)}` }),
+            );
+        }}
+      >
+        Check for updates
+      </button>
+      {note}
+    </>
   );
 }
 
