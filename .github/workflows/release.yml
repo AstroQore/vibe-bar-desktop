@@ -1,0 +1,111 @@
+name: Release
+
+# Tags only. A release is a deliberate act with a name, not something a merge
+# to main produces on its own.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One target failing must not delete the assets the others produced: the
+      # release is a draft either way, and a partial draft is inspectable.
+      fail-fast: false
+      matrix:
+        include:
+          - label: darwin-aarch64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - label: darwin-x86_64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+          - label: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - label: windows-aarch64
+            runner: windows-latest
+            target: aarch64-pc-windows-msvc
+          # Ubuntu 22.04, not the newest: the glibc a binary is built against
+          # is the floor of what can run it.
+          - label: linux-x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          # An arm runner rather than a cross build — webkit2gtk and
+          # appindicator make cross-compiling more work than renting the
+          # machine.
+          - label: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag has to be the version in the bundle
+        shell: bash
+        run: |
+          ./Scripts/check_versions.sh
+          version="$(python3 -c 'import json;print(json.load(open("apps/desktop/src-tauri/tauri.conf.json"))["version"])')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [[ "$tag" != "$version" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match tauri.conf.json version $version" >&2
+            exit 1
+          fi
+          echo "building $GITHUB_REF_NAME"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # webkit2gtk is the webview, appindicator is the tray, patchelf is what
+      # makes the AppImage relocatable.
+      - name: Linux build dependencies
+        if: startsWith(matrix.runner, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl wget file libssl-dev libgtk-3-dev libxdo-dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Absent until the signing key exists. The updater artifacts are only
+          # produced when it is set, so until then this builds installers and
+          # nothing that can update itself.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          args: --target ${{ matrix.target }}
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          # Draft, always. The assets are checked before anyone's updater can
+          # see them, and a Dev tag is a prerelease so it never becomes
+          # "latest".
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-dev.') }}
