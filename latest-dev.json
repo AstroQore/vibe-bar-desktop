@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0-dev.1",
+  "notes": "",
+  "pub_date": "2026-09-01T08:55:51Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkhxYmxEZTdJR3FhclpjTDZ2aXJlUUJxSHZDd0xxdElHcjJKRnJXc3MrMG9RVFR1aXZtRXZSZ1Zxb2h3SmlncTYwbmc2dmJBbDhzcDVUdStoQkN6QlFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUwOTU3CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6ClIyK2VPU1VCTHVxbWxVYnR6UUlaSnMzck9xVmVmSHlaa2NMcXowWEdmbXFtUld3Nmg5V2RFa3NXUVN4UXB1MkN2blpSK01EVGlEcyttajNHRVlWYUR3PT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_aarch64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92Tkl6TVFtd1B6aG02S3hOY2dvVldadk9kcTRrbUU0d29UZkxsMFJCZGl3UkRtTkxqUm5IMjR2TXNYRVlQTFY1RXBYVnV2KzJPYlMxbStqc0hpcU9DY3dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUwOTQ3CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6CkZIb0tJWUpDYWRpUjZCNTFQdC9iYmp5MFZtNWhTUEJjSXVwakl6ejZBTzc2QUl3dFNwUkZXSGxuMExRenMyZ1oycFNNZ0JWU3lic0tuTzJSWkNvMUNRPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_x64.app.tar.gz"
+    }
+  }
+}
