@@ -97,6 +97,11 @@ fn now_unix() -> f64 {
 fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> String {
     let (field_ids, labels) = settings.menu_bar_fields();
     let shows_remaining = settings.shows_remaining();
+    // Native draws a logo per field instead of its name when this is off. A
+    // tray title is one plain string with no room for six logos, so the
+    // honest equivalent is to drop the words and keep the numbers — which is
+    // also what keeps the item narrow enough to stay on the menu bar.
+    let names_fields = settings.menu_bar_shows_title();
 
     let selected: Vec<String> = if field_ids.is_empty() {
         // No shared configuration: show what this build can actually fetch.
@@ -155,12 +160,17 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
         } else {
             bucket.used_percent
         };
-        let label = labels
-            .get(field_id)
-            .cloned()
-            .or_else(|| bucket.group_title.clone())
-            .unwrap_or_else(|| default_label(tool_raw));
-        parts.push(format!("{label} {}%", percent.round() as i64));
+        let percent = format!("{}%", percent.round() as i64);
+        parts.push(if names_fields {
+            let label = labels
+                .get(field_id)
+                .cloned()
+                .or_else(|| bucket.group_title.clone())
+                .unwrap_or_else(|| default_label(tool_raw));
+            format!("{label} {percent}")
+        } else {
+            percent
+        });
     }
 
     if parts.is_empty() {
@@ -174,13 +184,14 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
     parts.join(" · ")
 }
 
+
 fn default_label(tool_raw: &str) -> String {
     vibebar_desktop_core::model::ToolType::from_raw(tool_raw)
         .map(|tool| tool.hierarchy().product.to_string())
         .unwrap_or_else(|| tool_raw.to_string())
 }
 
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
@@ -220,6 +231,13 @@ mod tests {
             has_shared_data: true,
             is_demo: false,
         }
+    }
+
+    fn unnamed_fields_settings(fields: &[&str], labels: &[(&str, &str)]) -> SharedSettings {
+        let mut settings = settings_with(fields, labels);
+        let item = settings.menu_bar_items.as_mut().unwrap().first_mut().unwrap();
+        item.show_title = Some(false);
+        settings
     }
 
     fn settings_with(fields: &[&str], labels: &[(&str, &str)]) -> SharedSettings {
@@ -372,5 +390,50 @@ mod tests {
         .collect();
         let title = render_title_at(&SharedSettings::default(), &view(accounts), NOW);
         assert_eq!(title.split(" · ").count(), 4, "{title}");
+    }
+
+    #[test]
+    fn an_item_without_titles_drops_the_words_and_keeps_the_numbers() {
+        // The configuration on the machine this was found on: six fields with
+        // `showTitle` off, where native draws a logo per field and measures
+        // 126 points. Rendering the labels anyway made it 518 points wide —
+        // wide enough that macOS pushed it behind the app menus and it could
+        // not be clicked at all.
+        let fields = [
+            "codex.weekly",
+            "claude.weekly",
+            "grok.weekly",
+            "cursor.models",
+            "gemini.weekly",
+            "antigravity.gemini_weekly",
+        ];
+        let labels = [
+            ("codex.weekly", "ChatGPT"),
+            ("claude.weekly", "Claude"),
+            ("grok.weekly", "Grok"),
+            ("cursor.models", "Cursor"),
+            ("gemini.weekly", "Gemini"),
+            ("antigravity.gemini_weekly", "A W"),
+        ];
+        let view = view(vec![
+            account("a", ToolType::Codex, 100.0, 80.0),
+            account("b", ToolType::Claude, 100.0, 34.0),
+        ]);
+        let compact = render_title_at(&unnamed_fields_settings(&fields, &labels), &view, 100.0);
+        assert!(!compact.contains("ChatGPT"), "{compact}");
+        assert!(!compact.contains("A W"), "{compact}");
+        assert!(compact.contains("20%") && compact.contains("66%"), "{compact}");
+
+        // And the labelled form is still the labelled form when nothing asked
+        // for compact.
+        let labelled = render_title_at(&settings_with(&fields, &labels), &view, 100.0);
+        assert!(labelled.contains("ChatGPT 20%"), "{labelled}");
+    }
+
+    #[test]
+    fn an_empty_selection_still_says_something_clickable() {
+        let view = view(vec![]);
+        let title = render_title_at(&settings_with(&[], &[]), &view, 100.0);
+        assert!(!title.is_empty(), "an empty tray title is an invisible item");
     }
 }

@@ -108,10 +108,18 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Vibe Bar Desktop");
-    app.run(|app, event| {
-        if matches!(event, RunEvent::ExitRequested { .. }) {
-            mini_window::persist(app);
-        }
+    app.run(|app, event| match event {
+        RunEvent::ExitRequested { .. } => mini_window::persist(app),
+        // Opening an app that is already running is how anyone gets back to a
+        // window they cannot otherwise reach, and it is the only way back when
+        // the tray item is not clickable — macOS hides an item that outgrows
+        // the menu bar, and without this the app is running, has no window,
+        // and cannot be reached by any means at all.
+        RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } => tray::show_main_window(app),
+        _ => {}
     });
 }
 
