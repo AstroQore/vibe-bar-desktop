@@ -29,10 +29,12 @@ jobs:
           # The bundler's own manifest carries a signature and URL per target;
           # the API does not inline asset contents, so it is fetched and folded
           # onto the asset as `_contents`, which is what the builder reads.
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" > releases.raw.json
+          # `--slurp` gives an array of pages; flattening it is one line and
+          # does not depend on how the runner's `gh` chooses to join them.
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases" > releases.raw.json
           python3 - <<'PY'
           import json, os, subprocess
-          releases = json.load(open("releases.raw.json"))
+          releases = [r for page in json.load(open("releases.raw.json")) for r in page]
           for release in releases:
               for asset in release.get("assets", []):
                   if asset["name"] != "latest.json":

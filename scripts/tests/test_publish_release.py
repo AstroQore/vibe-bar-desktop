@@ -22,7 +22,8 @@ def manifest(platforms=None):
 
 
 def draft(assets=None, is_draft=True):
-    return {"isDraft": is_draft, "assets": list(manifest() if assets is None else assets)}
+    # The releases API's own shape, which is what the feed builder reads too.
+    return {"draft": is_draft, "assets": list(manifest() if assets is None else assets)}
 
 
 def test_a_draft_that_outranks_its_channel_publishes():

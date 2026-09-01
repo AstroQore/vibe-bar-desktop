@@ -32,16 +32,34 @@ def gh(*arguments: str) -> str:
     return result.stdout
 
 
-def asset_id(repository: str, tag: str, name: str) -> int:
-    """The numeric id the assets endpoint needs, which `gh release view` omits."""
-    releases = json.loads(gh("api", "--paginate", f"repos/{repository}/releases"))
-    for release in releases:
-        if release["tag_name"] != tag:
-            continue
-        for asset in release["assets"]:
-            if asset["name"] == name:
-                return asset["id"]
-    raise SystemExit(f"{tag} has no asset named {name}")
+def all_releases(repository: str) -> list[dict]:
+    """Every release, drafts included, as one list.
+
+    `--slurp` returns an array *of pages*; flattening it is the whole
+    difference from feeding `--paginate` straight to a parser, and it does not
+    depend on how a given `gh` chooses to join them.
+
+    The by-tag endpoint would be one request instead of a page's worth, and it
+    404s on a draft — which is the only kind of release this is ever asked
+    about.
+    """
+    pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repository}/releases"))
+    return [release for page in pages for release in page]
+
+
+def with_manifest(repository: str, release: dict) -> dict:
+    """The release, with the bundler's manifest read in.
+
+    The API names assets but does not inline their contents, and the contents
+    are the whole point.
+    """
+    for asset in release.get("assets", []):
+        if asset["name"] == feed.MANIFEST_ASSET:
+            asset["_contents"] = gh(
+                "api", "-H", "Accept: application/octet-stream",
+                f"repos/{repository}/releases/assets/{asset['id']}",
+            )
+    return release
 
 
 def served(repository: str, document: str) -> str | None:
@@ -91,7 +109,7 @@ def check_publishable(
     version = tag.removeprefix("v")
     if feed.parse_version(version) is None:
         return f"{tag} is not a tag the update feed reads"
-    if not release.get("isDraft"):
+    if not release.get("draft"):
         return f"{tag} is already published"
 
     platforms = feed.platforms_for(release)
@@ -127,24 +145,17 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
-    release = json.loads(
-        gh("release", "view", arguments.tag, "--repo", arguments.repo,
-           "--json", "isDraft,assets,tagName")
+    # One listing, used twice: to find the draft — the by-tag endpoint does not
+    # return drafts — and to see what the channel has already committed to.
+    releases = all_releases(arguments.repo)
+    release = next(
+        (r for r in releases if r["tag_name"] == arguments.tag),
+        None,
     )
-    # `gh release view` names the assets but does not inline their contents,
-    # and the manifest's contents are the whole point.
-    for asset in release.get("assets", []):
-        if asset["name"] == feed.MANIFEST_ASSET:
-            asset["_contents"] = gh(
-                "api", "-H", "Accept: application/octet-stream",
-                f"repos/{arguments.repo}/releases/assets/{asset_id(arguments.repo, arguments.tag, asset['name'])}",
-            )
+    if release is None:
+        raise SystemExit(f"{arguments.tag} has no release")
+    release = with_manifest(arguments.repo, release)
     include_dev = feed.is_dev(arguments.tag.removeprefix("v"))
-    listed = json.loads(
-        gh("release", "list", "--repo", arguments.repo, "--limit", "200",
-           "--json", "tagName,isDraft")
-    )
-    releases = [{"tag_name": r["tagName"], "draft": r["isDraft"]} for r in listed]
     head = effective_head(
         served(arguments.repo, DOCUMENTS[include_dev]), releases, include_dev
     )
