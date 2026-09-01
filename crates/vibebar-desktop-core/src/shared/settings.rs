@@ -271,6 +271,21 @@ impl SharedSettings {
     /// The ordered menu-bar field ids the user configured, with their custom
     /// labels. Empty when the shared settings are absent — the caller then
     /// picks its own default set.
+    /// Whether the menu bar item names its fields.
+    ///
+    /// Native draws a per-field logo when this is off; a Tauri tray takes one
+    /// plain string and one icon, so the honest equivalent here is to drop the
+    /// text and keep the numbers. Getting this wrong is not cosmetic — the
+    /// labelled form of a six-field selection is four times as wide as the
+    /// native item, wide enough that macOS hides it behind the app menus.
+    pub fn menu_bar_shows_title(&self) -> bool {
+        self.menu_bar_items
+            .as_ref()
+            .and_then(|items| items.first())
+            .and_then(|item| item.show_title)
+            .unwrap_or(true)
+    }
+
     pub fn menu_bar_fields(&self) -> (Vec<String>, BTreeMap<String, String>) {
         let Some(item) = self.menu_bar_items.as_ref().and_then(|items| items.first()) else {
             return (Vec::new(), BTreeMap::new());
