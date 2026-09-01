@@ -25,18 +25,30 @@ import re
 import sys
 from pathlib import Path
 
-# How each target's updater artifact is spelled. Both halves matter: the
-# suffix says which bundle kind it is, and the token says which architecture —
-# matching on the suffix alone makes one macOS build answer for both, because
-# `.app.tar.gz` is what arm64 and x86_64 are each called.
-PLATFORMS = {
-    "darwin-aarch64": ("_aarch64", ".app.tar.gz"),
-    "darwin-x86_64": ("_x64", ".app.tar.gz"),
-    "windows-x86_64": ("_x64-setup", ".nsis.zip"),
-    "windows-aarch64": ("_arm64-setup", ".nsis.zip"),
-    "linux-x86_64": ("_amd64", ".AppImage.tar.gz"),
-    "linux-aarch64": ("_aarch64", ".AppImage.tar.gz"),
-}
+# The manifest the bundler uploads next to the bundles, holding a signature and
+# a URL per target. Reading it is the whole platform rule: this file used to
+# rebuild the same table out of asset names, and got three of six suffixes
+# wrong — `.nsis.zip` and `.AppImage.tar.gz` for artifacts this Tauri actually
+# calls `-setup.exe` and `.AppImage`. The result was a release that published
+# green and would have offered updates to macOS only.
+#
+# Those names are the bundler's to change, and this is the bundler telling us
+# what it chose. Deriving them again is the same fact in two places, with the
+# copy that is wrong staying silent.
+MANIFEST_ASSET = "latest.json"
+
+# The targets a complete release covers. Not used to *find* anything — only to
+# say what is missing, since the manifest cannot report a build that never ran.
+EXPECTED_PLATFORMS = frozenset(
+    {
+        "darwin-aarch64",
+        "darwin-x86_64",
+        "windows-x86_64",
+        "windows-aarch64",
+        "linux-x86_64",
+        "linux-aarch64",
+    }
+)
 
 SEMVER = re.compile(
     r"^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:-dev\.(?P<dev>\d+))?$"
@@ -68,36 +80,41 @@ def is_dev(tag: str) -> bool:
 
 
 def platforms_for(release: dict) -> dict:
-    """The updater entry per target, from the assets and their signatures.
+    """The updater entries, as the bundler wrote them.
 
-    A target whose signature is missing is left out rather than guessed at: an
-    entry without one is an update the client will refuse, and a feed that
-    promises it is worse than one that stays quiet.
+    The manifest's contents are fetched alongside the release and stashed on
+    the asset as `_contents`, the same way signatures used to be. An entry
+    without both a signature and a URL is dropped rather than guessed at: an
+    entry the client cannot use is worse than a channel that stays quiet.
     """
-    assets = {asset["name"]: asset for asset in release.get("assets", [])}
-    out = {}
-    for platform in PLATFORMS:
-        name = signed_asset(assets, platform)
-        if name is None:
-            continue
-        out[platform] = {
-            "signature": assets[f"{name}.sig"]["_contents"],
-            "url": assets[name]["browser_download_url"],
-        }
-    return out
+    manifest = next(
+        (
+            asset
+            for asset in release.get("assets", [])
+            if asset["name"] == MANIFEST_ASSET and asset.get("_contents")
+        ),
+        None,
+    )
+    if manifest is None:
+        return {}
+    try:
+        platforms = json.loads(manifest["_contents"])["platforms"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return {}
+    return {
+        name: {"signature": entry["signature"], "url": entry["url"]}
+        for name, entry in sorted(platforms.items())
+        if isinstance(entry, dict) and entry.get("signature") and entry.get("url")
+    }
 
 
-def signed_asset(assets, platform: str) -> str | None:
-    """The updater bundle for a target, if it is there with its signature.
+def missing_platforms(platforms: dict) -> list[str]:
+    """Targets a full release would carry that this one does not.
 
-    Shared with the publish gate so that "this release will appear in the
-    feed" and "this release may be published" are decided by one rule.
+    An alias like `darwin-aarch64-app` sits beside the plain key, so presence
+    is judged on the plain ones only.
     """
-    token, suffix = PLATFORMS[platform]
-    for name in assets:
-        if name.endswith(suffix) and token in name and f"{name}.sig" in assets:
-            return name
-    return None
+    return sorted(EXPECTED_PLATFORMS - set(platforms))
 
 
 def document(release: dict) -> dict:

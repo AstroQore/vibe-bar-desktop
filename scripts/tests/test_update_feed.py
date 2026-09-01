@@ -15,13 +15,36 @@ feed = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(feed)
 
 
-def release(tag, *, draft=False, assets=()):
+MANIFEST = {
+    "version": "0.0.0",
+    "platforms": {
+        name: {"signature": f"sig-{name}", "url": f"https://example.invalid/{name}"}
+        for name in (
+            "darwin-aarch64", "darwin-x86_64",
+            "windows-x86_64", "windows-aarch64",
+            "linux-x86_64", "linux-aarch64",
+        )
+    },
+}
+
+
+def manifest_asset(platforms=None):
+    """The asset the bundler uploads, in the shape the workflow hands over."""
+    import json as _json
+
+    body = dict(MANIFEST)
+    if platforms is not None:
+        body = {**MANIFEST, "platforms": platforms}
+    return {"name": "latest.json", "_contents": _json.dumps(body)}
+
+
+def release(tag, *, draft=False, assets=None):
     return {
         "tag_name": tag,
         "draft": draft,
         "published_at": "2026-09-01T00:00:00Z",
         "body": "",
-        "assets": list(assets),
+        "assets": [manifest_asset()] if assets is None else list(assets),
     }
 
 
@@ -57,52 +80,80 @@ def test_drafts_and_foreign_tags_are_not_candidates():
     assert feed.head(releases, include_dev=True) is None
 
 
-def test_a_target_without_a_signature_is_left_out():
-    """An entry the client would refuse is worse than no entry."""
-    signed = {"name": "app_0.2.0_aarch64.app.tar.gz", "browser_download_url": "u1"}
-    signature = {"name": "app_0.2.0_aarch64.app.tar.gz.sig", "_contents": "sig", "browser_download_url": "u2"}
-    unsigned = {"name": "app_0.2.0_amd64.AppImage.tar.gz", "browser_download_url": "u3"}
-    platforms = feed.platforms_for(release("v0.2.0", assets=[signed, signature, unsigned]))
-    assert "darwin-aarch64" in platforms
-    assert "linux-x86_64" not in platforms
-
-
-def test_one_macos_build_does_not_answer_for_both_architectures():
-    """`.app.tar.gz` is what arm64 and x64 are each called, so the suffix alone
-    made one build appear as two platforms — and half of those users would
-    have been handed the wrong binary."""
-    signed = {"name": "app_0.2.0_aarch64.app.tar.gz", "browser_download_url": "u1"}
-    signature = {"name": "app_0.2.0_aarch64.app.tar.gz.sig", "_contents": "sig", "browser_download_url": "u2"}
-    platforms = feed.platforms_for(release("v0.2.0", assets=[signed, signature]))
+def test_an_entry_the_client_cannot_use_is_left_out():
+    """An entry without both halves is worse than no entry: the client
+    refuses it, and the channel has promised an update it cannot deliver."""
+    platforms = feed.platforms_for(
+        release(
+            "v0.2.0",
+            assets=[
+                manifest_asset(
+                    {
+                        "darwin-aarch64": {"signature": "s", "url": "u"},
+                        "linux-x86_64": {"signature": "", "url": "u"},
+                        "windows-x86_64": {"signature": "s"},
+                        "linux-aarch64": "not-an-object",
+                    }
+                )
+            ],
+        )
+    )
     assert list(platforms) == ["darwin-aarch64"]
 
 
-def test_each_target_takes_its_own_artifact():
-    def pair(name):
-        return [
-            {"name": name, "browser_download_url": f"url-{name}"},
-            {"name": f"{name}.sig", "_contents": f"sig-{name}", "browser_download_url": "s"},
-        ]
+def test_the_platform_names_are_the_bundlers_own():
+    """This used to rebuild them from asset names and got three of six wrong —
+    `.nsis.zip` and `.AppImage.tar.gz` for artifacts the bundler calls
+    `-setup.exe` and `.AppImage`. The release published green and would have
+    offered updates to macOS only. The manifest is the bundler saying what it
+    actually wrote, so there is nothing left to get wrong."""
+    platforms = feed.platforms_for(release("v0.2.0"))
+    assert set(platforms) == set(MANIFEST["platforms"])
+    assert platforms["windows-x86_64"]["url"].endswith("windows-x86_64")
+    assert feed.missing_platforms(platforms) == []
 
-    assets = [
-        *pair("app_0.2.0_aarch64.app.tar.gz"),
-        *pair("app_0.2.0_x64.app.tar.gz"),
-        *pair("app_0.2.0_x64-setup.nsis.zip"),
-        *pair("app_0.2.0_arm64-setup.nsis.zip"),
-        *pair("app_0.2.0_amd64.AppImage.tar.gz"),
-        *pair("app_0.2.0_aarch64.AppImage.tar.gz"),
+
+def test_a_release_without_the_manifest_offers_nothing():
+    for assets in ([], [{"name": "latest.json"}], [{"name": "latest.json", "_contents": "{ truncated"}]):
+        assert feed.platforms_for(release("v0.2.0", assets=assets)) == {}
+
+
+def test_a_partial_release_says_which_targets_are_absent():
+    platforms = feed.platforms_for(
+        release("v0.2.0", assets=[manifest_asset({"darwin-aarch64": {"signature": "s", "url": "u"}})])
+    )
+    assert feed.missing_platforms(platforms) == [
+        "darwin-x86_64",
+        "linux-aarch64",
+        "linux-x86_64",
+        "windows-aarch64",
+        "windows-x86_64",
     ]
-    platforms = feed.platforms_for(release("v0.2.0", assets=assets))
-    assert set(platforms) == set(feed.PLATFORMS)
-    assert platforms["darwin-aarch64"]["url"] == "url-app_0.2.0_aarch64.app.tar.gz"
-    assert platforms["linux-aarch64"]["url"] == "url-app_0.2.0_aarch64.AppImage.tar.gz"
-    assert platforms["windows-x86_64"]["url"] == "url-app_0.2.0_x64-setup.nsis.zip"
+
+
+def test_an_alias_beside_a_target_is_not_a_target():
+    """The bundler writes `darwin-aarch64-app` next to `darwin-aarch64`.
+    Carrying it through is right — a newer client may match on it — but it
+    must not make a missing target look present."""
+    platforms = feed.platforms_for(
+        release(
+            "v0.2.0",
+            assets=[
+                manifest_asset(
+                    {
+                        "darwin-aarch64": {"signature": "s", "url": "u"},
+                        "darwin-aarch64-app": {"signature": "s", "url": "u"},
+                    }
+                )
+            ],
+        )
+    )
+    assert "darwin-aarch64-app" in platforms
+    assert "darwin-x86_64" in feed.missing_platforms(platforms)
 
 
 def test_writes_both_documents():
-    signed = {"name": "app_0.2.0_aarch64.app.tar.gz", "browser_download_url": "u1"}
-    signature = {"name": "app_0.2.0_aarch64.app.tar.gz.sig", "_contents": "sig", "browser_download_url": "u2"}
-    releases = [release("v0.2.0", assets=[signed, signature])]
+    releases = [release("v0.2.0")]
     with tempfile.TemporaryDirectory() as directory:
         source = Path(directory) / "releases.json"
         source.write_text(json.dumps(releases))
@@ -112,7 +163,7 @@ def test_writes_both_documents():
         for name in ("latest-main.json", "latest-dev.json"):
             body = json.loads((out / name).read_text())
             assert body["version"] == "0.2.0"
-            assert body["platforms"]["darwin-aarch64"]["signature"] == "sig"
+            assert body["platforms"]["darwin-aarch64"]["signature"] == "sig-darwin-aarch64"
 
 
 if __name__ == "__main__":

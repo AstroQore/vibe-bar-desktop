@@ -32,6 +32,36 @@ def gh(*arguments: str) -> str:
     return result.stdout
 
 
+def all_releases(repository: str) -> list[dict]:
+    """Every release, drafts included, as one list.
+
+    `--slurp` returns an array *of pages*; flattening it is the whole
+    difference from feeding `--paginate` straight to a parser, and it does not
+    depend on how a given `gh` chooses to join them.
+
+    The by-tag endpoint would be one request instead of a page's worth, and it
+    404s on a draft — which is the only kind of release this is ever asked
+    about.
+    """
+    pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repository}/releases"))
+    return [release for page in pages for release in page]
+
+
+def with_manifest(repository: str, release: dict) -> dict:
+    """The release, with the bundler's manifest read in.
+
+    The API names assets but does not inline their contents, and the contents
+    are the whole point.
+    """
+    for asset in release.get("assets", []):
+        if asset["name"] == feed.MANIFEST_ASSET:
+            asset["_contents"] = gh(
+                "api", "-H", "Accept: application/octet-stream",
+                f"repos/{repository}/releases/assets/{asset['id']}",
+            )
+    return release
+
+
 def served(repository: str, document: str) -> str | None:
     """What that channel offers right now, or None if it offers nothing.
 
@@ -72,20 +102,27 @@ def effective_head(document: str | None, releases: list[dict], include_dev: bool
     return max(candidates, key=feed.parse_version)
 
 
-def check_publishable(tag: str, release: dict, head: str | None) -> str | None:
+def check_publishable(
+    tag: str, release: dict, head: str | None, allow_missing: bool = False
+) -> str | None:
     """The reason not to publish this draft, or None to publish it."""
     version = tag.removeprefix("v")
     if feed.parse_version(version) is None:
         return f"{tag} is not a tag the update feed reads"
-    if not release.get("isDraft"):
+    if not release.get("draft"):
         return f"{tag} is already published"
 
-    assets = {asset["name"]: asset for asset in release.get("assets", [])}
-    targets = [p for p in feed.PLATFORMS if feed.signed_asset(assets, p) is not None]
-    if not targets:
+    platforms = feed.platforms_for(release)
+    if not platforms:
         return (
-            f"{tag} has no signed updater artifacts, so the feed would skip it "
-            f"however it is published"
+            f"{tag} carries no usable {feed.MANIFEST_ASSET}, so the feed would "
+            f"skip it however it is published"
+        )
+    missing = feed.missing_platforms(platforms)
+    if missing and not allow_missing:
+        return (
+            f"{tag} is missing {', '.join(missing)}. Those users would be "
+            f"offered nothing. Pass --allow-missing to publish anyway."
         )
 
     if head is not None and feed.parse_version(head) >= feed.parse_version(version):
@@ -101,29 +138,39 @@ def main() -> int:
     parser.add_argument("tag")
     parser.add_argument("--repo", default="AstroQore/vibe-bar-desktop")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="publish even though some targets have no updater entry",
+    )
     arguments = parser.parse_args()
 
-    release = json.loads(
-        gh("release", "view", arguments.tag, "--repo", arguments.repo,
-           "--json", "isDraft,assets,tagName")
+    # One listing, used twice: to find the draft — the by-tag endpoint does not
+    # return drafts — and to see what the channel has already committed to.
+    releases = all_releases(arguments.repo)
+    release = next(
+        (r for r in releases if r["tag_name"] == arguments.tag),
+        None,
     )
+    if release is None:
+        raise SystemExit(f"{arguments.tag} has no release")
+    release = with_manifest(arguments.repo, release)
     include_dev = feed.is_dev(arguments.tag.removeprefix("v"))
-    listed = json.loads(
-        gh("release", "list", "--repo", arguments.repo, "--limit", "200",
-           "--json", "tagName,isDraft")
-    )
-    releases = [{"tag_name": r["tagName"], "draft": r["isDraft"]} for r in listed]
     head = effective_head(
         served(arguments.repo, DOCUMENTS[include_dev]), releases, include_dev
     )
-    refusal = check_publishable(arguments.tag, release, head)
+    refusal = check_publishable(
+        arguments.tag, release, head, allow_missing=arguments.allow_missing
+    )
     if refusal is not None:
         print(refusal, file=sys.stderr)
         return 1
 
-    assets = {asset["name"]: asset for asset in release.get("assets", [])}
-    targets = [p for p in feed.PLATFORMS if feed.signed_asset(assets, p) is not None]
-    print(f"{arguments.tag}: {len(targets)} signed targets — {', '.join(targets)}")
+    platforms = feed.platforms_for(release)
+    named = sorted(p for p in platforms if p in feed.EXPECTED_PLATFORMS)
+    print(f"{arguments.tag}: {len(named)} targets — {', '.join(named)}")
+    for absent in feed.missing_platforms(platforms):
+        print(f"  missing: {absent}")
     if arguments.dry_run:
         print("dry run; not publishing")
         return 0

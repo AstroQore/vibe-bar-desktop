@@ -1,6 +1,7 @@
 """The check that runs at publication, which is the irreversible step."""
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -10,15 +11,19 @@ spec = importlib.util.spec_from_file_location("publish", ROOT / "scripts/publish
 publish = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publish)
 
-# One signed target, in the shape the releases API returns.
-SIGNED = [
-    {"name": "Vibe.Bar.Desktop_aarch64.app.tar.gz"},
-    {"name": "Vibe.Bar.Desktop_aarch64.app.tar.gz.sig"},
-]
+def manifest(platforms=None):
+    """The bundler's manifest, folded onto the asset as the tool does."""
+    if platforms is None:
+        platforms = {
+            name: {"signature": f"sig-{name}", "url": f"https://example.invalid/{name}"}
+            for name in publish.feed.EXPECTED_PLATFORMS
+        }
+    return [{"name": "latest.json", "_contents": json.dumps({"platforms": platforms})}]
 
 
 def draft(assets=None, is_draft=True):
-    return {"isDraft": is_draft, "assets": list(SIGNED if assets is None else assets)}
+    # The releases API's own shape, which is what the feed builder reads too.
+    return {"draft": is_draft, "assets": list(manifest() if assets is None else assets)}
 
 
 def test_a_draft_that_outranks_its_channel_publishes():
@@ -40,11 +45,24 @@ def test_a_first_release_has_no_head_to_beat():
     assert publish.check_publishable("v0.1.0", draft(), None) is None
 
 
-def test_a_draft_without_signed_artifacts_is_refused():
+def test_a_draft_without_a_usable_manifest_is_refused():
     # The feed would skip it however it is published.
     assert publish.check_publishable("v0.2.1", draft(assets=[]), "0.2.0") is not None
-    unsigned = [{"name": "Vibe.Bar.Desktop_aarch64.app.tar.gz"}]
-    assert publish.check_publishable("v0.2.1", draft(assets=unsigned), "0.2.0") is not None
+    torn = [{"name": "latest.json", "_contents": "{ truncated"}]
+    assert publish.check_publishable("v0.2.1", draft(assets=torn), "0.2.0") is not None
+
+
+def test_a_release_missing_a_target_needs_saying_so_out_loud():
+    # The failure that reached a real draft: five of six targets present, the
+    # gate reporting a number and publishing anyway.
+    partial = manifest({"darwin-aarch64": {"signature": "s", "url": "u"}})
+    assert publish.check_publishable("v0.2.1", draft(assets=partial), "0.2.0") is not None
+    assert (
+        publish.check_publishable(
+            "v0.2.1", draft(assets=partial), "0.2.0", allow_missing=True
+        )
+        is None
+    )
 
 
 def test_an_already_published_release_is_refused():
@@ -55,13 +73,12 @@ def test_a_tag_the_feed_cannot_read_is_refused():
     assert publish.check_publishable("v0.2.1-rc.1", draft(), "0.2.0") is not None
 
 
-def test_the_asset_rule_is_the_feed_builders():
-    # If these two disagree, a release passes here and vanishes from the feed.
-    assets = {asset["name"]: asset for asset in SIGNED}
-    assert any(
-        publish.feed.signed_asset(assets, platform) is not None
-        for platform in publish.feed.PLATFORMS
-    )
+def test_the_platform_rule_is_the_feed_builders():
+    # One function, two callers. If these disagree, a release passes here and
+    # then vanishes from the feed — which is how a draft reached six targets
+    # and a feed that would have carried two.
+    assert publish.feed.platforms_for(draft()) != {}
+    assert publish.feed.missing_platforms(publish.feed.platforms_for(draft())) == []
 
 
 def released(tag, is_draft=False):

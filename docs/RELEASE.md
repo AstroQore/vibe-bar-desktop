@@ -155,9 +155,9 @@ and arm64.
 | --- | --- | --- |
 | `darwin-aarch64` | `macos-latest`, `--target aarch64-apple-darwin` | `.app` + `.dmg`, updater artifact `.app.tar.gz` |
 | `darwin-x86_64` | `macos-latest`, `--target x86_64-apple-darwin` | same |
-| `windows-x86_64` | `windows-latest` | NSIS `.exe`, updater artifact `.nsis.zip` |
+| `windows-x86_64` | `windows-latest` | NSIS `-setup.exe`, which is also the updater artifact |
 | `windows-aarch64` | `windows-latest`, `--target aarch64-pc-windows-msvc` | same |
-| `linux-x86_64` | `ubuntu-22.04` | `.AppImage`, updater artifact `.AppImage.tar.gz` |
+| `linux-x86_64` | `ubuntu-22.04` | `.AppImage`, which is also the updater artifact |
 | `linux-aarch64` | `ubuntu-22.04-arm` | same |
 
 Linux arm64 builds on an arm runner rather than cross-compiling: the webkit2gtk
@@ -173,6 +173,17 @@ Every target passes an explicit `--target`, including the arm64 macOS one.
 `macos-latest` is an alias: the day it points at an Intel runner, a row relying
 on the host architecture silently produces a second x86_64 bundle and the
 arm64 updater artifact goes missing.
+
+### Where the artifact names come from
+
+`latest.json`, which the bundler uploads beside the bundles with a signature
+and a URL per target. The feed copies it; it does not reconstruct it.
+
+It did reconstruct it once, from asset names, and got three of six wrong —
+`.nsis.zip` and `.AppImage.tar.gz` for artifacts this Tauri calls `-setup.exe`
+and `.AppImage`. Six targets built green, and the feed would have carried two.
+Those names belong to the bundler and change when it changes; the manifest is
+the bundler saying which ones it wrote.
 
 ### What each platform still needs
 
@@ -269,7 +280,9 @@ back.
   other check here for the same reason.
 - at publication, and against both the document being served then **and the
   releases already published**: the ordering again, and that the draft
-  carries at least one updater artifact **with its `.sig`**. Both sources,
+  carries a usable `latest.json` covering **every** target — a partial
+  release needs `--allow-missing`, said out loud rather than counted past.
+  Both sources,
   because the document lags publication by one workflow run — publish two
   drafts within a minute and each would read the same stale document.
 
