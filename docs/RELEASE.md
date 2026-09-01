@@ -229,7 +229,12 @@ usage scan that reads the same session files, work on all three platforms.
    updater sees them.
 4. **Verify before publishing**: the SHA-256 of each asset independently, the
    version inside the bundle, and that the bundle launches.
-5. **Publish.** Main releases are marked latest; Dev releases are prereleases.
+5. **Publish** with `scripts/publish_release.py vX.Y.Z[-dev.N]`, which
+   re-checks the ordering against the document the channel is serving right
+   then and flips the draft in the same breath. The tag-time gate cannot be
+   the last word: two tags on the same channel can both build while both
+   drafts sit unpublished, and both pass against the same head. Main releases
+   are marked latest; Dev releases are prereleases.
 6. **`publish-update-feed.yml`** rebuilds both JSON files from the published
    releases.
 
@@ -256,8 +261,12 @@ back.
   orders *below* `0.2.0`: publishing it would put a version in the Dev feed
   that no current subscriber can install. An older Main version passes every
   other check here for the same reason.
-- the updater artifact exists and its signature verifies against the public key
-  in the config.
+- at publication, and against the document being served then: the ordering
+  again, and that the draft carries at least one updater artifact **with its
+  `.sig`** — matched by the same rule the feed builder uses, so "publishable"
+  and "will appear in the feed" cannot diverge. That the signature *verifies*
+  against the public key is still step 4's manual check; this only asserts it
+  is there.
 
 ## What the first version includes beyond the pipeline
 

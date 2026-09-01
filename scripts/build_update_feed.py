@@ -75,21 +75,29 @@ def platforms_for(release: dict) -> dict:
     promises it is worse than one that stays quiet.
     """
     assets = {asset["name"]: asset for asset in release.get("assets", [])}
-    signatures = {name: asset for name, asset in assets.items() if name.endswith(".sig")}
     out = {}
-    for platform, (token, suffix) in PLATFORMS.items():
-        for name, asset in assets.items():
-            if not name.endswith(suffix) or token not in name:
-                continue
-            signature = signatures.get(f"{name}.sig")
-            if signature is None:
-                continue
-            out[platform] = {
-                "signature": signature["_contents"],
-                "url": asset["browser_download_url"],
-            }
-            break
+    for platform in PLATFORMS:
+        name = signed_asset(assets, platform)
+        if name is None:
+            continue
+        out[platform] = {
+            "signature": assets[f"{name}.sig"]["_contents"],
+            "url": assets[name]["browser_download_url"],
+        }
     return out
+
+
+def signed_asset(assets, platform: str) -> str | None:
+    """The updater bundle for a target, if it is there with its signature.
+
+    Shared with the publish gate so that "this release will appear in the
+    feed" and "this release may be published" are decided by one rule.
+    """
+    token, suffix = PLATFORMS[platform]
+    for name in assets:
+        if name.endswith(suffix) and token in name and f"{name}.sig" in assets:
+            return name
+    return None
 
 
 def document(release: dict) -> dict:

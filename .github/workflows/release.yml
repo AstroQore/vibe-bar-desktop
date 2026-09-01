@@ -56,11 +56,24 @@ jobs:
           # the published document rather than the release list: that is what
           # an installed copy actually reads.
           feed="$(mktemp -d)"
-          if git fetch --depth=1 origin updates; then
+          # An absent updates branch is a first release. A branch that exists
+          # and cannot be reached is not, and must not look like one: the
+          # checker would read "no head" and pass a version nobody can install.
+          # `ls-remote --exit-code` says 2 for a missing ref and something else
+          # for a failure, which is the distinction.
+          probe=0
+          git ls-remote --exit-code --heads origin updates >/dev/null || probe=$?
+          if [ "$probe" -eq 0 ]; then
+            git fetch --depth=1 origin updates
             for document in latest-main.json latest-dev.json; do
               git show FETCH_HEAD:"$document" > "$feed/$document" 2>/dev/null \
                 || rm -f "$feed/$document"
             done
+          elif [ "$probe" -eq 2 ]; then
+            echo "no updates branch yet: first release into both channels"
+          else
+            echo "could not reach the updates branch (ls-remote exit $probe)" >&2
+            exit 1
           fi
           python3 scripts/check_release_tag.py "$GITHUB_REF_NAME" --feed-dir "$feed"
 
