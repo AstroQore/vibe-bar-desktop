@@ -217,6 +217,9 @@ export interface PresentationSettings {
   /** The mini-window layout, among the ones this client draws: "regular" or
    *  "compact". Native's other five fall back to "regular" in the core. */
   miniDisplayMode: string;
+  /** "main" | "dev" — which release channel this machine follows. Shared with
+   *  the native client, so choosing Dev in either window applies to both. */
+  updateChannel: string;
 }
 
 export interface StatusIncident {
@@ -292,6 +295,11 @@ export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 export const SETTINGS_EVENT = "vibebar://settings-changed";
 
+export interface PendingUpdate {
+  version: string;
+  id: number;
+}
+
 export const api = {
   quotaView: () => invoke<QuotaView>("quota_view"),
   refreshQuota: () => invoke<QuotaView>("refresh_quota"),
@@ -327,6 +335,13 @@ export const api = {
    *  window to it. */
   resizeMini: (width: number, height: number) =>
     invoke<void>("resize_mini", { width, height }),
+  /** The version waiting on this machine's channel, or null. Checking never
+   *  installs — `installUpdate` is the step that does, and only when asked.
+   *  The `id` names this answer: two checks can be in flight at once, and
+   *  installing has to mean the one that was shown. */
+  checkForUpdate: () => invoke<PendingUpdate | null>("check_for_update"),
+  /** Installs what that check found and restarts into it. */
+  installUpdate: (id: number) => invoke<void>("install_update", { id }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
   /** The shared settings file changed. The payload names the settings chosen

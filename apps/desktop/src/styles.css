@@ -1548,3 +1548,19 @@ input[type="text"] {
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
 }
+
+/* An inline action inside a definition list — the update check sits beside the
+   version it is about, rather than becoming a row of its own. */
+.link-button {
+  border: none;
+  background: none;
+  padding: 0 0 0 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-button:hover {
+  color: var(--text);
+}

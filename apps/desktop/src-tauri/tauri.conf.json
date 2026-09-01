@@ -44,6 +44,18 @@
     "longDescription": "Vibe Bar Desktop shows AI subscription quota and local agent sessions. It shares the Vibe Bar data root with the macOS native app but depends on none of its components.",
     "macOS": {
       "minimumSystemVersion": "11.0"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0RUY0Rjc0OUI2NTU3ODAKUldTQVYyV2JkRS92TksvNC9vZEdIUVE5ZDVuWE8yVXM3d2hNQjk3dElhVE56OEV2bWdpVUIxVW4K",
+      "endpoints": [
+        "https://raw.githubusercontent.com/AstroQore/vibe-bar-desktop/updates/latest-main.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

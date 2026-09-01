@@ -31,6 +31,54 @@ pub struct MiniWindowSettings {
     pub unknown: BTreeMap<String, serde_json::Value>,
 }
 
+/// Which release channel this machine follows.
+///
+/// The shared `updateChannel`, read by both clients: choosing Dev in either
+/// window applies to both. Desktop can also write it — a machine with no
+/// native client would otherwise have no way into the Dev channel at all.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum UpdateChannel {
+    #[default]
+    Main,
+    Dev,
+}
+
+impl UpdateChannel {
+    pub fn from_settings_value(value: Option<&str>) -> Self {
+        match value {
+            Some("dev") => Self::Dev,
+            // An unknown channel is the stable one. A build that has not heard
+            // of a channel must not be pointed at a feed it cannot reason
+            // about.
+            _ => Self::Main,
+        }
+    }
+
+    pub fn as_settings_value(self) -> &'static str {
+        match self {
+            Self::Main => "main",
+            Self::Dev => "dev",
+        }
+    }
+
+    /// The document this channel reads.
+    ///
+    /// These two URLs are compiled into every build and are what an installed
+    /// copy compares against forever — `docs/RELEASE.md` lists them among the
+    /// three things that cannot be changed once a version has shipped. A test
+    /// holds them against that document.
+    pub fn endpoint(self) -> &'static str {
+        match self {
+            Self::Main => {
+                "https://raw.githubusercontent.com/AstroQore/vibe-bar-desktop/updates/latest-main.json"
+            }
+            Self::Dev => {
+                "https://raw.githubusercontent.com/AstroQore/vibe-bar-desktop/updates/latest-dev.json"
+            }
+        }
+    }
+}
+
 /// The native app's Settings → Cost Data pane.
 ///
 /// One setting here is not a preference about presentation: privacy mode
@@ -72,6 +120,9 @@ pub struct SharedSettings {
     pub provider_plan_labels: Option<BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_data: Option<CostDataSettings>,
+    /// "main" | "dev". Shared with the native client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_channel: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mini_window: Option<MiniWindowSettings>,
 
@@ -94,6 +145,8 @@ pub struct PresentationSettings {
     pub provider_plan_labels: BTreeMap<String, String>,
     /// The mini-window layout, among the ones this client draws.
     pub mini_display_mode: String,
+    /// "main" | "dev" — which release channel this machine follows.
+    pub update_channel: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -158,6 +211,10 @@ impl SharedSettings {
             Some("rail") => "rail",
             _ => "regular",
         }
+    }
+
+    pub fn update_channel(&self) -> UpdateChannel {
+        UpdateChannel::from_settings_value(self.update_channel.as_deref())
     }
 
     pub fn cost_privacy_mode(&self) -> bool {
@@ -237,6 +294,7 @@ impl SharedSettings {
             visible_misc_providers,
             provider_plan_labels: self.provider_plan_labels.clone().unwrap_or_default(),
             mini_display_mode: self.mini_display_mode().to_string(),
+            update_channel: self.update_channel().as_settings_value().to_string(),
         }
     }
 
@@ -343,6 +401,47 @@ mod tests {
     /// A layout this client has not ported falls back to the one it draws.
     /// Silently: a mini window has no room to explain itself, and the parity
     /// table is where "which layouts exist" belongs.
+    /// The endpoints are compiled into every build and are what an installed
+    /// copy compares against forever. `docs/RELEASE.md` names them among the
+    /// three things that cannot be changed after a version ships, so the code
+    /// and that document have to say the same thing — a drift here is a set of
+    /// installs that can never be updated again.
+    #[test]
+    fn the_endpoints_are_the_ones_the_release_document_names() {
+        let doc = std::fs::read_to_string(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/RELEASE.md"),
+        )
+        .expect("docs/RELEASE.md");
+        for channel in [UpdateChannel::Main, UpdateChannel::Dev] {
+            assert!(
+                doc.contains(channel.endpoint()),
+                "{} is not in docs/RELEASE.md",
+                channel.endpoint()
+            );
+        }
+        assert_ne!(UpdateChannel::Main.endpoint(), UpdateChannel::Dev.endpoint());
+    }
+
+    /// A build that has not heard of a channel must not be pointed at a feed
+    /// it cannot reason about.
+    #[test]
+    fn an_unknown_channel_reads_the_stable_feed() {
+        assert_eq!(UpdateChannel::from_settings_value(Some("dev")), UpdateChannel::Dev);
+        assert_eq!(UpdateChannel::from_settings_value(Some("main")), UpdateChannel::Main);
+        assert_eq!(UpdateChannel::from_settings_value(Some("canary")), UpdateChannel::Main);
+        assert_eq!(UpdateChannel::from_settings_value(None), UpdateChannel::Main);
+    }
+
+    #[test]
+    fn the_channel_round_trips_through_the_settings_value() {
+        for channel in [UpdateChannel::Main, UpdateChannel::Dev] {
+            assert_eq!(
+                UpdateChannel::from_settings_value(Some(channel.as_settings_value())),
+                channel
+            );
+        }
+    }
+
     #[test]
     fn an_unported_mini_layout_falls_back_to_the_one_that_exists() {
         let with_mode = |mode: &str| {

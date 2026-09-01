@@ -273,6 +273,11 @@ back.
 - A **channel control** in Desktop's Settings, and `updateChannel` in
   `settings_writer::WRITABLE_KEYS`. Without it a standalone install cannot
   reach the Dev channel at all.
+- An update check that can **install what it finds**, in two steps: it reports
+  the version, and installs only when told to. Reporting alone would still
+  leave the first release a one-way door — its owner would have to find and
+  download the next one by hand — and installing unasked is not a surprise to
+  spring on someone mid-session.
 - The **version check** in CI, so the three copies cannot drift apart between
   releases rather than only at one.
 

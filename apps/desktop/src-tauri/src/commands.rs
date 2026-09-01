@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_updater::UpdaterExt;
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::forecast::cycles::CycleSummary;
 use vibebar_desktop_core::refresh::QuotaView;
@@ -145,6 +146,92 @@ pub fn resize_mini(app: AppHandle, width: f64, height: f64) {
     crate::mini_window::resize_to_content(&app, width, height);
 }
 
+/// Whether a newer build is waiting, on the channel this machine follows.
+///
+/// The endpoint is chosen here rather than in the static config: the config
+/// carries one list, and the two channels are two documents. `updateChannel`
+/// is shared with the native client, so a choice made in either window
+/// applies to both.
+///
+/// Reports rather than installs. An update that arrives without being asked
+/// for is the kind of surprise this app has no business springing on someone
+/// mid-session, and the native client asks first too.
+/// The feed to ask, or the reason not to ask anything.
+///
+/// Demo mode's own banner promises no network requests, and a check is one.
+/// The refusal lives here rather than only in the control that starts it: a
+/// hidden button is a hidden button, not a guarantee.
+fn update_endpoint(root: &vibebar_desktop_core::paths::DataRoot) -> Result<&'static str, String> {
+    if root.is_demo() {
+        return Err("update checks are off in demo mode".to_string());
+    }
+    Ok(SharedSettings::load(root).update_channel().endpoint())
+}
+
+#[tauri::command]
+pub async fn check_for_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<PendingUpdate>, String> {
+    let endpoint = update_endpoint(state.data_root())?
+        .parse()
+        .map_err(|_| "the update endpoint is not a URL".to_string())?;
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|error| error.to_string())?
+        .build()
+        .map_err(|error| error.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let version = update.version.clone();
+            // Held under an id so that installing puts on exactly what this
+            // check found, rather than whatever the feed says a minute later
+            // or what a second check that is still in flight returns.
+            let id = state.hold_update(update);
+            Ok(Some(PendingUpdate { version, id }))
+        }
+        Ok(None) => {
+            state.drop_update();
+            Ok(None)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// What a check found: the version to show, and which check found it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingUpdate {
+    pub version: String,
+    pub id: u64,
+}
+
+/// Installs the update a particular check found, and restarts into it.
+///
+/// Separate from the check because this is the irreversible half: it replaces
+/// the running application. Nothing calls it without the person asking, and
+/// the id says which answer they were looking at when they did.
+#[tauri::command]
+pub async fn install_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+) -> Result<(), String> {
+    let update = state
+        .take_update(id)
+        .ok_or_else(|| "that check has been overtaken by a newer one".to_string())?;
+    match update.download_and_install(|_, _| {}, || {}).await {
+        // Nothing after this: the application is being replaced.
+        Ok(()) => app.restart(),
+        Err(error) => {
+            // Put it back, so a network blip does not cost the check.
+            state.restore_update(id, update);
+            Err(error.to_string())
+        }
+    }
+}
+
 #[tauri::command]
 pub fn hide_mini(app: AppHandle) {
     crate::mini_window::hide(&app);
@@ -225,4 +312,19 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
 #[tauri::command]
 pub fn skills_inventory(state: State<'_, AppState>) -> SkillsInventoryView {
     vibebar_desktop_core::skills::scan(state.data_root())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vibebar_desktop_core::paths::DataRoot;
+
+    #[test]
+    fn demo_mode_refuses_to_reach_the_feed() {
+        // `DataRoot::at` is a demo root: the banner over this control says the
+        // mode makes no network requests.
+        let refusal = update_endpoint(&DataRoot::at(std::env::temp_dir().join("vibebar-demo")))
+            .expect_err("a demo root must not produce an endpoint to fetch");
+        assert!(refusal.contains("demo"), "{refusal}");
+    }
 }
