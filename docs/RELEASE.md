@@ -271,7 +271,17 @@ back.
   releases already published**: the ordering again, and that the draft
   carries at least one updater artifact **with its `.sig`**. Both sources,
   because the document lags publication by one workflow run — publish two
-  drafts within a minute and each would read the same stale document — matched by the same rule the feed builder uses, so "publishable"
+  drafts within a minute and each would read the same stale document.
+
+  What this does **not** close: two people running the publish command in
+  the same few seconds. Both read the same state before either flips its
+  draft, and the lower version can still be published. Closing it needs a
+  lock the GitHub API does not offer for releases — a `workflow_dispatch`
+  job with a `concurrency` group would do it. Left open deliberately: it
+  needs two simultaneous publishers on one channel, and the damage is a
+  published release the feed does not serve, not a subscriber stranded on a
+  broken one. If publishing ever stops being one person's deliberate act,
+  this is the thing to fix first — matched by the same rule the feed builder uses, so "publishable"
   and "will appear in the feed" cannot diverge. That the signature *verifies*
   against the public key is still step 4's manual check; this only asserts it
   is there.
