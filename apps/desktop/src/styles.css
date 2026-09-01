@@ -1435,3 +1435,116 @@ input[type="text"] {
   padding: 0 2px;
   color: var(--text-dim);
 }
+
+/* Rail: the next seven days as a refill lane. Native's 584x196 panel, a 536
+   lane, a 64 lane height and four legend rows. */
+.mini-rail {
+  width: 584px;
+  min-height: 196px;
+  box-sizing: border-box;
+  padding: 12px 24px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.mini-rail-title {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  color: var(--text-dim);
+}
+.mini-rail-empty {
+  margin: auto 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.mini-rail-lane {
+  position: relative;
+}
+/* The horizon the markers stand on. */
+.mini-rail-baseline {
+  position: absolute;
+  inset-inline: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--text) 13%, transparent);
+}
+/* Now, at the left edge. */
+.mini-rail-now {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 2px;
+  height: 44px;
+  background: color-mix(in srgb, var(--text) 35%, transparent);
+}
+.mini-rail-tick {
+  position: absolute;
+  top: 0;
+}
+.mini-rail-tick-mark {
+  position: absolute;
+  width: 1px;
+  height: 5px;
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+}
+.mini-rail-tick-label {
+  position: absolute;
+  left: -15px;
+  width: 30px;
+  text-align: center;
+  font-size: 7.5px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--text-dim) 70%, transparent);
+}
+/* Height is how much comes back, colour is how much is left now, position is
+   when. Rounded at the top only: it grows up from the baseline. */
+.mini-rail-marker {
+  position: absolute;
+  width: 7px;
+  border-radius: 3.5px 3.5px 1px 1px;
+}
+.mini-rail-legend {
+  display: flex;
+  flex-direction: column;
+}
+.mini-rail-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 17px;
+}
+.mini-rail-legend-sub {
+  flex: none;
+  max-width: 96px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-rail-legend-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 9.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-rail-legend-gain {
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.mini-rail-legend-when {
+  width: 46px;
+  text-align: right;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
