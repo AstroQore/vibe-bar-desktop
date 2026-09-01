@@ -113,24 +113,29 @@ export function MiniQuotaBody({
   /** Called with the size the content needs, so the shell can fit the window
    *  to it. Absent in the preview page, which is a page and not a window. */
   onContentSize?: (width: number, height: number) => void;
-  /** Which of native's layouts to draw: regular, compact, ledger, tile or
-   *  focus. The two not ported fall back to regular in the core, so only
-   *  these five arrive here. */
+  /** Which of native's layouts to draw: regular, compact, ledger, tile,
+   *  focus or rail. Strip is not ported and falls back to regular in the
+   *  core, so only these six arrive here. */
   layout?: string;
 }) {
   const dark = useDarkMode();
   const measured = useContentSize(onContentSize);
+  // The layouts that are not the tree. Looked up rather than chained: five
+  // of them is where a ternary stops being readable, and the condition they
+  // share belongs in one place.
   const drawn =
-    !loading && companies.length > 0 && layout === "ledger" ? (
-      <MiniLedger companies={companies} dark={dark} />
-    ) : !loading && companies.length > 0 && layout === "tile" ? (
-      <MiniTiles entries={flatten(companies, order)} dark={dark} />
-    ) : !loading && companies.length > 0 && layout === "focus" ? (
-      <MiniFocus entries={flatten(companies, order)} dark={dark} />
-    ) : null;
+    loading || companies.length === 0
+      ? null
+      : layout === "ledger"
+        ? <MiniLedger companies={companies} dark={dark} />
+        : layout === "tile"
+          ? <MiniTiles entries={flatten(companies, order)} dark={dark} />
+          : layout === "focus"
+            ? <MiniFocus entries={flatten(companies, order)} dark={dark} />
+            : layout === "rail"
+              ? <MiniRail entries={flatten(companies, order)} dark={dark} />
+              : null;
   if (drawn) {
-    // One wrapper for every layout so the size report has a single element to
-    // watch, whichever one is drawn.
     // One wrapper for every layout, laid out at its content's size so the
     // measurement is the layout's and not the window's.
     return (
@@ -333,6 +338,200 @@ export function flatten(companies: Company[], order?: string[]): Entry[] {
         (rank.get(right.entry.cell.id) ?? order.length + right.index),
     )
     .map((ranked) => ranked.entry);
+}
+
+/** Seven days, in seconds. The rail's horizon. */
+const RAIL_HORIZON_SECONDS = 7 * 86_400;
+/** How far apart two markers have to be before they stop being one blob. */
+const RAIL_FAN_STEP = 9;
+/** How close a marker's centre may come to the end of the lane. */
+const RAIL_MARKER_INSET = 4;
+
+interface RailEvent {
+  entry: Entry;
+  /** Where it sits along the horizon, 0 to 1. */
+  fraction: number;
+  /** What comes back at the reset. */
+  gain: number;
+  /** What is left now, which is what colours it. */
+  remaining: number;
+  resetAt: number;
+}
+
+/**
+ * The buckets that actually refill inside the horizon, soonest first.
+ *
+ * Filtered the way native filters: a reset in the future, inside seven days,
+ * and something to come back — a bucket at 0% used has no refill to draw, and
+ * a marker of zero height on the lane is a claim that nothing happens.
+ */
+export function railEvents(entries: Entry[], now: number): RailEvent[] {
+  return entries
+    .flatMap((entry) => {
+      const resetAt = entry.cell.bucket.resetAt;
+      const used = entry.cell.bucket.usedPercent;
+      if (!resetAt || resetAt <= now) return [];
+      const ahead = resetAt - now;
+      if (ahead > RAIL_HORIZON_SECONDS || used < 1) return [];
+      return [
+        {
+          entry,
+          fraction: Math.min(1, ahead / RAIL_HORIZON_SECONDS),
+          gain: used,
+          remaining: Math.max(0, 100 - used),
+          resetAt,
+        },
+      ];
+    })
+    .sort((left, right) => left.resetAt - right.resetAt);
+}
+
+/**
+ * Nudge markers that would land on top of each other.
+ *
+ * Two passes, because centring a cluster and keeping clusters apart are
+ * different problems and doing only the first creates the second.
+ *
+ * First, markers that fall within a step of each other are spread evenly
+ * around their own centre — native's behaviour, and what keeps a cluster
+ * reading as "these all reset at about the same time" rather than as a line
+ * marching rightwards.
+ *
+ * Then a sweep out and back enforces the spacing and the lane's edges over
+ * *every* marker, not within a group. Centring alone is not enough: a group
+ * pushed inward at an edge can land on the marker beside it — centres at 0, 8
+ * and 17 become 4, 13 and 17, and the last two 7-wide bars overlap. The sweep
+ * settles that by construction, so there is no grouping rule left to get
+ * wrong.
+ */
+export function fannedOffsets(events: RailEvent[], width: number): number[] {
+  const placed = events
+    .map((event, index) => ({ index, x: width * event.fraction }))
+    .sort((left, right) => left.x - right.x);
+  if (placed.length === 0) return [];
+
+  // Pass one: centre each cluster on itself.
+  const desired = placed.map((marker) => marker.x);
+  let start = 0;
+  const centreCluster = (end: number) => {
+    const size = end - start;
+    if (size > 1) {
+      const span = (size - 1) * RAIL_FAN_STEP;
+      const centre = (placed[start].x + placed[end - 1].x) / 2;
+      for (let i = start; i < end; i += 1) {
+        desired[i] = centre - span / 2 + (i - start) * RAIL_FAN_STEP;
+      }
+    }
+    start = end;
+  };
+  for (let i = 1; i < placed.length; i += 1) {
+    if (placed[i].x - placed[i - 1].x >= RAIL_FAN_STEP) centreCluster(i);
+  }
+  centreCluster(placed.length);
+
+  // Pass two: no two markers closer than a step, none off the lane.
+  const settled = desired.slice();
+  settled[0] = Math.max(settled[0], RAIL_MARKER_INSET);
+  for (let i = 1; i < settled.length; i += 1) {
+    settled[i] = Math.max(settled[i], settled[i - 1] + RAIL_FAN_STEP);
+  }
+  const last = settled.length - 1;
+  settled[last] = Math.min(settled[last], width - RAIL_MARKER_INSET);
+  for (let i = last - 1; i >= 0; i -= 1) {
+    settled[i] = Math.min(settled[i], settled[i + 1] - RAIL_FAN_STEP);
+  }
+
+  const offsets = new Array(events.length).fill(0);
+  placed.forEach((marker, i) => {
+    offsets[marker.index] = settled[i] - marker.x;
+  });
+  return offsets;
+}
+
+/**
+ * The next seven days as a refill lane, with the coming resets listed.
+ *
+ * A marker's height is how much comes back, its colour is how much is left
+ * now, and its position is when. The legend under it names the first few,
+ * because a lane of bars says when and how much but never which.
+ */
+function MiniRail({ entries, dark }: { entries: Entry[]; dark: boolean }) {
+  const now = Date.now() / 1000;
+  const events = railEvents(entries, now);
+  const width = 536;
+  const laneHeight = 64;
+  const offsets = fannedOffsets(events, width);
+
+  return (
+    <div className="mini-rail">
+      <div className="mini-rail-title">QUOTA RESETS · NEXT 7 DAYS</div>
+      {events.length === 0 ? (
+        <p className="mini-rail-empty">Nothing selected refills in the next seven days.</p>
+      ) : (
+        <>
+          <div className="mini-rail-lane" style={{ width, height: laneHeight }}>
+            <span className="mini-rail-baseline" style={{ top: laneHeight - 14 }} />
+            <span className="mini-rail-now" />
+            {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+              <span key={day} className="mini-rail-tick" style={{ left: (width * day) / 7 }}>
+                <span className="mini-rail-tick-mark" style={{ top: laneHeight - 18 }} />
+                <span className="mini-rail-tick-label" style={{ top: laneHeight - 11 }}>
+                  +{day}d
+                </span>
+              </span>
+            ))}
+            {events.map((event, index) => {
+              const height = 6 + ((laneHeight - 30) * event.gain) / 100;
+              // The group shift has already kept fanned markers on the lane;
+              // this catches a lone marker at either end.
+              const x = Math.max(
+                RAIL_MARKER_INSET,
+                Math.min(width - RAIL_MARKER_INSET, width * event.fraction + offsets[index]),
+              );
+              return (
+                <span
+                  key={event.entry.cell.id}
+                  className="mini-rail-marker"
+                  style={{
+                    left: x - 3.5,
+                    top: laneHeight - 14 - height,
+                    height,
+                    background: quotaBarColor(event.remaining, false),
+                  }}
+                  title={`${entryLabel(event.entry)} — ${Math.round(event.remaining)}% now, +${Math.round(event.gain)}% ${formatRemaining(event.resetAt) ?? ""}`}
+                />
+              );
+            })}
+          </div>
+          <div className="mini-rail-legend" style={{ width }}>
+            {events.slice(0, 4).map((event) => (
+              <div className="mini-rail-legend-row" key={event.entry.cell.id}>
+                <span
+                  className="mini-company-dot"
+                  style={{ background: providerAccent(event.entry.tool, dark) }}
+                  aria-hidden
+                />
+                {/* The SubProvider as well as the bucket: Codex and Claude
+                    both have a "Weekly", and a coloured dot is not a name.
+                    The other flat layouts carry the same context. */}
+                <span className="mini-rail-legend-sub">{event.entry.subProvider}</span>
+                <span className="mini-rail-legend-label">{entryLabel(event.entry)}</span>
+                <span
+                  className="mini-rail-legend-gain"
+                  style={{ color: quotaBarColor(event.remaining, false) }}
+                >
+                  +{Math.round(event.gain)}%
+                </span>
+                <span className="mini-rail-legend-when">
+                  {formatRemaining(event.resetAt) || "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AccountQuota, PresentationSettings, QuotaForecast, QuotaView } from "../api";
-import { arrange, flatten, forecastLine } from "./MiniQuota";
+import { arrange, fannedOffsets, flatten, forecastLine, railEvents } from "./MiniQuota";
 
 const NOW = 1_800_000_000;
 
@@ -255,5 +255,157 @@ describe("flattening the tree for the layouts that page or tile", () => {
 
     expect(entries.map((entry) => entry.groupLabel)).toEqual(["All", "Opus"]);
     expect(entries.map((entry) => entry.subProvider)).toEqual(["Claude", "Claude"]);
+  });
+});
+
+describe("the rail's seven-day horizon", () => {
+  function entryAt(id: string, secondsAhead: number, used: number) {
+    const b = bucket(id, "Weekly", "Weekly");
+    return {
+      cell: {
+        id: `claude.${id}`,
+        bucket: { ...b, resetAt: NOW + secondsAhead, usedPercent: used },
+        label: "Weekly",
+        value: 100 - used,
+        showsUsed: false,
+      },
+      company: "Anthropic",
+      tool: "claude",
+      subProvider: "Claude",
+      groupLabel: null,
+    } as unknown as Parameters<typeof railEvents>[0][number];
+  }
+
+  it("keeps only what refills inside the horizon, soonest first", () => {
+    const events = railEvents(
+      [
+        entryAt("far", 9 * 86_400, 50),
+        entryAt("soon", 3600, 50),
+        entryAt("mid", 3 * 86_400, 50),
+      ],
+      NOW,
+    );
+    expect(events.map((e) => e.entry.cell.id)).toEqual(["claude.soon", "claude.mid"]);
+  });
+
+  /// A reset already behind us is not a refill to come.
+  it("drops a reset in the past", () => {
+    expect(railEvents([entryAt("gone", -60, 50)], NOW)).toHaveLength(0);
+  });
+
+  /// A bucket nothing has been spent from has no refill to draw, and a marker
+  /// of no height would claim something happens when nothing does.
+  it("drops a bucket with nothing to come back", () => {
+    expect(railEvents([entryAt("untouched", 3600, 0)], NOW)).toHaveLength(0);
+    expect(railEvents([entryAt("barely", 3600, 1)], NOW)).toHaveLength(1);
+  });
+
+  it("reads the gain and what is left from the same bucket", () => {
+    const [event] = railEvents([entryAt("half", 3600, 63)], NOW);
+    expect(event.gain).toBe(63);
+    expect(event.remaining).toBe(37);
+  });
+});
+
+describe("fanning markers that would overlap", () => {
+  const at = (fraction: number) => ({ fraction }) as Parameters<typeof fannedOffsets>[0][number];
+
+  /// Two quotas refilling minutes apart are one blob otherwise, and the lane's
+  /// whole job is saying how many are coming and when.
+  it("spreads markers that land in one slot, centred on it", () => {
+    const offsets = fannedOffsets([at(0.5), at(0.5), at(0.5)], 536);
+    expect(offsets).toEqual([-9, 0, 9]);
+  });
+
+  /// Markers that do not collide keep their position — except at the very
+  /// ends, where a 7-wide bar centred on the edge would hang half off the
+  /// lane. The inset belongs here rather than in a clamp at draw time: a
+  /// clamp applied after the fanning is what used to put whole groups back
+  /// on one x.
+  it("leaves a marker alone unless the lane's edge is in the way", () => {
+    expect(fannedOffsets([at(0.25), at(0.5), at(0.75)], 536)).toEqual([0, 0, 0]);
+    expect(fannedOffsets([at(0), at(0.5), at(1)], 536)).toEqual([4, 0, -4]);
+  });
+
+  it("moves nothing on its own", () => {
+    expect(fannedOffsets([at(0.42)], 536)).toEqual([0]);
+  });
+});
+
+describe("fanned groups at the ends of the lane", () => {
+  const at = (fraction: number) => ({ fraction }) as Parameters<typeof fannedOffsets>[0][number];
+  const positions = (fractions: number[], width = 536) => {
+    const events = fractions.map(at);
+    const offsets = fannedOffsets(events, width);
+    return events.map((e, i) => Math.round(width * e.fraction + offsets[i]));
+  };
+
+  /// Clamping each marker on its own puts the whole group back on one x —
+  /// exactly where fanning is needed: several quotas resetting within the hour.
+  it("keeps a group at the near end spread out", () => {
+    const xs = positions([0, 0, 0]);
+    expect(new Set(xs).size).toBe(3);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(4);
+  });
+
+  it("keeps a group at the far end spread out", () => {
+    const xs = positions([1, 1, 1]);
+    expect(new Set(xs).size).toBe(3);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(536 - 4);
+  });
+
+  /// And the spacing itself survives the shift.
+  it("moves the group without squashing it", () => {
+    const xs = positions([0, 0, 0]);
+    expect(xs[1] - xs[0]).toBe(9);
+    expect(xs[2] - xs[1]).toBe(9);
+  });
+});
+
+describe("markers that collide across slot boundaries", () => {
+  const width = 536;
+  const at = (x: number) => ({ fraction: x / width }) as Parameters<typeof fannedOffsets>[0][number];
+  const positions = (xs: number[]) => {
+    const events = xs.map(at);
+    const offsets = fannedOffsets(events, width);
+    return events.map((e, i) => width * e.fraction + offsets[i]);
+  };
+
+  /// The bars are 7 wide and a step is 9, so landing in *neighbouring* slots
+  /// is not separation. Grouping by a rounded slot id left these overlapped.
+  it("separates two markers a fraction of a pixel apart", () => {
+    const [a, b] = positions([94.4, 94.6]);
+    expect(Math.abs(b - a)).toBeGreaterThanOrEqual(7);
+  });
+
+  it("separates two pairs that straddle a boundary", () => {
+    const xs = positions([94.4, 94.6, 95.1, 95.4]);
+    const sorted = [...xs].sort((l, r) => l - r);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(7);
+    }
+  });
+
+  /// And markers genuinely far apart are still left where they belong.
+  it("leaves markers that do not collide alone", () => {
+    expect(positions([100, 200, 300])).toEqual([100, 200, 300]);
+  });
+});
+
+describe("a shifted group must not land on the marker beside it", () => {
+  const width = 536;
+  const at = (x: number) => ({ fraction: x / width }) as Parameters<typeof fannedOffsets>[0][number];
+
+  /// Centres at 0, 8, 17: the first two cluster and get pushed inward off the
+  /// edge, which used to put them at 4 and 13 — four pixels from the 17 that
+  /// had been classified as a separate group, so two 7-wide bars overlapped.
+  it("keeps every marker a bar apart after the group is moved inward", () => {
+    const events = [0, 8, 17].map(at);
+    const offsets = fannedOffsets(events, width);
+    const xs = events.map((e, i) => width * e.fraction + offsets[i]).sort((l, r) => l - r);
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(7);
+    }
+    expect(xs[0]).toBeGreaterThanOrEqual(4);
   });
 });

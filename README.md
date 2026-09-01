@@ -137,7 +137,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Arrangeable module waterfall | ● 11 | ○ | |
 | Layout editor with presets | ● | ○ | |
 | **Mini window** |
-| Layouts | ● 7 | ◐ 5 | regular, compact, ledger, tile, focus ported; strip and rail not. Follows the shared `miniWindow.displayMode`, falling back to regular for the rest |
+| Layouts | ● 7 | ◐ 6 | all but strip. The rail has its lane, ticks, markers and legend; native's hover card is not ported yet. Follows the shared `miniWindow.displayMode`, falling back to regular for strip |
 | Multiple independent windows | ● | ○ | |
 | Window fits the layout | ● | ● | Both size the mini window to what it is drawing and clamp it to the screen. A layout wider than the monitor is cropped on both, which is the limit rather than a choice |
 | Translucent surface | ● Liquid Glass | ○ | Planned as a platform blur, deliberately not a copy. The window is currently opaque and undecorated |

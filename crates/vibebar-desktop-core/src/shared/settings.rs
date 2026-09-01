@@ -155,6 +155,7 @@ impl SharedSettings {
             Some("ledger") => "ledger",
             Some("tile") => "tile",
             Some("focus") => "focus",
+            Some("rail") => "rail",
             _ => "regular",
         }
     }
@@ -356,8 +357,9 @@ mod tests {
         assert_eq!(with_mode("ledger"), "ledger");
         assert_eq!(with_mode("tile"), "tile");
         assert_eq!(with_mode("focus"), "focus");
+        assert_eq!(with_mode("rail"), "rail");
         assert_eq!(with_mode("regular"), "regular");
-        for unported in ["strip", "rail", "somethingNewer"] {
+        for unported in ["strip", "somethingNewer"] {
             assert_eq!(with_mode(unported), "regular", "{unported}");
         }
         assert_eq!(
