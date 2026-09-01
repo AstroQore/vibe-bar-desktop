@@ -1,55 +1,55 @@
 {
-  "version": "0.1.0-dev.1",
+  "version": "0.1.0-dev.2",
   "notes": "",
-  "pub_date": "2026-09-01T08:55:51Z",
+  "pub_date": "2026-09-01T12:59:11Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkhxYmxEZTdJR3FhclpjTDZ2aXJlUUJxSHZDd0xxdElHcjJKRnJXc3MrMG9RVFR1aXZtRXZSZ1Zxb2h3SmlncTYwbmc2dmJBbDhzcDVUdStoQkN6QlFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUwOTU3CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6ClIyK2VPU1VCTHVxbWxVYnR6UUlaSnMzck9xVmVmSHlaa2NMcXowWEdmbXFtUld3Nmg5V2RFa3NXUVN4UXB1MkN2blpSK01EVGlEcyttajNHRVlWYUR3PT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkpkSXZTaVBPRFhuV1RXZ3lLVjIySXZGTm5vdjJScmFjQW5oT0c3eGpHT0RMK1JaQmNCZTBpZ3VuNUZXdDZ5NmdXMGZ4YzFmQy9wN0lQdjB2cU9HSEFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3MDk4CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6CnlNaXNNZHdYZGp4b2NvZUdrL3duK2UrVUlNK3lha0pXSXhHL3J6QkszZjdYcktFak9MVFNIbFA0aWIxQW1RQ05wSHZmcEFBMEpraVZ4M2h2Mk8xZEJBPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_aarch64.app.tar.gz"
     },
     "darwin-aarch64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkhxYmxEZTdJR3FhclpjTDZ2aXJlUUJxSHZDd0xxdElHcjJKRnJXc3MrMG9RVFR1aXZtRXZSZ1Zxb2h3SmlncTYwbmc2dmJBbDhzcDVUdStoQkN6QlFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUwOTU3CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6ClIyK2VPU1VCTHVxbWxVYnR6UUlaSnMzck9xVmVmSHlaa2NMcXowWEdmbXFtUld3Nmg5V2RFa3NXUVN4UXB1MkN2blpSK01EVGlEcyttajNHRVlWYUR3PT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkpkSXZTaVBPRFhuV1RXZ3lLVjIySXZGTm5vdjJScmFjQW5oT0c3eGpHT0RMK1JaQmNCZTBpZ3VuNUZXdDZ5NmdXMGZ4YzFmQy9wN0lQdjB2cU9HSEFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3MDk4CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6CnlNaXNNZHdYZGp4b2NvZUdrL3duK2UrVUlNK3lha0pXSXhHL3J6QkszZjdYcktFak9MVFNIbFA0aWIxQW1RQ05wSHZmcEFBMEpraVZ4M2h2Mk8xZEJBPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_aarch64.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92Tkl6TVFtd1B6aG02S3hOY2dvVldadk9kcTRrbUU0d29UZkxsMFJCZGl3UkRtTkxqUm5IMjR2TXNYRVlQTFY1RXBYVnV2KzJPYlMxbStqc0hpcU9DY3dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUwOTQ3CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6CkZIb0tJWUpDYWRpUjZCNTFQdC9iYmp5MFZtNWhTUEJjSXVwakl6ejZBTzc2QUl3dFNwUkZXSGxuMExRenMyZ1oycFNNZ0JWU3lic0tuTzJSWkNvMUNRPT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_x64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TlBsbVJIRStlVk1lOTAwUFNiM3pxRnlPUnFIZ1NTc0E0eG85YmxKaWppdDFJanpqcHl1cHRGaFJ3VEIxbHEyMkpOSm04cEk0NC93dXFrWER0QVdWMGc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3MDc0CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6CkU0d3JEOW5BdWM4blJYZ3VRWitMUjdBbzhVVjNucHBaekZKelV5QzV0SkxIb1RRc1h3bnVOaW5JNkFiblFYVGtQeFJuMmRHbEJmS0VtRjQ4blgxeENBPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_x64.app.tar.gz"
     },
     "darwin-x86_64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92Tkl6TVFtd1B6aG02S3hOY2dvVldadk9kcTRrbUU0d29UZkxsMFJCZGl3UkRtTkxqUm5IMjR2TXNYRVlQTFY1RXBYVnV2KzJPYlMxbStqc0hpcU9DY3dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUwOTQ3CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6CkZIb0tJWUpDYWRpUjZCNTFQdC9iYmp5MFZtNWhTUEJjSXVwakl6ejZBTzc2QUl3dFNwUkZXSGxuMExRenMyZ1oycFNNZ0JWU3lic0tuTzJSWkNvMUNRPT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_x64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TlBsbVJIRStlVk1lOTAwUFNiM3pxRnlPUnFIZ1NTc0E0eG85YmxKaWppdDFJanpqcHl1cHRGaFJ3VEIxbHEyMkpOSm04cEk0NC93dXFrWER0QVdWMGc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3MDc0CWZpbGU6VmliZSBCYXIgRGVza3RvcC5hcHAudGFyLmd6CkU0d3JEOW5BdWM4blJYZ3VRWitMUjdBbzhVVjNucHBaekZKelV5QzV0SkxIb1RRc1h3bnVOaW5JNkFiblFYVGtQeFJuMmRHbEJmS0VtRjQ4blgxeENBPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_x64.app.tar.gz"
     },
     "linux-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TklzaXhoYjM3d0lXb3ZESml6UGI3TjZFTHlORFdWZ3ZVU3hRNmc5ZE1UYStxL0x0VnJNMi9tN25VTStVOVhweG01ZWpOWlJZWFlBOWozaGlPUm9lc0FzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMTgwCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV9hYXJjaDY0LkFwcEltYWdlCjN1ZW9ITEE0eE5OeS91TUJaeUp6aGkvb01UVE9TYXFLclJZZmZ1eGprLzlVUG9WQWhFNWRJTGxLOGE0RnJoemRGKzF6RmJPbUxGN0s2Y3JvSm10YkRRPT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_aarch64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkJkWDFTRFZNMytwTStnL212SGFseTZodXBlUlNTaEhKQ1hLbHFVWjJ2Mm5ieGROcEhyT1JWRzJ2MzRhTlFjV0Rvbm04UElEV1lIdWovQUpnWmV0UmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3NDE3CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl9hYXJjaDY0LkFwcEltYWdlCm95Y2pUM0NXVldKZXhuOFJGR2xuUzBDVEMxNkZxSHltQlRLaE1ML2Fwb0JlN3JoV001UHA2dXlobUMyTlJqSThTci9LdUZ0M2tGQmhsR1ljVWV5ZURnPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_aarch64.AppImage"
     },
     "linux-aarch64-appimage": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TklzaXhoYjM3d0lXb3ZESml6UGI3TjZFTHlORFdWZ3ZVU3hRNmc5ZE1UYStxL0x0VnJNMi9tN25VTStVOVhweG01ZWpOWlJZWFlBOWozaGlPUm9lc0FzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMTgwCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV9hYXJjaDY0LkFwcEltYWdlCjN1ZW9ITEE0eE5OeS91TUJaeUp6aGkvb01UVE9TYXFLclJZZmZ1eGprLzlVUG9WQWhFNWRJTGxLOGE0RnJoemRGKzF6RmJPbUxGN0s2Y3JvSm10YkRRPT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_aarch64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkJkWDFTRFZNMytwTStnL212SGFseTZodXBlUlNTaEhKQ1hLbHFVWjJ2Mm5ieGROcEhyT1JWRzJ2MzRhTlFjV0Rvbm04UElEV1lIdWovQUpnWmV0UmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3NDE3CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl9hYXJjaDY0LkFwcEltYWdlCm95Y2pUM0NXVldKZXhuOFJGR2xuUzBDVEMxNkZxSHltQlRLaE1ML2Fwb0JlN3JoV001UHA2dXlobUMyTlJqSThTci9LdUZ0M2tGQmhsR1ljVWV5ZURnPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_aarch64.AppImage"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkhxM0ZWN3U3Y3Fqa1dadUNkZThyMlI0NjlXaExTa1hkMzZueGlhYTFjeGRKZWVyWGljS25nVXNZdVR6TzlJcUxYQjE4SGl6Yi8vUXdjaFRPM0ZGb1F3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMDE3CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV9hbWQ2NC5BcHBJbWFnZQpZMy91T2ZPUHhpTFMzTFpXODJrbnZicC92Q3JVMVNEU0JUeGljaG9BNWd1SVA5cDc3am4wUDhpeXVGMzlacVo0Q3RjcFBSSDZleEtUZXlIejVwMDlDdz09Cg==",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkQwQ0VPQ0hoT2F3ZG5mSTRlN1lCQzVuQ0swVTNjdG5XL2xJMDUwanBnZFhRM2ZMNXc1SVRZaWUyQzBBc2pQdFZmNWFWL0EreW5lcDBoMDdHRnN4UXdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3MzMyCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl9hbWQ2NC5BcHBJbWFnZQpuV29YY3lZVzhvY05CNnhBQ2dDSklJMm9YSERGTmM0Z1pWUTdXUFR0dEpMd1JyeXEyUzluRTI4SzQzQmtMc0ZLT25Sa0JVRUxBVjFqVkFaNEttTVpDUT09Cg==",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_amd64.AppImage"
     },
     "linux-x86_64-appimage": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkhxM0ZWN3U3Y3Fqa1dadUNkZThyMlI0NjlXaExTa1hkMzZueGlhYTFjeGRKZWVyWGljS25nVXNZdVR6TzlJcUxYQjE4SGl6Yi8vUXdjaFRPM0ZGb1F3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMDE3CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV9hbWQ2NC5BcHBJbWFnZQpZMy91T2ZPUHhpTFMzTFpXODJrbnZicC92Q3JVMVNEU0JUeGljaG9BNWd1SVA5cDc3am4wUDhpeXVGMzlacVo0Q3RjcFBSSDZleEtUZXlIejVwMDlDdz09Cg==",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkQwQ0VPQ0hoT2F3ZG5mSTRlN1lCQzVuQ0swVTNjdG5XL2xJMDUwanBnZFhRM2ZMNXc1SVRZaWUyQzBBc2pQdFZmNWFWL0EreW5lcDBoMDdHRnN4UXdJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3MzMyCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl9hbWQ2NC5BcHBJbWFnZQpuV29YY3lZVzhvY05CNnhBQ2dDSklJMm9YSERGTmM0Z1pWUTdXUFR0dEpMd1JyeXEyUzluRTI4SzQzQmtMc0ZLT25Sa0JVRUxBVjFqVkFaNEttTVpDUT09Cg==",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_amd64.AppImage"
     },
     "windows-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkJ1YnRCcDM2SzgwQUpIdG03TTQxODRLUTdSQzhCQVF4elR2NlRWM0MrUXhkRDltcXdRRGtMNE9sZmhLK0F2NE9VL0VSbnNkTjdiMVlmT1ZBUkx0c2d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMDQwCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV9hcm02NC1zZXR1cC5leGUKR2lSaDJLWDI5WFhVZkRLeFMrSFNZdVA5R1kyLzEwWHJmV21DdjdRTzV3ZmlYM1d2T1l1Nkl1dmxSMm5IQVJrRTJiVzBZQ25uL25Jdk1LYmVtdXZsRFE9PQo=",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_arm64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkNrVHZaTlNwcmZ6V013RjZSekVqTCtnR1RQMFM2aExIbk9XcytwZnJLN2t4WTJtU01OeGZoalBIOUN0U0ZMVGFtUTQ4RmVTQXJMWnI4MDd0SFB2L3dRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3NDU3CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl9hcm02NC1zZXR1cC5leGUKTnY5Y2FKMmxyeUlGVENBWWs5UXFlOGhsMy80NWlLMHd5bHJPdmZ5dHB5VWlUK3hBeUVTZWVNakduSm0rblRJbWNqWnkrVzFxV1l0cVVJcU5wNWd2QlE9PQo=",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_arm64-setup.exe"
     },
     "windows-aarch64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkJ1YnRCcDM2SzgwQUpIdG03TTQxODRLUTdSQzhCQVF4elR2NlRWM0MrUXhkRDltcXdRRGtMNE9sZmhLK0F2NE9VL0VSbnNkTjdiMVlmT1ZBUkx0c2d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMDQwCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV9hcm02NC1zZXR1cC5leGUKR2lSaDJLWDI5WFhVZkRLeFMrSFNZdVA5R1kyLzEwWHJmV21DdjdRTzV3ZmlYM1d2T1l1Nkl1dmxSMm5IQVJrRTJiVzBZQ25uL25Jdk1LYmVtdXZsRFE9PQo=",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_arm64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TkNrVHZaTlNwcmZ6V013RjZSekVqTCtnR1RQMFM2aExIbk9XcytwZnJLN2t4WTJtU01OeGZoalBIOUN0U0ZMVGFtUTQ4RmVTQXJMWnI4MDd0SFB2L3dRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3NDU3CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl9hcm02NC1zZXR1cC5leGUKTnY5Y2FKMmxyeUlGVENBWWs5UXFlOGhsMy80NWlLMHd5bHJPdmZ5dHB5VWlUK3hBeUVTZWVNakduSm0rblRJbWNqWnkrVzFxV1l0cVVJcU5wNWd2QlE9PQo=",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_arm64-setup.exe"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TlB4dy9oVzR4b0ZBYW5qMkFPL3ZSNGduY0Nid0RFZHNWakZ3eWxCNWZSVVlidmlvaW1La3dIblcxVzhndDVoWU53TEFlL2ZLR3dITVVvalpRcDRiTUFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMDYwCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV94NjQtc2V0dXAuZXhlCnJFYWlQaWxTc0MraEhzRmk1UWppQzlmVnFWa1lvenFIRUxHVHIzeUIyUzBUN3I1aWFmVFpWS0VTUXh0OHl5V3FxS3h2Ullld2JUN2E5UldaN3Q2NEFBPT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92Tkk4aHlGaEl3Tmo3dkRMQk02QmFEblErNlEzTENTOVptWTJtU0MzTy9pRk1UZDN6em1iRDd4Z2NIMnJzZFFmcVdScEUwakg5eEJ5M2pBWlhhZHZ6ZEFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3NDI5CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl94NjQtc2V0dXAuZXhlCm5NbXB2czErdUJ4bXBqbHFLZExFb0NHWWRjRThxUkZyTjY4RldPVzBJQzNxUjlrdWMvSUJxaERGdmc0bVk4c2lReEtmZnFNbzhMOFZnVThhblN2UkRBPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92TlB4dy9oVzR4b0ZBYW5qMkFPL3ZSNGduY0Nid0RFZHNWakZ3eWxCNWZSVVlidmlvaW1La3dIblcxVzhndDVoWU53TEFlL2ZLR3dITVVvalpRcDRiTUFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjUxMDYwCWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMV94NjQtc2V0dXAuZXhlCnJFYWlQaWxTc0MraEhzRmk1UWppQzlmVnFWa1lvenFIRUxHVHIzeUIyUzBUN3I1aWFmVFpWS0VTUXh0OHl5V3FxS3h2Ullld2JUN2E5UldaN3Q2NEFBPT0K",
-      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.1/Vibe.Bar.Desktop_0.1.0-dev.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTQVYyV2JkRS92Tkk4aHlGaEl3Tmo3dkRMQk02QmFEblErNlEzTENTOVptWTJtU0MzTy9pRk1UZDN6em1iRDd4Z2NIMnJzZFFmcVdScEUwakg5eEJ5M2pBWlhhZHZ6ZEFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY3NDI5CWZpbGU6VmliZSBCYXIgRGVza3RvcF8wLjEuMC1kZXYuMl94NjQtc2V0dXAuZXhlCm5NbXB2czErdUJ4bXBqbHFLZExFb0NHWWRjRThxUkZyTjY4RldPVzBJQzNxUjlrdWMvSUJxaERGdmc0bVk4c2lReEtmZnFNbzhMOFZnVThhblN2UkRBPT0K",
+      "url": "https://github.com/AstroQore/vibe-bar-desktop/releases/download/v0.1.0-dev.2/Vibe.Bar.Desktop_0.1.0-dev.2_x64-setup.exe"
     }
   }
 }
