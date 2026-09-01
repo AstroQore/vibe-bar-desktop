@@ -39,9 +39,11 @@ jobs:
             target: x86_64-unknown-linux-gnu
           # An arm runner rather than a cross build — webkit2gtk and
           # appindicator make cross-compiling more work than renting the
-          # machine.
+          # machine. 22.04 here as well: an AppImage bundles the application,
+          # not the C library, so building against a newer glibc would hand
+          # every arm64 user still on 22.04 a binary that does not start.
           - label: linux-aarch64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
