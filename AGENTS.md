@@ -35,6 +35,19 @@ must work fully on a machine that has never had it installed.
    [docs/contracts/settings-write-v1.md](docs/contracts/settings-write-v1.md)
    and it is shared with the native app — a change to it is a change in both
    repositories.
+
+   The boundary is about Vibe Bar's shared stores. One system file sits
+   outside it by name: the Control Center menu-bar allow-list
+   (`~/Library/Group Containers/group.com.apple.controlcenter/.../group.com.apple.controlcenter.plist`),
+   which the menu bar health repair rewrites — only when the user clicks
+   Repair or has opted in through the shared `menuBarAutoRepairEnabled`,
+   only through the bundled `fix_menu_bar_allowlist.py` (the native app's
+   script with this bundle id), which backs the file up beside itself,
+   removes only stale references to this bundle id from other apps'
+   `menuItemLocations`, writes atomically, and restarts Control Center. It
+   never touches another app's show/hide state and never runs from an audit
+   alone. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), "The menu bar
+   health watchdog".
 2. **Never repair, migrate, prune, or rebuild a shared store.** Including the
    session index. An unreadable or unknown-version store degrades to "not
    available" with an explanation — it is another client's data.
