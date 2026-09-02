@@ -68,6 +68,8 @@ pub fn run() {
             commands::cost_view,
             commands::refresh_cost,
             commands::usage_stats,
+            commands::session_listing,
+            commands::open_in_terminal,
             commands::refresh_quota,
             commands::hide_mini,
             commands::toggle_mini,

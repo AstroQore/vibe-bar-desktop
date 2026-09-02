@@ -45,7 +45,10 @@
   color-scheme: dark;
 }
 .wb * { box-sizing: border-box; }
-.wb button { font: inherit; color: inherit; cursor: default; }
+/* A reset that only outranks the global `button` rule by order, so every
+   workbench control starts bare and its own
+   class paints the chrome. */
+:where(.wb) button { font: inherit; color: inherit; cursor: default; border: 0; padding: 0; background: transparent; }
 
 /* ── Frame ─────────────────────────────────────────────────────────── */
 .wb { display: flex; flex-direction: row; height: 100vh; width: 100vw; overflow: hidden; user-select: none; }

@@ -25,7 +25,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::OpenOptions;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::CoreError;
 use crate::paths::DataRoot;
@@ -50,6 +50,9 @@ pub struct SessionRow {
     pub provider: String,
     pub harness: String,
     pub session_id: String,
+    /// The model the index recorded for the session, when it knows one.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_variant: Option<String>,
     pub title: Option<String>,
@@ -72,9 +75,35 @@ pub struct SessionRow {
     pub excerpt: Option<String>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessCount {
+    pub harness: String,
+    pub provider: String,
+    pub count: u64,
+}
+
+/// One request from the Sessions page: search text (empty lists), provider
+/// and harness filters, a lower time bound, and the page.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SessionListingQuery {
+    pub query: Option<String>,
+    /// Raw provider ids (`codex`, `claude`, ...); unknown ids are ignored.
+    pub providers: Option<Vec<String>>,
+    pub harnesses: Option<Vec<String>>,
+    pub since: Option<i64>,
+    pub offset: usize,
+    pub limit: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionListing {
+    /// Sessions per harness across the whole store (bounded), for the
+    /// Harness menu's counts. Independent of the query's own filters.
+    #[serde(default)]
+    pub harness_counts: Vec<HarnessCount>,
     pub source: SessionSource,
     pub rows: Vec<SessionRow>,
     /// Total sessions the index holds; absent in scanned mode.
@@ -112,6 +141,49 @@ impl SessionsService {
         }
     }
 
+    /// The Sessions page's listing: search when there is text, otherwise the
+    /// filtered page, plus per-harness counts for the filter menu.
+    pub fn listing(&self, query: &SessionListingQuery) -> SessionListing {
+        let providers: Option<Vec<SessionProvider>> = query.providers.as_ref().map(|list| {
+            list.iter()
+                .filter_map(|raw| SessionProvider::from_raw(raw))
+                .collect()
+        });
+        let limit = query.limit.unwrap_or(250).clamp(1, 500);
+        let mut listing = match query.query.as_deref().map(str::trim).filter(|text| !text.is_empty()) {
+            Some(text) => self.search_filtered(text, providers.as_deref(), query.harnesses.as_deref(), limit),
+            None => self.list_filtered(
+                providers.as_deref(),
+                query.harnesses.as_deref(),
+                query.since,
+                query.offset,
+                limit,
+            ),
+        };
+        listing.harness_counts = self.harness_counts(query.since);
+        listing
+    }
+
+    /// Sessions per harness within the time bound, over the most recent
+    /// 500 — enough for the menu, bounded so the page never scans a store
+    /// twice.
+    fn harness_counts(&self, since: Option<i64>) -> Vec<HarnessCount> {
+        let all = self.list_filtered(None, None, since, 0, 500);
+        let mut counts: Vec<HarnessCount> = Vec::new();
+        for row in all.rows {
+            match counts.iter_mut().find(|c| c.harness == row.harness) {
+                Some(existing) => existing.count += 1,
+                None => counts.push(HarnessCount {
+                    harness: row.harness.clone(),
+                    provider: row.provider.clone(),
+                    count: 1,
+                }),
+            }
+        }
+        counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.harness.cmp(&b.harness)));
+        counts
+    }
+
     pub fn list(&self, limit: usize) -> SessionListing {
         self.list_filtered(None, None, None, 0, limit)
     }
@@ -146,6 +218,7 @@ impl SessionsService {
                 self.authorize_rows(&mut rows);
                 let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
+                    harness_counts: Vec::new(),
                     source: SessionSource::Indexed,
                     rows,
                     indexed_total,
@@ -199,6 +272,7 @@ impl SessionsService {
                 self.authorize_rows(&mut rows);
                 let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
+                    harness_counts: Vec::new(),
                     source: SessionSource::Indexed,
                     rows,
                     indexed_total,
@@ -234,6 +308,7 @@ impl SessionsService {
                 // searches evict references still visible in the UI.
                 self.authorize_rows(&mut rows);
                 SessionListing {
+                    harness_counts: Vec::new(),
                     source: SessionSource::Scanned,
                     rows,
                     indexed_total: None,
@@ -325,6 +400,7 @@ impl SessionsService {
         let mut rows: Vec<_> = rows.into_iter().skip(offset).take(limit).collect();
         self.authorize_rows(&mut rows);
         SessionListing {
+            harness_counts: Vec::new(),
             source: SessionSource::Scanned,
             rows,
             indexed_total: None,
@@ -574,6 +650,7 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
             .unwrap_or_else(|| session.provider.default_harness().to_string()),
         session_id: session.session_id,
         provider_variant: session.provider_variant,
+        model: session.model,
         title: session.title,
         project_dir: session.project_dir,
         last_active_at: session.last_active_at.or(session.created_at),
@@ -605,6 +682,7 @@ fn scanned_row(session: DiscoveredSession) -> SessionRow {
         harness,
         session_id: session.session_id,
         provider_variant: session.provider_variant,
+        model: None,
         title: session.title,
         project_dir: session.project_dir,
         last_active_at: Some(session.modified_at),
@@ -1002,6 +1080,7 @@ mod tests {
             row_id: None,
             provider: SessionProvider::Codex.raw_value().to_string(),
             harness: "Codex".to_string(),
+            model: None,
             session_id: "new-session".to_string(),
             provider_variant: None,
             title: None,

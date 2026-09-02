@@ -138,6 +138,8 @@ export interface SessionRow {
   harness: string;
   sessionId: string;
   providerVariant?: string;
+  /** The model the index recorded for the session, when it knows one. */
+  model?: string;
   title?: string;
   projectDir?: string;
   lastActiveAt?: number;
@@ -148,7 +150,24 @@ export interface SessionRow {
   excerpt?: string;
 }
 
+export interface HarnessCount {
+  harness: string;
+  provider: string;
+  count: number;
+}
+export interface SessionListingQuery {
+  query?: string;
+  /** Raw provider ids (`codex`, `claude`, ...); unset means every provider. */
+  providers?: string[];
+  harnesses?: string[];
+  since?: number;
+  offset?: number;
+  limit?: number;
+}
 export interface SessionListing {
+  /** Sessions per harness across the store (bounded), independent of the
+   *  query's own filters — the Harness menu's counts. */
+  harnessCounts: HarnessCount[];
   source: SessionSource;
   rows: SessionRow[];
   indexedTotal?: number;
@@ -408,6 +427,9 @@ export const api = {
   costView: () => invoke<CostView>("cost_view"),
   refreshCost: () => invoke<CostView>("refresh_cost"),
   usageStats: (query: UsageStatsQuery) => invoke<UsageStatsView>("usage_stats", { query }),
+  sessionListing: (query: SessionListingQuery) => invoke<SessionListing>("session_listing", { query }),
+  openInTerminal: (command: string, terminal: "terminal" | "iterm2") =>
+    invoke<void>("open_in_terminal", { command, terminal }),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),

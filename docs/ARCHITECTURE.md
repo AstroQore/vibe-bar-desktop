@@ -200,3 +200,30 @@ formatting that matches `UsageFormatting`, the chart window floor of two
 buckets — and `fixture.ts` renders the page at `/preview.html?surface=usage`
 without Tauri. Project attribution is not available in this client, so
 the Project Mix card says so instead of drawing an empty ring.
+
+### Sessions
+
+The page is the native `SessionManagerPage`: a filters toolbar (search,
+scope, folders, index status, the All chip, company/harness/when/sort/
+options menus, delete controls), a resizable split of the session list
+(300–620 pt) and the transcript (≥ 420 pt), 13 pt row cards, and message
+cards with the native role bar, timestamp, copy, and the 3,000-character
+collapse. One core call, `session_listing`, takes the search text,
+provider and harness filters, a time bound, and an offset page, and
+returns the listing with per-harness counts for the menu. Folder
+filters, sort order, and project grouping apply to the loaded rows in
+`src/workbench/sessions/model.ts`, which also owns the 80-message
+transcript window, find and highlight, and the prompt outline.
+
+Three things this client says plainly instead of pretending:
+
+- Search scope. The shared index searches every scope it holds; the
+  Scope menu keeps the native vocabulary and says that per-scope
+  narrowing waits on a role-aware index.
+- Deleting session logs. The store is the native app's to write
+  (`AGENTS.md` § storage boundary), so Select/Delete are present but
+  refuse with the reason rather than reaching into `~/.codex` or
+  `~/.claude`.
+- Opening a terminal. `open_in_terminal` runs only a line shaped like a
+  resume command — one known CLI, plain arguments, no shell operators —
+  through `osascript` on macOS; elsewhere it says to copy the command.

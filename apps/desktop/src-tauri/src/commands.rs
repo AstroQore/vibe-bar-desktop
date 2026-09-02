@@ -1,5 +1,6 @@
 //! IPC surface for the web UI.
 
+use vibebar_desktop_core::sessions::SessionListingQuery;
 use vibebar_desktop_core::usage_stats::{UsageStatsQuery, UsageStatsView};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -298,6 +299,63 @@ pub fn session_search(
         .search(&query, limit.unwrap_or(50).clamp(1, 200))
 }
 
+/// The Sessions page's listing: search text, provider/harness filters, a
+/// time bound, and an offset page, with per-harness counts for the menu.
+#[tauri::command]
+pub fn session_listing(state: State<'_, AppState>, query: SessionListingQuery) -> SessionListing {
+    state.sessions().listing(&query)
+}
+
+/// Run a resume command in the user's terminal. Only a line shaped like a
+/// resume command is accepted — one CLI name and its arguments, no shell
+/// operators — so the webview cannot turn this into a general shell.
+#[tauri::command]
+pub fn open_in_terminal(command: String, terminal: String) -> Result<(), String> {
+    if !is_resume_command(&command) {
+        return Err("Only a session resume command can be opened in a terminal.".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let escaped = command.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = if terminal == "iterm2" {
+            format!(
+                "tell application \"iTerm\"\nactivate\ncreate window with default profile\ntell current session of current window to write text \"{escaped}\"\nend tell"
+            )
+        } else {
+            format!("tell application \"Terminal\"\nactivate\ndo script \"{escaped}\"\nend tell")
+        };
+        let status = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .status()
+            .map_err(|error| error.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("osascript exited with {status}"))
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = terminal;
+        Err("Opening a terminal is only wired up on macOS in this release; copy the command instead.".to_string())
+    }
+}
+
+/// A resume command is one known CLI followed by plain arguments: no
+/// newlines, no shell operators, no substitution.
+pub(crate) fn is_resume_command(command: &str) -> bool {
+    const CLIS: [&str; 6] = ["codex", "claude", "gemini", "grok", "cursor", "cursor-agent"];
+    let trimmed = command.trim();
+    let Some(first) = trimmed.split_whitespace().next() else {
+        return false;
+    };
+    let cli = first.rsplit('/').next().unwrap_or(first);
+    CLIS.contains(&cli)
+        && !trimmed.contains(['\n', '\r', ';', '|', '&', '`', '$', '<', '>'])
+        && !trimmed.contains("&&")
+}
+
 #[tauri::command]
 pub fn session_transcript(
     state: State<'_, AppState>,
@@ -371,5 +429,22 @@ mod tests {
         let refusal = update_endpoint(&DataRoot::at(std::env::temp_dir().join("vibebar-demo")))
             .expect_err("a demo root must not produce an endpoint to fetch");
         assert!(refusal.contains("demo"), "{refusal}");
+    }
+}
+
+#[cfg(test)]
+mod resume_guard_tests {
+    use super::is_resume_command;
+
+    #[test]
+    fn accepts_plain_resume_lines_and_refuses_shell_operators() {
+        assert!(is_resume_command("codex resume 019a1b2c-3d4e-7f80-9abc-def012345678"));
+        assert!(is_resume_command("claude --resume 'abc-123'"));
+        assert!(is_resume_command("/usr/local/bin/gemini --resume 7"));
+        assert!(!is_resume_command("rm -rf ~"));
+        assert!(!is_resume_command("codex resume x; rm -rf ~"));
+        assert!(!is_resume_command("codex resume $(whoami)"));
+        assert!(!is_resume_command("codex resume x && curl evil"));
+        assert!(!is_resume_command(""));
     }
 }

@@ -5,7 +5,7 @@ import { api, formatRelative } from "./api";
 import { About } from "./components/About";
 import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { Resets } from "./components/Resets";
-import { Sessions } from "./components/Sessions";
+import { SessionsPage } from "./workbench/sessions/SessionsPage";
 import { Settings } from "./components/Settings";
 import { Skills } from "./components/Skills";
 import { WorkbenchRoot, useAppearance } from "./workbench/WorkbenchRoot";
@@ -95,7 +95,7 @@ export function App() {
 
   const pages = {
     usageStats: <UsageStatsPage refreshToken={refreshToken} />,
-    sessionManager: <div style={{ padding: "0 22px 22px" }}><Sessions /></div>,
+    sessionManager: <SessionsPage refreshToken={refreshToken} />,
     resets: (
       <div style={{ padding: "0 22px 22px" }}>
         {view ? <Resets view={view} settings={presentation} /> : <p className="wb-empty">Loading quota…</p>}

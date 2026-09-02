@@ -18,6 +18,8 @@ import { MiniQuotaBody, arrange } from "./components/MiniQuota";
 import { PopoverRoot } from "./popover/PopoverRoot";
 import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { FIXTURE_USAGE } from "./workbench/usage/fixture";
+import { SessionsPage } from "./workbench/sessions/SessionsPage";
+import { FIXTURE_SESSIONS, FIXTURE_TRANSCRIPT } from "./workbench/sessions/fixture";
 import "./workbench/porcelain.css";
 import { FIXTURE_COST, FIXTURE_NOW, FIXTURE_SETTINGS, FIXTURE_STATUS, FIXTURE_VIEW } from "./popover/fixture";
 import "./popover/popover.css";
@@ -111,10 +113,18 @@ function UsagePreview() {
     </div>
   );
 }
+function SessionsPreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <SessionsPage fixture={{ listing: FIXTURE_SESSIONS, transcript: FIXTURE_TRANSCRIPT }} now={FIXTURE_NOW} />
+    </div>
+  );
+}
 const surface = new URLSearchParams(location.search).get("surface");
 createRoot(document.getElementById("root")!).render(
   <>
-    {surface === "usage" ? <UsagePreview /> : <PopoverPreview />}
+    {surface === "usage" ? <UsagePreview /> : surface === "sessions" ? <SessionsPreview /> : <PopoverPreview />}
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
     {[
       "regular",
