@@ -342,18 +342,51 @@ pub fn open_in_terminal(command: String, terminal: String) -> Result<(), String>
     }
 }
 
-/// A resume command is one known CLI followed by plain arguments: no
-/// newlines, no shell operators, no substitution.
+/// A resume command is one known CLI followed by plain arguments — no
+/// newlines, no shell operators, no substitution — optionally preceded by
+/// the `cd '<dir>' && ` the core generates for project sessions, where the
+/// directory is a single POSIX-quoted word.
 pub(crate) fn is_resume_command(command: &str) -> bool {
     const CLIS: [&str; 6] = ["codex", "claude", "gemini", "grok", "cursor", "cursor-agent"];
     let trimmed = command.trim();
-    let Some(first) = trimmed.split_whitespace().next() else {
+    let rest = match strip_cd_prefix(trimmed) {
+        Some(Some(rest)) => rest,
+        Some(None) => return false,
+        None => trimmed,
+    };
+    let Some(first) = rest.split_whitespace().next() else {
         return false;
     };
     let cli = first.rsplit('/').next().unwrap_or(first);
-    CLIS.contains(&cli)
-        && !trimmed.contains(['\n', '\r', ';', '|', '&', '`', '$', '<', '>'])
-        && !trimmed.contains("&&")
+    CLIS.contains(&cli) && is_plain_arguments(rest)
+}
+
+/// `Some(Some(rest))` when the line starts with a well-formed `cd '…' && `,
+/// `Some(None)` when it starts with `cd` but the directory is not one quoted
+/// word, `None` when there is no `cd` prefix at all.
+fn strip_cd_prefix(line: &str) -> Option<Option<&str>> {
+    let after_cd = line.strip_prefix("cd ")?;
+    let quoted = after_cd.strip_prefix('\'')?;
+    // The quoted word ends at the first `'` that is not part of the `'\''`
+    // escape the quoter emits for a literal quote.
+    let mut index = 0;
+    let bytes = quoted.as_bytes();
+    while index < bytes.len() {
+        if bytes[index] == b'\'' {
+            if quoted[index + 1..].starts_with("\\''") {
+                index += 4;
+                continue;
+            }
+            let rest = &quoted[index + 1..];
+            return Some(rest.strip_prefix(" && "));
+        }
+        index += 1;
+    }
+    Some(None)
+}
+
+fn is_plain_arguments(rest: &str) -> bool {
+    !rest.contains(['\n', '\r', ';', '|', '&', '`', '$', '<', '>'])
 }
 
 /// Reveal a skill directory in the file manager. Only a path inside the
@@ -501,6 +534,11 @@ mod resume_guard_tests {
         assert!(is_resume_command("codex resume 019a1b2c-3d4e-7f80-9abc-def012345678"));
         assert!(is_resume_command("claude --resume 'abc-123'"));
         assert!(is_resume_command("/usr/local/bin/gemini --resume 7"));
+        assert!(is_resume_command("cd '/Users/example/Coding/app' && codex resume 019a1b2c"));
+        assert!(is_resume_command("cd '/Users/example/it'\\''s here' && claude --resume abc"));
+        assert!(!is_resume_command("cd /Users/example/app && codex resume x"), "an unquoted directory is not the generated shape");
+        assert!(!is_resume_command("cd '/tmp' && rm -rf ~"));
+        assert!(!is_resume_command("cd '/tmp'; codex resume x"));
         assert!(!is_resume_command("rm -rf ~"));
         assert!(!is_resume_command("codex resume x; rm -rf ~"));
         assert!(!is_resume_command("codex resume $(whoami)"));

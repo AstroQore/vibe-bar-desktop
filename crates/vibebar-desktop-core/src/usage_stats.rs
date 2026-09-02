@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::cost::{priced_cost_micros, UsageEvent};
@@ -16,6 +16,9 @@ pub const MAX_TREND_BUCKETS: usize = 1_200;
 const DEFAULT_REQUEST_LIMIT: usize = 200;
 const MAX_REQUEST_LIMIT: usize = 2_000;
 const FALLBACK_RANGE_SECONDS: f64 = 30.0 * 86_400.0;
+/// Events stamped later than this past `now` are clock skew or corruption,
+/// not usage; the cost aggregation refuses them the same way.
+const FUTURE_TOLERANCE_SECONDS: f64 = 300.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,12 +65,14 @@ impl TrendBucket {
     /// The local-time start of the bucket holding `timestamp`.
     pub fn floor(self, timestamp: f64) -> Option<f64> {
         let local = local_time(timestamp)?;
+        if self == TrendBucket::Hour {
+            // Whole hours from the epoch in the local offset: aligned to the
+            // local clock and defined inside a DST gap too.
+            let offset = f64::from(local.offset().local_minus_utc());
+            return Some(((timestamp + offset) / 3_600.0).floor() * 3_600.0 - offset);
+        }
         let naive = match self {
-            TrendBucket::Hour => local
-                .naive_local()
-                .with_minute(0)?
-                .with_second(0)?
-                .with_nanosecond(0)?,
+            TrendBucket::Hour => unreachable!(),
             TrendBucket::Day => local.date_naive().and_time(NaiveTime::MIN),
             TrendBucket::Week => {
                 let date = local.date_naive();
@@ -78,15 +83,19 @@ impl TrendBucket {
         from_local_naive(naive)
     }
 
-    /// The start of the bucket after the one starting at `start`.
+    /// The start of the bucket after the one starting at `start`. Hours are
+    /// fixed spans, so they advance in absolute time and never land in a
+    /// DST gap; days and weeks advance by calendar date and, when local
+    /// midnight does not exist that day, take the first hour that does.
     pub fn next(self, start: f64) -> Option<f64> {
+        if self == TrendBucket::Hour {
+            return Some(start + 3_600.0);
+        }
         let naive = local_time(start)?.naive_local();
-        let next = match self {
-            TrendBucket::Hour => naive + Duration::hours(1),
-            TrendBucket::Day => (naive.date() + Duration::days(1)).and_time(NaiveTime::MIN),
-            TrendBucket::Week => (naive.date() + Duration::days(7)).and_time(NaiveTime::MIN),
-        };
-        from_local_naive(next)
+        let days = if self == TrendBucket::Day { 1 } else { 7 };
+        let date = naive.date() + Duration::days(days);
+        from_local_naive(date.and_time(NaiveTime::MIN))
+            .or_else(|| from_local_naive(date.and_time(NaiveTime::MIN) + Duration::hours(1)))
     }
 }
 
@@ -392,7 +401,8 @@ pub(crate) fn query(events: &[UsageEvent], query: &UsageStatsQuery, now: f64, sc
         .as_ref()
         .map(|list| list.iter().map(String::as_str).collect());
 
-    let in_range = |event: &UsageEvent| event.date >= range_start && event.date < range_end;
+    let latest_accepted = (now + FUTURE_TOLERANCE_SECONDS).min(range_end);
+    let in_range = |event: &UsageEvent| event.date >= range_start && event.date < latest_accepted;
     let in_harness = |event: &UsageEvent| {
         harness_filter
             .as_ref()
@@ -749,6 +759,42 @@ mod tests {
         assert_eq!(view.trend.bucket, TrendBucket::Day);
         assert!(view.trend.points.len() >= 30 && view.trend.points.len() <= 32);
         assert!(view.chip_groups.is_empty());
+    }
+
+    #[test]
+    fn future_dated_events_are_refused_even_inside_a_future_range() {
+        let now = 1_756_800_000.0;
+        let events = vec![
+            event(ToolType::Codex, now - 10.0, "gpt-5", 100, 0, 0),
+            event(ToolType::Codex, now + 3_600.0, "gpt-5", 100, 0, 0),
+        ];
+        let view = query(
+            &events,
+            &UsageStatsQuery { range_start: Some(now - 86_400.0), range_end: Some(now + 86_400.0), ..Default::default() },
+            now,
+            now,
+        );
+        assert_eq!(view.summary.requests, 1, "an event an hour in the future is skew, not usage");
+        assert_eq!(view.total_requests, 1);
+    }
+
+    #[test]
+    fn hourly_buckets_stay_contiguous_across_a_year() {
+        // Every hour of a year, including any DST transitions in the local zone.
+        let start = TrendBucket::Hour.floor(1_735_689_600.0).unwrap();
+        let mut at = start;
+        for _ in 0..(366 * 24) {
+            let next = TrendBucket::Hour.next(at).unwrap();
+            assert_eq!(next - at, 3_600.0);
+            assert_eq!(TrendBucket::Hour.floor(at + 1.0).unwrap(), at, "floor is idempotent inside the bucket");
+            at = next;
+        }
+        let mut day = TrendBucket::Day.floor(1_735_689_600.0).unwrap();
+        for _ in 0..366 {
+            let next = TrendBucket::Day.next(day).unwrap();
+            assert!(next > day && next - day <= 25.0 * 3_600.0 && next - day >= 23.0 * 3_600.0);
+            day = next;
+        }
     }
 
     #[test]

@@ -151,7 +151,7 @@ impl SessionsService {
         });
         let limit = query.limit.unwrap_or(250).clamp(1, 500);
         let mut listing = match query.query.as_deref().map(str::trim).filter(|text| !text.is_empty()) {
-            Some(text) => self.search_filtered(text, providers.as_deref(), query.harnesses.as_deref(), limit),
+            Some(text) => self.search_filtered_since(text, providers.as_deref(), query.harnesses.as_deref(), query.since, limit),
             None => self.list_filtered(
                 providers.as_deref(),
                 query.harnesses.as_deref(),
@@ -243,9 +243,22 @@ impl SessionsService {
         harnesses: Option<&[String]>,
         limit: usize,
     ) -> SessionListing {
+        self.search_filtered_since(query, providers, harnesses, None, limit)
+    }
+
+    /// Search with the same lower time bound the list honours, so "Today"
+    /// with search text does not quietly widen to all time.
+    pub fn search_filtered_since(
+        &self,
+        query: &str,
+        providers: Option<&[SessionProvider]>,
+        harnesses: Option<&[String]>,
+        since: Option<i64>,
+        limit: usize,
+    ) -> SessionListing {
         let needle = query.trim();
         if needle.is_empty() {
-            return self.list_filtered(providers, harnesses, None, 0, limit);
+            return self.list_filtered(providers, harnesses, since, 0, limit);
         }
         match self.open_index() {
             IndexState::Ready(reader) => {
@@ -256,6 +269,7 @@ impl SessionsService {
                         &SessionListFilter {
                             providers: providers.map(<[SessionProvider]>::to_vec),
                             harnesses: harnesses.map(<[String]>::to_vec),
+                            since,
                             until: Some(until),
                             limit,
                             ..Default::default()
@@ -289,7 +303,7 @@ impl SessionsService {
                 let now = unix_now();
                 rows.retain(|row| {
                     has_plausible_timestamp(row, now)
-                        && matches_filters(row, providers, harnesses, None)
+                        && matches_filters(row, providers, harnesses, since)
                 });
                 let lowered = needle.to_lowercase();
                 rows.retain(|row| {
@@ -842,6 +856,22 @@ mod tests {
         });
         assert_eq!(searched.rows.len(), 1);
         assert!(searched.rows[0].session_id.ends_with("02"));
+    }
+
+    #[test]
+    fn listing_search_honours_the_time_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        write_codex_session_named(dir.path(), "019a1b2c-3d4e-7f80-9abc-def012345603", "Backfill the events table");
+        let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
+        let far_future = i64::MAX / 4;
+        let searched = service.listing(&SessionListingQuery {
+            query: Some("events table".to_string()),
+            since: Some(far_future),
+            ..Default::default()
+        });
+        assert!(searched.rows.is_empty(), "a bound after every session leaves the search empty");
+        let unbounded = service.listing(&SessionListingQuery { query: Some("events table".to_string()), ..Default::default() });
+        assert_eq!(unbounded.rows.len(), 1);
     }
 
     #[test]
