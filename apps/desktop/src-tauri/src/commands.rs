@@ -356,6 +356,25 @@ pub(crate) fn is_resume_command(command: &str) -> bool {
         && !trimmed.contains("&&")
 }
 
+/// Reveal a skill directory in the file manager. Only a path inside the
+/// shared skill library is accepted, so the webview cannot browse the disk.
+#[tauri::command]
+pub fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let library = vibebar_desktop_core::paths::home_directory().join(".agents/skills");
+    let candidate = std::path::Path::new(&path);
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|error| format!("{path}: {error}"))?;
+    let root = library.canonicalize().map_err(|error| error.to_string())?;
+    if !canonical.starts_with(&root) || canonical == root {
+        return Err("Only a skill inside ~/.agents/skills can be revealed.".to_string());
+    }
+    app.opener()
+        .reveal_item_in_dir(&canonical)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn session_transcript(
     state: State<'_, AppState>,

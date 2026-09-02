@@ -7,7 +7,7 @@ import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { ResetsPage } from "./workbench/resets/ResetsPage";
 import { SessionsPage } from "./workbench/sessions/SessionsPage";
 import { Settings } from "./components/Settings";
-import { Skills } from "./components/Skills";
+import { SkillsPage } from "./workbench/skills/SkillsPage";
 import { WorkbenchRoot, useAppearance } from "./workbench/WorkbenchRoot";
 import type { WorkbenchPageId } from "./workbench/pages";
 import "./workbench/porcelain.css";
@@ -97,7 +97,7 @@ export function App() {
     usageStats: <UsageStatsPage refreshToken={refreshToken} />,
     sessionManager: <SessionsPage refreshToken={refreshToken} />,
     resets: view ? <ResetsPage view={view} settings={presentation} /> : <p className="wb-empty" style={{ padding: 22 }}>Loading quota…</p>,
-    skillsManager: <div style={{ padding: "0 22px 22px" }}><Skills /></div>,
+    skillsManager: <SkillsPage refreshToken={refreshToken} dark={dark} />,
     settings: (
       <div style={{ padding: "0 22px 22px" }}>
         <Settings

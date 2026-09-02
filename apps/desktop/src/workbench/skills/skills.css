@@ -1,0 +1,54 @@
+/* Skills — the native SkillsManagerPage: toolbar card, per-app count
+   capsules, one row per skill with activation circles. */
+.sk-page { display: flex; flex-direction: column; gap: 14px; padding: 14px 22px 22px; overflow: auto; height: 100%; }
+.sk-toolbar { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; }
+.sk-toolbar-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.sk-search { width: 250px; max-width: 100%; }
+.sk-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 14px; font-size: 11.5px; font-weight: 600; color: var(--wb-text); background: var(--wb-field); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); white-space: nowrap; }
+.sk-btn:hover:not(:disabled) { background: var(--wb-hover); }
+.sk-btn:disabled { opacity: 0.55; }
+.sk-btn.prominent { background: var(--wb-accent); color: #fff; box-shadow: none; }
+.sk-apps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sk-app { --tint: var(--wb-accent); display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border-radius: 14px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--wb-text); background: color-mix(in srgb, var(--tint) 14%, transparent); box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--tint) 45%, transparent); }
+.sk-app.zero { background: color-mix(in srgb, var(--tint) 5%, transparent); box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--tint) 16%, transparent); color: var(--wb-secondary); }
+.sk-help { width: 24px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--wb-secondary); border-radius: 8px; }
+.sk-help:hover { background: var(--wb-hover); }
+.sk-count { margin-left: auto; font-size: 11px; color: var(--wb-tertiary); font-variant-numeric: tabular-nums; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+.sk-list { display: flex; flex-direction: column; padding: 4px 16px; }
+.sk-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 4px; border-radius: 10px; border-bottom: 0.5px solid var(--wb-hairline); }
+.sk-row:last-child { border-bottom: 0; }
+.sk-row:hover { background: var(--wb-hover); }
+.sk-details { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sk-name-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sk-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-badge { flex: none; height: 16px; padding: 0 6px; border-radius: 5px; font-size: 9.5px; font-weight: 600; display: inline-flex; align-items: center; color: var(--wb-secondary); background: var(--wb-field); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); white-space: nowrap; }
+.sk-badge.warn { color: #B4690E; background: rgba(255, 149, 0, 0.16); box-shadow: none; }
+.sk-badge.update { color: var(--wb-accent); background: color-mix(in srgb, var(--wb-accent) 14%, transparent); box-shadow: none; }
+.sk-desc { font-size: 11.5px; color: var(--wb-tertiary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sk-circles { flex: none; display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.sk-circle { --tint: var(--wb-accent); width: 25px; height: 25px; border-radius: 13px; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--tint) 5%, transparent); box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--tint) 20%, transparent); opacity: 0.62; position: relative; }
+.sk-circle.on { background: color-mix(in srgb, var(--tint) 18%, transparent); box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--tint) 60%, transparent); opacity: 1; }
+.sk-circle.coupled::after { content: ""; position: absolute; right: -1px; top: -1px; width: 8px; height: 8px; border-radius: 4px; background: var(--wb-card); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tint) 70%, transparent); }
+.sk-more { flex: none; width: 26px; height: 26px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--wb-secondary); margin-top: 1px; }
+.sk-more:hover { background: var(--wb-hover); color: var(--wb-text); }
+.sk-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 24px; text-align: center; color: var(--wb-secondary); }
+.sk-empty-title { font-size: 14px; font-weight: 600; color: var(--wb-text); }
+.sk-empty-detail { font-size: 12px; max-width: 520px; }
+.sk-empty-actions { display: flex; gap: 8px; margin-top: 6px; }
+.sk-warnings { font-size: 10.5px; color: var(--wb-tertiary); }
+.sk-modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.18); display: flex; align-items: center; justify-content: center; z-index: 40; }
+.sk-modal { width: 560px; max-width: calc(100vw - 48px); max-height: 80vh; overflow: auto; padding: 18px 20px; border-radius: 16px; background: var(--wb-card); box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24), inset 0 0 0 0.5px var(--wb-hairline); display: flex; flex-direction: column; gap: 12px; }
+.sk-modal h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.sk-modal h4 { margin: 6px 0 0; font-size: 12px; font-weight: 600; }
+.sk-modal p { margin: 0; font-size: 12px; color: var(--wb-secondary); line-height: 1.45; }
+.sk-wiring { display: flex; flex-direction: column; gap: 6px; }
+.sk-wiring-row { display: flex; gap: 8px; font-size: 11.5px; align-items: baseline; }
+.sk-wiring-row b { flex: 0 0 96px; font-weight: 600; }
+.sk-wiring-row span { color: var(--wb-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.sk-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sk-menu { position: absolute; right: 0; top: 100%; z-index: 30; min-width: 200px; padding: 5px; border-radius: 10px; background: var(--wb-overlay); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), inset 0 0 0 0.5px var(--wb-hairline); display: flex; flex-direction: column; gap: 1px; }
+.sk-menu button { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; font-size: 12px; text-align: left; color: var(--wb-text); }
+.sk-menu button:hover:not(:disabled) { background: var(--wb-accent); color: #fff; }
+.sk-menu button:disabled { opacity: 0.45; }
+.sk-menu button.danger { color: #D0342C; }
+.sk-menu-note { padding: 4px 8px; font-size: 10.5px; color: var(--wb-tertiary); max-width: 220px; }

@@ -247,3 +247,21 @@ The native card also draws the remaining-percent curve across the
 current cycle from the fill timeline's observations; this client's
 forecast store keeps cycle summaries, not samples, so the card omits the
 curve rather than sketching one.
+
+### Skills
+
+The page is the native `SkillsManagerPage`: the toolbar card with the
+filter field and the five actions, the per-harness count capsules with
+the wiring explainer, and one row per skill — name, source badge, health
+badge, description, and an activation circle per managed harness. The
+data is `skills_inventory`, the read-only scan of `~/.agents/skills` and
+the six projection roots. `src/workbench/skills/model.ts` derives what a
+circle can honestly say from that: a link means projected, a harness
+that scans the shared root sees every skill without a link, and a
+harness with its own per-skill switch is shown as projected with the
+switch unread — this client does not parse `config.toml` or
+`settings.json` to learn it.
+
+Install, update, import, backups, and discovery run in the native app;
+the controls are present and say so. `reveal_path` opens a skill in the
+file manager and accepts only a path inside `~/.agents/skills`.

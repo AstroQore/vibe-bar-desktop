@@ -70,6 +70,7 @@ pub fn run() {
             commands::usage_stats,
             commands::session_listing,
             commands::open_in_terminal,
+            commands::reveal_path,
             commands::refresh_quota,
             commands::hide_mini,
             commands::toggle_mini,

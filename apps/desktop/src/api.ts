@@ -438,6 +438,9 @@ export const api = {
   hideMini: () => invoke<void>("hide_mini"),
   appInfo: () => invoke<AppInfo>("app_info"),
   skillsInventory: () => invoke<SkillsInventoryView>("skills_inventory"),
+  /** Reveal a skill directory in the file manager; only paths inside the
+   *  shared skill library are accepted. */
+  revealPath: (path: string) => invoke<void>("reveal_path", { path }),
   presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
   statusSnapshot: () => invoke<ServiceStatusView>("status_snapshot"),
   refreshStatus: () => invoke<ServiceStatusView>("refresh_status"),
