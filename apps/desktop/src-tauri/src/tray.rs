@@ -18,6 +18,20 @@ use crate::state::AppState;
 
 const TRAY_ID: &str = "vibebar-desktop-tray";
 
+/// The bundle id Control Center tracks this app by.
+pub const BUNDLE_ID: &str = "com.astroqore.VibeBarDesktop";
+
+/// Drop the status item and build a fresh one — the native
+/// `reregisterMenuBarItem`, run after an allow-list repair.
+pub fn reregister(app: &AppHandle) -> tauri::Result<()> {
+    let _ = app.remove_tray_by_id(TRAY_ID);
+    let state = app.state::<AppState>();
+    install(app, &state)?;
+    let view = state.engine().cached_view();
+    update(app, &view);
+    Ok(())
+}
+
 pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Open Vibe Bar Desktop", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;

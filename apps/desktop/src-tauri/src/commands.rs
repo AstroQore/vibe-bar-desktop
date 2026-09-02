@@ -455,19 +455,42 @@ pub fn pricing_effective() -> Vec<vibebar_desktop_core::cost::EffectiveModelPric
     vibebar_desktop_core::cost::effective_model_prices()
 }
 
-/// Open a project link in the browser. Only https links to the hosts the
-/// settings pages link to are accepted.
+/// Open a project link in the browser, or the Full Disk Access pane. Only
+/// https links to github.com and that one deep link are accepted.
 #[tauri::command]
 pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
+    const FULL_DISK_ACCESS: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
     let allowed = ["https://github.com/", "https://www.github.com/"];
     let clean = !url.chars().any(|c| c.is_whitespace() || c.is_control());
-    if !clean || !allowed.iter().any(|prefix| url.starts_with(prefix)) {
-        return Err("Only https links to github.com can be opened from here.".to_string());
+    if !clean || !(url == FULL_DISK_ACCESS || allowed.iter().any(|prefix| url.starts_with(prefix))) {
+        return Err("Only https links to github.com and the Full Disk Access pane can be opened from here.".to_string());
     }
     app.opener()
         .open_url(&url, None::<&str>)
         .map_err(|error| error.to_string())
+}
+
+/// The last menu bar health report.
+#[tauri::command]
+pub fn menu_bar_health(app: AppHandle) -> crate::menu_bar_health::HealthReport {
+    app.state::<crate::menu_bar_health::Watchdog>().report()
+}
+
+/// Audit the Control Center allow-list now.
+#[tauri::command]
+pub async fn menu_bar_check_now(app: AppHandle) -> crate::menu_bar_health::HealthReport {
+    tauri::async_runtime::spawn_blocking(move || crate::menu_bar_health::audit(&app))
+        .await
+        .unwrap_or_default()
+}
+
+/// Run the narrow allow-list repair and re-register the tray.
+#[tauri::command]
+pub async fn menu_bar_repair(app: AppHandle) -> Result<crate::menu_bar_health::HealthReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::menu_bar_health::repair(&app))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

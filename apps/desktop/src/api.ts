@@ -448,6 +448,18 @@ export interface EffectiveModelPricingRow {
   cacheWriteAboveThresholdPerMillion?: number | null;
   fastMultiplier?: number | null;
 }
+/** The menu bar health watchdog's last report — the native
+ *  `MenuBarHealthReport`, for the part that does not need AppKit. */
+export interface MenuBarHealthReport {
+  state: "checking" | "healthy" | "blocked" | "unavailable";
+  message: string;
+  checkedAt: number;
+  needsFullDiskAccess: boolean;
+  alertsEnabled: boolean;
+  autoRepairEnabled: boolean;
+  repairCommand?: string | null;
+}
+export const MENU_BAR_HEALTH_EVENT = "vibebar://menu-bar-health";
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 export const SETTINGS_EVENT = "vibebar://settings-changed";
@@ -466,6 +478,11 @@ export const api = {
   /** Reveal a skill directory in the file manager; only paths inside the
    *  shared skill library are accepted. */
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  menuBarHealth: () => invoke<MenuBarHealthReport>("menu_bar_health"),
+  menuBarCheckNow: () => invoke<MenuBarHealthReport>("menu_bar_check_now"),
+  menuBarRepair: () => invoke<MenuBarHealthReport>("menu_bar_repair"),
+  onMenuBarHealth: (handler: (report: MenuBarHealthReport) => void) =>
+    listen<MenuBarHealthReport>(MENU_BAR_HEALTH_EVENT, (event) => handler(event.payload)).then((unlisten) => unlisten),
   autostartEnabled: () => invoke<boolean>("autostart_enabled"),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   pricingEffective: () => invoke<EffectiveModelPricingRow[]>("pricing_effective"),
