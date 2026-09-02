@@ -148,9 +148,32 @@ pub struct SharedSettings {
     pub unknown: BTreeMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuBarPresentation {
+    pub is_visible: bool,
+    pub show_title: bool,
+    pub layout: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiscProviderPresentation {
+    pub id: String,
+    pub tool: String,
+    pub name: String,
+    pub is_visible: bool,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationSettings {
+    /// The menu bar item as the shared settings describe it — read here,
+    /// edited in the native app.
+    pub menu_bar: MenuBarPresentation,
+    /// Misc provider instances the user configured, for the settings
+    /// sidebar. Credentials never travel with them.
+    pub misc_provider_instances: Vec<MiscProviderPresentation>,
     pub display_mode: String,
     pub refresh_interval_seconds: u64,
     pub menu_bar_color_basis: String,
@@ -363,6 +386,28 @@ impl SharedSettings {
             mini_strip_density: self.mini_strip_density().to_string(),
             update_channel: self.update_channel().as_settings_value().to_string(),
             popover_density: self.popover_density().to_string(),
+            menu_bar: {
+                let item = self.menu_bar_items.as_ref().and_then(|items| items.first());
+                MenuBarPresentation {
+                    is_visible: item.and_then(|item| item.is_visible).unwrap_or(true),
+                    show_title: self.menu_bar_shows_title(),
+                    layout: item
+                        .and_then(|item| item.layout.clone())
+                        .unwrap_or_else(|| "singleLine".to_string()),
+                }
+            },
+            misc_provider_instances: self
+                .misc_provider_instances
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|instance| MiscProviderPresentation {
+                    id: instance.id,
+                    tool: instance.tool.unwrap_or_default(),
+                    name: instance.name.unwrap_or_default(),
+                    is_visible: instance.is_visible.unwrap_or(true),
+                })
+                .collect(),
         }
     }
 

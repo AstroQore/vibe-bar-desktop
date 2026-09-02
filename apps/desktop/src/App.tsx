@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { AppInfo, CostView, PresentationSettings, QuotaView } from "./api";
 import { api, formatRelative } from "./api";
-import { About } from "./components/About";
 import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { ResetsPage } from "./workbench/resets/ResetsPage";
 import { SessionsPage } from "./workbench/sessions/SessionsPage";
-import { Settings } from "./components/Settings";
+import { SettingsPage } from "./workbench/settings/SettingsPage";
 import { SkillsPage } from "./workbench/skills/SkillsPage";
 import { WorkbenchRoot, useAppearance } from "./workbench/WorkbenchRoot";
 import type { WorkbenchPageId } from "./workbench/pages";
@@ -99,16 +98,19 @@ export function App() {
     resets: view ? <ResetsPage view={view} settings={presentation} /> : <p className="wb-empty" style={{ padding: 22 }}>Loading quota…</p>,
     skillsManager: <SkillsPage refreshToken={refreshToken} dark={dark} />,
     settings: (
-      <div style={{ padding: "0 22px 22px" }}>
-        <Settings
-          settings={presentation}
-          onSave={saveSettings}
-          replacedKeys={replacedSettings}
-          onDismissReplaced={() => setReplacedSettings(null)}
-          saveError={saveError}
-        />
-        <About info={info} view={view} />
-      </div>
+      <SettingsPage
+        settings={presentation}
+        info={info}
+        cost={cost}
+        view={view}
+        dark={dark}
+        onSave={saveSettings}
+        replacedKeys={replacedSettings}
+        saveError={saveError}
+        onDismissReplaced={() => setReplacedSettings(null)}
+        onRescanCost={() => api.refreshCost().then(setCost)}
+        onCheckConnections={() => api.refreshQuota().then(setView)}
+      />
     ),
   } as const;
   const status =

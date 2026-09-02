@@ -242,6 +242,10 @@ export interface PresentationSettings {
   /** "main" | "dev" — which release channel this machine follows. Shared with
    *  the native client, so choosing Dev in either window applies to both. */
   updateChannel: string;
+  /** The menu bar item as the shared settings describe it. */
+  menuBar: { isVisible: boolean; showTitle: boolean; layout: string };
+  /** Misc provider instances the user configured; credentials never ride along. */
+  miscProviderInstances: { id: string; tool: string; name: string; isVisible: boolean }[];
   /** "compact" | "regular" | "spacious" — the popover's density, native's
    *  `popoverDensity`. Missing on files written before it was read here. */
   popoverDensity?: string;
@@ -423,6 +427,24 @@ export interface ResetHistory {
   completed: QuotaCycle[];
   current: QuotaCycle | null;
 }
+/** One row of the effective price table, USD per million tokens. */
+export interface EffectiveModelPricingRow {
+  provider: string;
+  company: string;
+  subProvider: string;
+  model: string;
+  displayLabel?: string | null;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion?: number | null;
+  cacheWritePerMillion?: number | null;
+  thresholdTokens?: number | null;
+  inputAboveThresholdPerMillion?: number | null;
+  outputAboveThresholdPerMillion?: number | null;
+  cacheReadAboveThresholdPerMillion?: number | null;
+  cacheWriteAboveThresholdPerMillion?: number | null;
+  fastMultiplier?: number | null;
+}
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 export const SETTINGS_EVENT = "vibebar://settings-changed";
@@ -441,6 +463,11 @@ export const api = {
   /** Reveal a skill directory in the file manager; only paths inside the
    *  shared skill library are accepted. */
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  autostartEnabled: () => invoke<boolean>("autostart_enabled"),
+  setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
+  pricingEffective: () => invoke<EffectiveModelPricingRow[]>("pricing_effective"),
+  /** Open a project link; only https links to github.com are accepted. */
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
   presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
   statusSnapshot: () => invoke<ServiceStatusView>("status_snapshot"),
   refreshStatus: () => invoke<ServiceStatusView>("refresh_status"),

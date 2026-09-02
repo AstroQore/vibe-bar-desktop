@@ -375,6 +375,47 @@ pub fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// Whether the app is registered to launch at login.
+#[tauri::command]
+pub fn autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|error| error.to_string())
+}
+
+/// Register or unregister launch at login; returns what the system reports.
+#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|error| error.to_string())?;
+    } else {
+        manager.disable().map_err(|error| error.to_string())?;
+    }
+    manager.is_enabled().map_err(|error| error.to_string())
+}
+
+/// The effective per-model price table this build prices with.
+#[tauri::command]
+pub fn pricing_effective() -> Vec<vibebar_desktop_core::cost::EffectiveModelPricingRow> {
+    vibebar_desktop_core::cost::effective_model_prices()
+}
+
+/// Open a project link in the browser. Only https links to the hosts the
+/// settings pages link to are accepted.
+#[tauri::command]
+pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let allowed = ["https://github.com/", "https://www.github.com/"];
+    let clean = !url.chars().any(|c| c.is_whitespace() || c.is_control());
+    if !clean || !allowed.iter().any(|prefix| url.starts_with(prefix)) {
+        return Err("Only https links to github.com can be opened from here.".to_string());
+    }
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn session_transcript(
     state: State<'_, AppState>,

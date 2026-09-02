@@ -265,3 +265,26 @@ switch unread — this client does not parse `config.toml` or
 Install, update, import, backups, and discovery run in the native app;
 the controls are present and say so. `reveal_path` opens a skill in the
 file manager and accepts only a path inside `~/.agents/skills`.
+
+### Settings
+
+The page is the native `SettingsView`: a searchable 236 pt sidebar of
+grouped rows — Settings, Core Providers, Misc Providers — and titled
+section cards for the selected one, in the native order and with the
+native copy. What each control can do here follows the storage
+contract: the four keys `settings-write-v1.md` lets this client write
+(percent shown, refresh cadence, percent colour basis, update channel)
+are live; everything else the shared file holds — menu bar layout and
+fields, popover density, mini windows, provider visibility, cost data
+retention and privacy mode, misc provider instances — is shown read-only
+with the note that it is set in the native app. `PresentationSettings`
+now carries the menu bar item and the misc provider instances for that.
+
+Controls that are this client's own: launch at login through
+`tauri-plugin-autostart`, the update check and install, rescanning cost
+logs, the effective price table (`pricing_effective`), and connection
+health per core provider, which reports what a quota read can show —
+CLI, OAuth, and credential-file routes — and says cookie routes are not
+used here. Remote probes, the MCP socket, the menu bar health monitor,
+WebView login, and cookie import remain the native app's; each section
+says so rather than presenting a control that would do nothing.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { replacedSummary } from "./Settings";
-import { humanisedSettingName } from "../settingNames";
+import { replacedSummary } from "./model";
+import { humanisedSettingName } from "../../settingNames";
 
 /// The sentence the user reads when a choice they made here has been taken
 /// over. It has to match the native app's, which says the same thing about

@@ -24,6 +24,8 @@ import { ResetsPage } from "./workbench/resets/ResetsPage";
 import { FIXTURE_RESET_HISTORY } from "./workbench/resets/fixture";
 import { SkillsPage } from "./workbench/skills/SkillsPage";
 import { FIXTURE_SKILLS } from "./workbench/skills/fixture";
+import { SettingsPage } from "./workbench/settings/SettingsPage";
+import { FIXTURE_INFO, FIXTURE_PRICING } from "./workbench/settings/fixture";
 import "./workbench/porcelain.css";
 import { FIXTURE_COST, FIXTURE_NOW, FIXTURE_SETTINGS, FIXTURE_STATUS, FIXTURE_VIEW } from "./popover/fixture";
 import "./popover/popover.css";
@@ -141,10 +143,19 @@ function SkillsPreview() {
     </div>
   );
 }
+function SettingsPreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  const settings = { ...(FIXTURE_SETTINGS as never as Record<string, unknown>), menuBar: { isVisible: true, showTitle: false, layout: "twoRows" }, miscProviderInstances: [{ id: "copilot-1", tool: "copilot", name: "Copilot", isVisible: true }, { id: "opencodego-1", tool: "openCodeGo", name: "OpenCode Go", isVisible: true }] } as never;
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <SettingsPage settings={settings} info={FIXTURE_INFO} cost={FIXTURE_COST} view={FIXTURE_VIEW} dark={dark} onSave={() => undefined} replacedKeys={null} onDismissReplaced={() => undefined} onRescanCost={async () => undefined} onCheckConnections={async () => undefined} fixture pricingFixture={FIXTURE_PRICING} initialSection={(new URLSearchParams(location.search).get("section") ?? "system") as never} />
+    </div>
+  );
+}
 const surface = new URLSearchParams(location.search).get("surface");
 createRoot(document.getElementById("root")!).render(
   <>
-    {surface === "usage" ? <UsagePreview /> : surface === "sessions" ? <SessionsPreview /> : surface === "resets" ? <ResetsPreview /> : surface === "skills" ? <SkillsPreview /> : <PopoverPreview />}
+    {surface === "usage" ? <UsagePreview /> : surface === "sessions" ? <SessionsPreview /> : surface === "resets" ? <ResetsPreview /> : surface === "skills" ? <SkillsPreview /> : surface === "settings" ? <SettingsPreview /> : <PopoverPreview />}
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
     {[
       "regular",

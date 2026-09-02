@@ -48,6 +48,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         // Closing the one user-facing window leaves the tray refresh loop
         // alive. Explicit tray Quit still calls `app.exit(0)` and terminates
         // the process rather than requesting this window close.
@@ -71,6 +72,10 @@ pub fn run() {
             commands::session_listing,
             commands::open_in_terminal,
             commands::reveal_path,
+            commands::autostart_enabled,
+            commands::set_autostart,
+            commands::pricing_effective,
+            commands::open_url,
             commands::refresh_quota,
             commands::hide_mini,
             commands::toggle_mini,
