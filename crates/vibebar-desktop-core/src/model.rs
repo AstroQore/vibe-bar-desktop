@@ -26,7 +26,7 @@ pub struct ProviderHierarchy {
     pub tool: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum ToolType {
     #[serde(rename = "codex")]
     Codex,

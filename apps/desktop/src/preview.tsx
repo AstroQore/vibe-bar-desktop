@@ -16,6 +16,9 @@ import "./styles.css";
 import type { AccountQuota, PresentationSettings, QuotaView } from "./api";
 import { MiniQuotaBody, arrange } from "./components/MiniQuota";
 import { PopoverRoot } from "./popover/PopoverRoot";
+import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
+import { FIXTURE_USAGE } from "./workbench/usage/fixture";
+import "./workbench/porcelain.css";
 import { FIXTURE_COST, FIXTURE_NOW, FIXTURE_SETTINGS, FIXTURE_STATUS, FIXTURE_VIEW } from "./popover/fixture";
 import "./popover/popover.css";
 
@@ -100,9 +103,18 @@ function PopoverPreview() {
   );
 }
 
+function UsagePreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <UsageStatsPage fixture={FIXTURE_USAGE} now={FIXTURE_NOW} />
+    </div>
+  );
+}
+const surface = new URLSearchParams(location.search).get("surface");
 createRoot(document.getElementById("root")!).render(
   <>
-    <PopoverPreview />
+    {surface === "usage" ? <UsagePreview /> : <PopoverPreview />}
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
     {[
       "regular",

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AppInfo, CostView, PresentationSettings, QuotaView } from "./api";
 import { api, formatRelative } from "./api";
 import { About } from "./components/About";
-import { CostOverview } from "./components/CostOverview";
+import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { Resets } from "./components/Resets";
 import { Sessions } from "./components/Sessions";
 import { Settings } from "./components/Settings";
@@ -21,6 +21,7 @@ export function App() {
   const [presentation, setPresentation] = useState<PresentationSettings | null>(null);
   const [cost, setCost] = useState<CostView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
   /** Settings chosen here that the native app has since changed. Null the rest
    *  of the time, including for the far commoner case of it changing something
    *  nobody here touched — that is taken on silently, since nothing was lost. */
@@ -84,6 +85,7 @@ export function App() {
 
   const refresh = useCallback(() => {
     setRefreshing(true);
+    setRefreshToken((token) => token + 1);
     Promise.allSettled([
       api.refreshQuota().then(setView),
       api.presentationSettings().then(setPresentation),
@@ -92,11 +94,7 @@ export function App() {
   }, []);
 
   const pages = {
-    usageStats: (
-      <div style={{ padding: "0 22px 22px" }}>
-        <CostOverview cost={cost} />
-      </div>
-    ),
+    usageStats: <UsageStatsPage refreshToken={refreshToken} />,
     sessionManager: <div style={{ padding: "0 22px 22px" }}><Sessions /></div>,
     resets: (
       <div style={{ padding: "0 22px 22px" }}>

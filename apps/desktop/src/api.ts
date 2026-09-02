@@ -297,6 +297,96 @@ export interface CostView {
   privacySuppressed: boolean;
 }
 
+/** Usage Stats: the retained per-request ledger, filtered and folded by the
+ *  core. Harness labels are `ToolType` tool names ("Codex", "Claude Code"). */
+export type TrendBucket = "hour" | "day" | "week";
+export interface UsageStatsQuery {
+  rangeStart?: number;
+  rangeEnd?: number;
+  /** Unset = every harness; empty = none (the All chip is a switch). */
+  harnesses?: string[];
+  models?: string[];
+  granularity?: TrendBucket;
+  requestLimit?: number;
+}
+export interface UsageSummary {
+  requests: number;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number | null;
+  unpricedRequests: number;
+  cacheHitRate: number;
+}
+export interface TrendPoint {
+  bucketStart: number;
+  requests: number;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number;
+}
+export interface ProviderTrend {
+  harness: string;
+  company: string;
+  points: TrendPoint[];
+}
+export interface TrendSeries {
+  bucket: TrendBucket;
+  points: TrendPoint[];
+  providers: ProviderTrend[];
+}
+export interface GroupStat {
+  name: string;
+  company: string;
+  requests: number;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number;
+  unpricedRequests: number;
+}
+export interface RequestRow {
+  time: number;
+  harness: string;
+  company: string;
+  model: string;
+  tier: string | null;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number | null;
+  sessionId: string | null;
+}
+export interface ChipGroup {
+  company: string;
+  harnesses: string[];
+}
+export interface UsageStatsView {
+  ledgerAvailable: boolean;
+  privacySuppressed: boolean;
+  scannedAt: number;
+  rangeStart: number;
+  rangeEnd: number;
+  summary: UsageSummary;
+  trend: TrendSeries;
+  granularity: { hour: boolean; day: boolean; week: boolean };
+  harnesses: GroupStat[];
+  providers: GroupStat[];
+  models: GroupStat[];
+  requests: RequestRow[];
+  totalRequests: number;
+  availableModels: string[];
+  chipGroups: ChipGroup[];
+}
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 export const SETTINGS_EVENT = "vibebar://settings-changed";
@@ -317,6 +407,7 @@ export const api = {
   refreshStatus: () => invoke<ServiceStatusView>("refresh_status"),
   costView: () => invoke<CostView>("cost_view"),
   refreshCost: () => invoke<CostView>("refresh_cost"),
+  usageStats: (query: UsageStatsQuery) => invoke<UsageStatsView>("usage_stats", { query }),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),

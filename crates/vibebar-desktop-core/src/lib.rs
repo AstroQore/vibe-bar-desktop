@@ -28,6 +28,7 @@ pub mod sessions;
 pub mod shared;
 pub mod skills;
 pub mod status;
+pub mod usage_stats;
 pub mod tokens;
 
 pub use error::{CoreError, QuotaError};

@@ -1,5 +1,6 @@
 //! IPC surface for the web UI.
 
+use vibebar_desktop_core::usage_stats::{UsageStatsQuery, UsageStatsView};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
@@ -114,6 +115,19 @@ pub async fn refresh_cost(state: State<'_, AppState>) -> Result<CostView, String
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
+}
+
+/// The Usage Stats page: the retained ledger filtered and folded server-side,
+/// so the page never holds 400k events in the webview.
+#[tauri::command]
+pub async fn usage_stats(
+    state: State<'_, AppState>,
+    query: UsageStatsQuery,
+) -> Result<UsageStatsView, String> {
+    let engine = state.cost().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.usage_stats(&query))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
