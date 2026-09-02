@@ -810,6 +810,41 @@ mod tests {
     }
 
     #[test]
+    fn listing_carries_harness_counts_independent_of_its_own_filters() {
+        let dir = tempfile::tempdir().unwrap();
+        write_codex_session_named(dir.path(), "019a1b2c-3d4e-7f80-9abc-def012345601", "Backfill the events table");
+        write_codex_session_named(dir.path(), "019a1b2c-3d4e-7f80-9abc-def012345602", "Rename the brand tokens");
+        let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
+
+        let all = service.listing(&SessionListingQuery::default());
+        assert_eq!(all.rows.len(), 2);
+        assert_eq!(all.harness_counts.len(), 1);
+        assert_eq!(all.harness_counts[0].harness, "Codex");
+        assert_eq!(all.harness_counts[0].provider, "codex");
+        assert_eq!(all.harness_counts[0].count, 2);
+
+        let claude_only = service.listing(&SessionListingQuery {
+            harnesses: Some(vec!["Claude Code".to_string()]),
+            ..Default::default()
+        });
+        assert!(claude_only.rows.is_empty(), "the harness filter narrows the rows");
+        assert_eq!(claude_only.harness_counts[0].count, 2, "the menu still counts every harness");
+
+        let unknown_provider = service.listing(&SessionListingQuery {
+            providers: Some(vec!["not-a-provider".to_string()]),
+            ..Default::default()
+        });
+        assert!(unknown_provider.rows.is_empty(), "an unknown provider id selects nothing rather than everything");
+
+        let searched = service.listing(&SessionListingQuery {
+            query: Some("  brand tokens ".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(searched.rows.len(), 1);
+        assert!(searched.rows[0].session_id.ends_with("02"));
+    }
+
+    #[test]
     fn falls_back_to_scanning_when_no_index_exists() {
         let dir = tempfile::tempdir().unwrap();
         let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
