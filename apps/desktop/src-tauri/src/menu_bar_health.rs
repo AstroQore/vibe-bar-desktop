@@ -116,6 +116,39 @@ fn last_useful_line(text: &str) -> String {
         .to_string()
 }
 
+/// What one script run means, read from its output alone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Interpretation {
+    pub state: HealthState,
+    pub message: String,
+    pub needs_full_disk_access: bool,
+}
+
+pub(crate) fn interpret(succeeded: bool, text: &str) -> Interpretation {
+    if text.contains("Orphaned references to") {
+        let owner = text.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix('[')
+                .and_then(|rest| rest.split_once("] "))
+                .map(|(_, tail)| tail.split(" (").next().unwrap_or("").to_string())
+        });
+        return Interpretation {
+            state: HealthState::Blocked,
+            message: owner.map(|o| format!("Stale mapping: {o}")).unwrap_or_else(|| "Stale cross-app mapping found".into()),
+            needs_full_disk_access: false,
+        };
+    }
+    if succeeded {
+        return Interpretation { state: HealthState::Healthy, message: "Control Center allow-list is clean".into(), needs_full_disk_access: false };
+    }
+    let denied = text.contains("Permission denied");
+    Interpretation {
+        state: HealthState::Unavailable,
+        message: if denied { "Full Disk Access is required to inspect the allow-list".into() } else { last_useful_line(text) },
+        needs_full_disk_access: denied,
+    }
+}
+
 /// Audit the allow-list and remember the report; returns it.
 pub fn audit(app: &AppHandle) -> HealthReport {
     let state = app.state::<crate::state::AppState>();
@@ -134,25 +167,9 @@ pub fn audit(app: &AppHandle) -> HealthReport {
         HealthReport { state: HealthState::Unavailable, message: "Menu bar allow-lists are a macOS 26 feature".into(), ..base }
     } else {
         match run_script(app, false) {
-            Ok((_, text)) if text.contains("Orphaned references to") => {
-                let owner = text
-                    .lines()
-                    .find_map(|line| line.trim().strip_prefix('[').and_then(|rest| rest.split_once("] ")).map(|(_, tail)| tail.split(" (").next().unwrap_or("").to_string()));
-                HealthReport {
-                    state: HealthState::Blocked,
-                    message: owner.map(|o| format!("Stale mapping: {o}")).unwrap_or_else(|| "Stale cross-app mapping found".into()),
-                    ..base
-                }
-            }
-            Ok((true, _)) => HealthReport { state: HealthState::Healthy, message: "Control Center allow-list is clean".into(), ..base },
-            Ok((false, text)) => {
-                let denied = text.contains("Permission denied");
-                HealthReport {
-                    state: HealthState::Unavailable,
-                    message: if denied { "Full Disk Access is required to inspect the allow-list".into() } else { last_useful_line(&text) },
-                    needs_full_disk_access: denied,
-                    ..base
-                }
+            Ok((succeeded, text)) => {
+                let read = interpret(succeeded, &text);
+                HealthReport { state: read.state, message: read.message, needs_full_disk_access: read.needs_full_disk_access, ..base }
             }
             Err(error) => HealthReport { state: HealthState::Unavailable, message: error, ..base },
         }
@@ -222,4 +239,36 @@ pub fn spawn(app: AppHandle) {
             tokio::time::sleep(CADENCE).await;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{interpret, last_useful_line, HealthState};
+
+    #[test]
+    fn reads_the_script_output_the_way_the_native_controller_does() {
+        let polluted = "Orphaned references to com.astroqore.VibeBarDesktop found in:\n  [3] com.example.hidden (isAllowed=False, left unchanged)\n\nDry run — nothing written. Re-run with --apply to fix.\n";
+        let read = interpret(true, polluted);
+        assert_eq!(read.state, HealthState::Blocked);
+        assert_eq!(read.message, "Stale mapping: com.example.hidden");
+        assert!(!read.needs_full_disk_access);
+
+        let clean = interpret(true, "No orphaned references to com.astroqore.VibeBarDesktop — allow-list is clean.\n");
+        assert_eq!(clean.state, HealthState::Healthy);
+
+        let denied = interpret(false, "Permission denied reading Control Center's preferences.\nGrant Full Disk Access to this terminal, then run this again:\n");
+        assert_eq!(denied.state, HealthState::Unavailable);
+        assert!(denied.needs_full_disk_access);
+
+        let missing = interpret(false, "not found: /Users/example/Library/Group Containers/x.plist\nNothing to repair — this macOS version may not use an allow-list.\n");
+        assert_eq!(missing.state, HealthState::Unavailable);
+        assert_eq!(missing.message, "Nothing to repair — this macOS version may not use an allow-list.");
+        assert!(!missing.needs_full_disk_access);
+    }
+
+    #[test]
+    fn last_useful_line_skips_blank_tails() {
+        assert_eq!(last_useful_line("a\n  b  \n\n"), "b");
+        assert_eq!(last_useful_line(""), "");
+    }
 }

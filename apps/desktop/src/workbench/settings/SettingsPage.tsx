@@ -415,7 +415,7 @@ export function SettingsPage({
               <Check label="Automatically repair confirmed allow-list blocks" checked={report?.autoRepairEnabled ?? false} title={READ_ONLY_NOTE} />
             </div>
             <p className="st-note">Off by default. When enabled, three consecutive blocked probes run the narrow repair, restart Control Center, and re-register only this app's status item. Full Disk Access is required. {READ_ONLY_NOTE}</p>
-            <div className="st-route" style={{ fontSize: 12.5 }}>
+            <div className="st-status">
               <i style={{ background: dot }} />
               <span>{report ? stateCopy[report.state] : fixture ? stateCopy.unavailable : "Checking menu bar status…"}</span>
             </div>
