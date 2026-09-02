@@ -62,7 +62,12 @@ export function UsageStatsPage({ refreshToken = 0, fixture, now: fixedNow }: { r
     void load(false);
   }, [load]);
   useEffect(() => {
-    if (refreshToken > 0) void load(true);
+    // The header's refresh has just rescanned the ledger; re-query only, and
+    // count that scan so an auto tick does not scan again straight away.
+    if (refreshToken > 0) {
+      lastScan.current = Date.now() / 1000;
+      void load(false);
+    }
   }, [refreshToken, load]);
   useEffect(() => {
     if (filters.refreshInterval === 0 || fixture) return;

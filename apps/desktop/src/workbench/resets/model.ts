@@ -269,7 +269,7 @@ export function calendarEntries(
     for (const bucket of account.buckets) {
       const sub = subProviderFor(account.tool, bucket.id);
       const name = `${sub} · ${bucket.title}`;
-      for (const cycle of history[`${account.accountId}:${bucket.id}`] ?? []) {
+      for (const cycle of history[historyKey(account.accountId, bucket)] ?? []) {
         const at = cycle.windowEnd;
         if (!(at >= monthStart && at < monthEnd && at <= now)) continue;
         out.push({
@@ -296,6 +296,12 @@ export function calendarEntries(
     }
   }
   return out.sort((a, b) => a.at - b.at);
+}
+
+/** History is recorded under the account whose read produced the bucket,
+ *  which differs from the card's account on a merged card. */
+export function historyKey(accountId: string, bucket: Pick<QuotaBucket, "id" | "sourceAccountId">): string {
+  return `${bucket.sourceAccountId ?? accountId}:${bucket.id}`;
 }
 
 export interface MonthGrid {

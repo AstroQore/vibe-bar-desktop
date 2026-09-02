@@ -54,6 +54,7 @@ export function SessionsPage({
   const [toast, setToast] = useState<string | null>(null);
   const [listWidth, setListWidth] = useState(380);
   const generation = useRef(0);
+  const transcriptGeneration = useRef(0);
   const now = fixedNow ?? Math.floor(Date.now() / 1000);
 
   const load = useCallback(
@@ -87,15 +88,19 @@ export function SessionsPage({
   const openTranscript = useCallback(
     async (row: SessionRow, offset: number, cursor?: TranscriptCursor) => {
       if (fixture) return;
+      // A slow read for the previous selection must not land on the new one.
+      const id = ++transcriptGeneration.current;
       setPageLoading(true);
       setPageError(null);
       try {
         const next = await api.sessionTranscript(row.sessionRef, offset, TRANSCRIPT_PAGE, cursor);
+        if (id !== transcriptGeneration.current) return;
         setPage(next);
       } catch (cause) {
+        if (id !== transcriptGeneration.current) return;
         setPageError(`Could not read this transcript: ${String(cause)}`);
       } finally {
-        setPageLoading(false);
+        if (id === transcriptGeneration.current) setPageLoading(false);
       }
     },
     [fixture],

@@ -105,6 +105,14 @@ describe("calendar", () => {
   const monthStart = monthStartOf(NOW);
   const monthEnd = monthStartOf(NOW, 1);
 
+  it("keys history by the bucket's reporting account on a merged card", () => {
+    const merged = { ...view, accounts: [{ ...view.accounts[0], buckets: [bucket("weekly", "Weekly", 50, 3 * 86_400, 7 * 86_400, { sourceAccountId: "cli-codex" })] }] };
+    const history = { "cli-codex:weekly": [{ windowEnd: NOW - 86_400, peakUsedPercent: 60, lastUsedPercent: 60, observationCount: 4, firstSeenAt: NOW - 8 * 86_400, lastSeenAt: NOW - 86_400, resetKind: "scheduled" }] };
+    const entries = calendarEntries(merged, null, history, monthStart, monthEnd, NOW);
+    const expectedPast = NOW - 86_400 >= monthStart ? 1 : 0;
+    expect(entries.filter((e) => e.kind === "past")).toHaveLength(expectedPast);
+  });
+
   it("lists completed cycles in the month and every scheduled reset", () => {
     const history = {
       "oauth-codex:weekly": [

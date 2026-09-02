@@ -116,7 +116,11 @@ export function ResetsPage({
   const risks = useMemo(() => riskRows(cycles), [cycles]);
 
   const keys = useMemo(
-    () => cycles.flatMap((cycle) => cycle.buckets.map((bucket) => ({ accountId: cycle.accountId, bucketId: bucket.id }))).slice(0, MAX_HISTORY_FETCHES),
+    () =>
+      cycles
+        .flatMap((cycle) => cycle.buckets.map((bucket) => ({ accountId: bucket.sourceAccountId ?? cycle.accountId, bucketId: bucket.id })))
+        .filter((key, index, all) => all.findIndex((other) => other.accountId === key.accountId && other.bucketId === key.bucketId) === index)
+        .slice(0, MAX_HISTORY_FETCHES),
     [cycles],
   );
   useEffect(() => {

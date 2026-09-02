@@ -34,6 +34,9 @@ export interface QuotaBucket {
   resetAt?: number;
   rawWindowSeconds?: number;
   groupTitle?: string;
+  /** The account whose read produced this bucket when a merged card folds
+   *  several routes; history is recorded under it. */
+  sourceAccountId?: string;
   /** Absent when there is not enough history yet — shown as such, never as
    *  a confident verdict. */
   forecast?: QuotaForecast;

@@ -229,6 +229,7 @@ export function SessionFilters({
               <MenuItem checked={state.groupByProject} onSelect={() => onChange({ ...state, groupByProject: !state.groupByProject })}>
                 Group by project
               </MenuItem>
+              {state.sort === "oldestFirst" ? <div className="ss-menu-note">Oldest first orders the sessions loaded so far; the index hands out pages newest-first, so load more to reach older ones.</div> : null}
             </>
           )}
         </Menu>

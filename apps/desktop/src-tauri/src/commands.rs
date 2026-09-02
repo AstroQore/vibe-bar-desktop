@@ -342,6 +342,25 @@ pub fn open_in_terminal(command: String, terminal: String) -> Result<(), String>
     }
 }
 
+/// Where a reveal request points: a bare directory name lands under the
+/// library; anything with a separator must be an absolute path.
+pub(crate) fn skill_reveal_target(library: &std::path::Path, path: &str) -> Result<std::path::PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
+        return Err("Only a skill inside ~/.agents/skills can be revealed.".to_string());
+    }
+    let has_separator = trimmed.contains(['/', '\\']);
+    if !has_separator {
+        return Ok(library.join(trimmed));
+    }
+    let absolute = std::path::Path::new(trimmed);
+    if absolute.is_absolute() {
+        Ok(absolute.to_path_buf())
+    } else {
+        Err("Only a skill inside ~/.agents/skills can be revealed.".to_string())
+    }
+}
+
 /// A resume command is one known CLI followed by plain arguments — no
 /// newlines, no shell operators, no substitution — optionally preceded by
 /// the `cd '<dir>' && ` the core generates for project sessions, where the
@@ -389,13 +408,15 @@ fn is_plain_arguments(rest: &str) -> bool {
     !rest.contains(['\n', '\r', ';', '|', '&', '`', '$', '<', '>'])
 }
 
-/// Reveal a skill directory in the file manager. Only a path inside the
-/// shared skill library is accepted, so the webview cannot browse the disk.
+/// Reveal a skill directory in the file manager. The inventory names a
+/// skill by its directory name, which resolves beneath the shared library;
+/// an absolute path is accepted only when it canonicalizes inside it. Either
+/// way the webview cannot browse the disk.
 #[tauri::command]
 pub fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let library = vibebar_desktop_core::paths::home_directory().join(".agents/skills");
-    let candidate = std::path::Path::new(&path);
+    let candidate = skill_reveal_target(&library, &path)?;
     let canonical = candidate
         .canonicalize()
         .map_err(|error| format!("{path}: {error}"))?;
@@ -527,7 +548,20 @@ mod tests {
 
 #[cfg(test)]
 mod resume_guard_tests {
-    use super::is_resume_command;
+    use super::{is_resume_command, skill_reveal_target};
+
+    #[test]
+    fn reveal_targets_resolve_bare_names_beneath_the_library() {
+        let library = std::path::Path::new("/Users/example/.agents/skills");
+        assert_eq!(skill_reveal_target(library, "imagegen").unwrap(), library.join("imagegen"));
+        assert_eq!(
+            skill_reveal_target(library, "/Users/example/.agents/skills/docx").unwrap(),
+            std::path::PathBuf::from("/Users/example/.agents/skills/docx")
+        );
+        assert!(skill_reveal_target(library, "..").is_err());
+        assert!(skill_reveal_target(library, "").is_err());
+        assert!(skill_reveal_target(library, "../secrets").is_err(), "a relative path with separators is refused before canonicalizing");
+    }
 
     #[test]
     fn accepts_plain_resume_lines_and_refuses_shell_operators() {
