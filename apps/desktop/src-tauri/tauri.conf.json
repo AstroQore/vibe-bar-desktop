@@ -13,11 +13,11 @@
     "windows": [
       {
         "label": "main",
-        "title": "Vibe Bar Desktop",
-        "width": 900,
-        "height": 680,
-        "minWidth": 560,
-        "minHeight": 420,
+        "title": "Workbench",
+        "width": 1180,
+        "height": 820,
+        "minWidth": 1040,
+        "minHeight": 680,
         "resizable": true,
         "visible": false,
         "titleBarStyle": "Overlay",

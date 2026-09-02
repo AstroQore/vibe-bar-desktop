@@ -738,39 +738,6 @@ input[type="text"] {
   text-align: center;
 }
 
-.session-row {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: none;
-  border-bottom: 1px solid var(--hairline);
-  border-radius: 0;
-  padding: 9px 4px;
-}
-.session-row:hover {
-  background: var(--bg-raised);
-}
-.session-title {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.session-meta {
-  display: flex;
-  gap: 8px;
-  color: var(--text-faint);
-  font-size: 11px;
-  margin-top: 2px;
-}
-.session-excerpt {
-  color: var(--text-dim);
-  font-size: 11px;
-  margin-top: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .toolbar {
   display: flex;
@@ -779,57 +746,9 @@ input[type="text"] {
   margin-bottom: 12px;
 }
 
-.transcript-find {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: -4px 0 12px;
-  flex-wrap: wrap;
-}
 
-.transcript-find input {
-  min-width: 190px;
-  flex: 1 1 220px;
-}
 
-.transcript-find-count {
-  color: var(--text-dim);
-  font-size: 11px;
-  min-width: 58px;
-}
 
-.transcript-message {
-  border-left: 2px solid var(--hairline);
-  padding: 2px 0 10px 10px;
-  margin-bottom: 10px;
-}
-.transcript-message.user {
-  border-left-color: var(--accent);
-}
-.transcript-message.assistant {
-  border-left-color: var(--ok);
-}
-.transcript-message.transcript-match-current {
-  background: rgba(47, 111, 237, 0.14);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgba(47, 111, 237, 0.36);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 36%, transparent);
-  padding-left: 10px;
-}
-.transcript-role {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: 3px;
-}
-.transcript-text {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

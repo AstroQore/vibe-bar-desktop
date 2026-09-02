@@ -1,5 +1,7 @@
 //! IPC surface for the web UI.
 
+use vibebar_desktop_core::sessions::SessionListingQuery;
+use vibebar_desktop_core::usage_stats::{UsageStatsQuery, UsageStatsView};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
@@ -114,6 +116,19 @@ pub async fn refresh_cost(state: State<'_, AppState>) -> Result<CostView, String
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
+}
+
+/// The Usage Stats page: the retained ledger filtered and folded server-side,
+/// so the page never holds 400k events in the webview.
+#[tauri::command]
+pub async fn usage_stats(
+    state: State<'_, AppState>,
+    query: UsageStatsQuery,
+) -> Result<UsageStatsView, String> {
+    let engine = state.cost().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.usage_stats(&query))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -284,6 +299,177 @@ pub fn session_search(
         .search(&query, limit.unwrap_or(50).clamp(1, 200))
 }
 
+/// The Sessions page's listing: search text, provider/harness filters, a
+/// time bound, and an offset page, with per-harness counts for the menu.
+#[tauri::command]
+pub fn session_listing(state: State<'_, AppState>, query: SessionListingQuery) -> SessionListing {
+    state.sessions().listing(&query)
+}
+
+/// Run a resume command in the user's terminal. Only a line shaped like a
+/// resume command is accepted — one CLI name and its arguments, no shell
+/// operators — so the webview cannot turn this into a general shell.
+#[tauri::command]
+pub fn open_in_terminal(command: String, terminal: String) -> Result<(), String> {
+    if !is_resume_command(&command) {
+        return Err("Only a session resume command can be opened in a terminal.".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let escaped = command.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = if terminal == "iterm2" {
+            format!(
+                "tell application \"iTerm\"\nactivate\ncreate window with default profile\ntell current session of current window to write text \"{escaped}\"\nend tell"
+            )
+        } else {
+            format!("tell application \"Terminal\"\nactivate\ndo script \"{escaped}\"\nend tell")
+        };
+        let status = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .status()
+            .map_err(|error| error.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("osascript exited with {status}"))
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = terminal;
+        Err("Opening a terminal is only wired up on macOS in this release; copy the command instead.".to_string())
+    }
+}
+
+/// Where a reveal request points: a bare directory name lands under the
+/// library; anything with a separator must be an absolute path.
+pub(crate) fn skill_reveal_target(library: &std::path::Path, path: &str) -> Result<std::path::PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
+        return Err("Only a skill inside ~/.agents/skills can be revealed.".to_string());
+    }
+    let has_separator = trimmed.contains(['/', '\\']);
+    if !has_separator {
+        return Ok(library.join(trimmed));
+    }
+    let absolute = std::path::Path::new(trimmed);
+    if absolute.is_absolute() {
+        Ok(absolute.to_path_buf())
+    } else {
+        Err("Only a skill inside ~/.agents/skills can be revealed.".to_string())
+    }
+}
+
+/// A resume command is one known CLI followed by plain arguments — no
+/// newlines, no shell operators, no substitution — optionally preceded by
+/// the `cd '<dir>' && ` the core generates for project sessions, where the
+/// directory is a single POSIX-quoted word.
+pub(crate) fn is_resume_command(command: &str) -> bool {
+    const CLIS: [&str; 6] = ["codex", "claude", "gemini", "grok", "cursor", "cursor-agent"];
+    let trimmed = command.trim();
+    let rest = match strip_cd_prefix(trimmed) {
+        Some(Some(rest)) => rest,
+        Some(None) => return false,
+        None => trimmed,
+    };
+    let Some(first) = rest.split_whitespace().next() else {
+        return false;
+    };
+    let cli = first.rsplit('/').next().unwrap_or(first);
+    CLIS.contains(&cli) && is_plain_arguments(rest)
+}
+
+/// `Some(Some(rest))` when the line starts with a well-formed `cd '…' && `,
+/// `Some(None)` when it starts with `cd` but the directory is not one quoted
+/// word, `None` when there is no `cd` prefix at all.
+fn strip_cd_prefix(line: &str) -> Option<Option<&str>> {
+    let after_cd = line.strip_prefix("cd ")?;
+    let quoted = after_cd.strip_prefix('\'')?;
+    // The quoted word ends at the first `'` that is not part of the `'\''`
+    // escape the quoter emits for a literal quote.
+    let mut index = 0;
+    let bytes = quoted.as_bytes();
+    while index < bytes.len() {
+        if bytes[index] == b'\'' {
+            if quoted[index + 1..].starts_with("\\''") {
+                index += 4;
+                continue;
+            }
+            let rest = &quoted[index + 1..];
+            return Some(rest.strip_prefix(" && "));
+        }
+        index += 1;
+    }
+    Some(None)
+}
+
+fn is_plain_arguments(rest: &str) -> bool {
+    !rest.contains(['\n', '\r', ';', '|', '&', '`', '$', '<', '>'])
+}
+
+/// Reveal a skill directory in the file manager. The inventory names a
+/// skill by its directory name, which resolves beneath the shared library;
+/// an absolute path is accepted only when it canonicalizes inside it. Either
+/// way the webview cannot browse the disk.
+#[tauri::command]
+pub fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let library = vibebar_desktop_core::paths::home_directory().join(".agents/skills");
+    let candidate = skill_reveal_target(&library, &path)?;
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|error| format!("{path}: {error}"))?;
+    let root = library.canonicalize().map_err(|error| error.to_string())?;
+    if !canonical.starts_with(&root) || canonical == root {
+        return Err("Only a skill inside ~/.agents/skills can be revealed.".to_string());
+    }
+    app.opener()
+        .reveal_item_in_dir(&canonical)
+        .map_err(|error| error.to_string())
+}
+
+/// Whether the app is registered to launch at login.
+#[tauri::command]
+pub fn autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|error| error.to_string())
+}
+
+/// Register or unregister launch at login; returns what the system reports.
+#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|error| error.to_string())?;
+    } else {
+        manager.disable().map_err(|error| error.to_string())?;
+    }
+    manager.is_enabled().map_err(|error| error.to_string())
+}
+
+/// The effective per-model price table this build prices with.
+#[tauri::command]
+pub fn pricing_effective() -> Vec<vibebar_desktop_core::cost::EffectiveModelPricingRow> {
+    vibebar_desktop_core::cost::effective_model_prices()
+}
+
+/// Open a project link in the browser. Only https links to the hosts the
+/// settings pages link to are accepted.
+#[tauri::command]
+pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let allowed = ["https://github.com/", "https://www.github.com/"];
+    let clean = !url.chars().any(|c| c.is_whitespace() || c.is_control());
+    if !clean || !allowed.iter().any(|prefix| url.starts_with(prefix)) {
+        return Err("Only https links to github.com can be opened from here.".to_string());
+    }
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn session_transcript(
     state: State<'_, AppState>,
@@ -357,5 +543,40 @@ mod tests {
         let refusal = update_endpoint(&DataRoot::at(std::env::temp_dir().join("vibebar-demo")))
             .expect_err("a demo root must not produce an endpoint to fetch");
         assert!(refusal.contains("demo"), "{refusal}");
+    }
+}
+
+#[cfg(test)]
+mod resume_guard_tests {
+    use super::{is_resume_command, skill_reveal_target};
+
+    #[test]
+    fn reveal_targets_resolve_bare_names_beneath_the_library() {
+        let library = std::path::Path::new("/Users/example/.agents/skills");
+        assert_eq!(skill_reveal_target(library, "imagegen").unwrap(), library.join("imagegen"));
+        assert_eq!(
+            skill_reveal_target(library, "/Users/example/.agents/skills/docx").unwrap(),
+            std::path::PathBuf::from("/Users/example/.agents/skills/docx")
+        );
+        assert!(skill_reveal_target(library, "..").is_err());
+        assert!(skill_reveal_target(library, "").is_err());
+        assert!(skill_reveal_target(library, "../secrets").is_err(), "a relative path with separators is refused before canonicalizing");
+    }
+
+    #[test]
+    fn accepts_plain_resume_lines_and_refuses_shell_operators() {
+        assert!(is_resume_command("codex resume 019a1b2c-3d4e-7f80-9abc-def012345678"));
+        assert!(is_resume_command("claude --resume 'abc-123'"));
+        assert!(is_resume_command("/usr/local/bin/gemini --resume 7"));
+        assert!(is_resume_command("cd '/Users/example/Coding/app' && codex resume 019a1b2c"));
+        assert!(is_resume_command("cd '/Users/example/it'\\''s here' && claude --resume abc"));
+        assert!(!is_resume_command("cd /Users/example/app && codex resume x"), "an unquoted directory is not the generated shape");
+        assert!(!is_resume_command("cd '/tmp' && rm -rf ~"));
+        assert!(!is_resume_command("cd '/tmp'; codex resume x"));
+        assert!(!is_resume_command("rm -rf ~"));
+        assert!(!is_resume_command("codex resume x; rm -rf ~"));
+        assert!(!is_resume_command("codex resume $(whoami)"));
+        assert!(!is_resume_command("codex resume x && curl evil"));
+        assert!(!is_resume_command(""));
     }
 }

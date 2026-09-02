@@ -158,3 +158,133 @@ The popover draws what the core serves. These native cards wait on core work:
 - **Projects** and **Token Flow** in the usage mix — both need per-request
   attribution the core does not keep.
 - **Quota history** — the chart with its brush, which needs the timelines.
+
+## The Workbench
+
+The main window is the native Workbench: a 206 pt sidebar of pages
+(Usage Stats, Sessions, Resets, Skills, Settings) and a page header with
+the page's status line, the appearance toggle, and refresh.
+`src/workbench/porcelain.css` carries the porcelain tokens the native
+`WorkbenchPorcelainStyle` defines — window, sidebar, toolbar, field, and
+card fills, the 0.5 pt hairline, the `#4E5FE0` accent — and every page
+composes from `.wb-card`, `.wb-toolbar`, `.wb-pill`, and `.wb-table`
+rather than restating them.
+
+### Usage Stats
+
+The page is the native `UsageStatsPage` composition — filters toolbar,
+hero card, trend chart with a brush navigator, five distribution donuts,
+breakdown tables — fed by one core query, `usage_stats`, instead of the
+webview holding the ledger. `CostEngine` keeps the deduplicated events
+after a scan and `usage_stats` scans lazily when nothing is retained yet,
+so the page never shows an empty ledger a refresh would have filled.
+`crates/vibebar-desktop-core/src/usage_stats.rs` owns the rules that
+matter for parity:
+
+- Buckets are local calendar hours, days, and weeks (Monday start). Auto
+  picks hour for ranges up to 24 h, day up to 45 d, week beyond, and any
+  choice coarsens until the range fits 1,200 buckets — the native
+  interactive budget.
+- Harness labels are `ToolType::hierarchy().tool` ("Codex", "Claude
+  Code", "Gemini Web"); chip groups fold them under their billing
+  company in `ToolType` order and list every harness ever ingested, not
+  only those in range.
+- Model choices cascade from the harness pick; an unset harness list
+  means every harness, an empty one means none, matching the native All
+  chip that is a switch rather than a shortcut.
+- Cost is unset, not zero, when nothing in range carried a price, so the
+  hero shows "—" rather than a $0 that reads as free.
+
+`src/workbench/usage/model.ts` holds the page's own rules — presets,
+formatting that matches `UsageFormatting`, the chart window floor of two
+buckets — and `fixture.ts` renders the page at `/preview.html?surface=usage`
+without Tauri. Project attribution is not available in this client, so
+the Project Mix card says so instead of drawing an empty ring.
+
+### Sessions
+
+The page is the native `SessionManagerPage`: a filters toolbar (search,
+scope, folders, index status, the All chip, company/harness/when/sort/
+options menus, delete controls), a resizable split of the session list
+(300–620 pt) and the transcript (≥ 420 pt), 13 pt row cards, and message
+cards with the native role bar, timestamp, copy, and the 3,000-character
+collapse. One core call, `session_listing`, takes the search text,
+provider and harness filters, a time bound, and an offset page, and
+returns the listing with per-harness counts for the menu. Folder
+filters, sort order, and project grouping apply to the loaded rows in
+`src/workbench/sessions/model.ts`, which also owns the 80-message
+transcript window, find and highlight, and the prompt outline.
+
+Three things this client says plainly instead of pretending:
+
+- Search scope. The shared index searches every scope it holds; the
+  Scope menu keeps the native vocabulary and says that per-scope
+  narrowing waits on a role-aware index.
+- Deleting session logs. The store is the native app's to write
+  (`AGENTS.md` § storage boundary), so Select/Delete are present but
+  refuse with the reason rather than reaching into `~/.codex` or
+  `~/.claude`.
+- Opening a terminal. `open_in_terminal` runs only a line shaped like a
+  resume command — one known CLI, plain arguments, no shell operators —
+  through `osascript` on macOS; elsewhere it says to copy the command.
+
+### Resets
+
+The page is the native `ResetsPage`: the seven-day Refill Horizon lane,
+one card per SubProvider cycle on an adaptive 270 pt grid, the reset
+calendar with its sub-daily lane, and the 320 pt Run-out Risk column.
+`src/workbench/resets/model.ts` carries the rules — buckets grouped by
+SubProvider and group title in first-seen order and headlined by the
+longest window; risk rows for buckets whose forecast is uneasy or that
+sit at 15% or less, soonest run-out first, badged OUT / RISK / WATCH /
+LOW by the verdict rather than the raw remaining; calendar entries from
+the completed cycles the forecast store keeps (`quota_cycles`, one call
+per bucket, bounded) plus every scheduled reset in the month. `now` is
+rounded down to five minutes the way the native page does, so the cards
+do not re-lay out every second.
+
+The native card also draws the remaining-percent curve across the
+current cycle from the fill timeline's observations; this client's
+forecast store keeps cycle summaries, not samples, so the card omits the
+curve rather than sketching one.
+
+### Skills
+
+The page is the native `SkillsManagerPage`: the toolbar card with the
+filter field and the five actions, the per-harness count capsules with
+the wiring explainer, and one row per skill — name, source badge, health
+badge, description, and an activation circle per managed harness. The
+data is `skills_inventory`, the read-only scan of `~/.agents/skills` and
+the six projection roots. `src/workbench/skills/model.ts` derives what a
+circle can honestly say from that: a link means projected, a harness
+that scans the shared root sees every skill without a link, and a
+harness with its own per-skill switch is shown as projected with the
+switch unread — this client does not parse `config.toml` or
+`settings.json` to learn it.
+
+Install, update, import, backups, and discovery run in the native app;
+the controls are present and say so. `reveal_path` opens a skill in the
+file manager and accepts only a path inside `~/.agents/skills`.
+
+### Settings
+
+The page is the native `SettingsView`: a searchable 236 pt sidebar of
+grouped rows — Settings, Core Providers, Misc Providers — and titled
+section cards for the selected one, in the native order and with the
+native copy. What each control can do here follows the storage
+contract: the four keys `settings-write-v1.md` lets this client write
+(percent shown, refresh cadence, percent colour basis, update channel)
+are live; everything else the shared file holds — menu bar layout and
+fields, popover density, mini windows, provider visibility, cost data
+retention and privacy mode, misc provider instances — is shown read-only
+with the note that it is set in the native app. `PresentationSettings`
+now carries the menu bar item and the misc provider instances for that.
+
+Controls that are this client's own: launch at login through
+`tauri-plugin-autostart`, the update check and install, rescanning cost
+logs, the effective price table (`pricing_effective`), and connection
+health per core provider, which reports what a quota read can show —
+CLI, OAuth, and credential-file routes — and says cookie routes are not
+used here. Remote probes, the MCP socket, the menu bar health monitor,
+WebView login, and cookie import remain the native app's; each section
+says so rather than presenting a control that would do nothing.

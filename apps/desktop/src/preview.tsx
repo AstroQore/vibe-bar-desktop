@@ -16,6 +16,17 @@ import "./styles.css";
 import type { AccountQuota, PresentationSettings, QuotaView } from "./api";
 import { MiniQuotaBody, arrange } from "./components/MiniQuota";
 import { PopoverRoot } from "./popover/PopoverRoot";
+import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
+import { FIXTURE_USAGE } from "./workbench/usage/fixture";
+import { SessionsPage } from "./workbench/sessions/SessionsPage";
+import { FIXTURE_SESSIONS, FIXTURE_TRANSCRIPT } from "./workbench/sessions/fixture";
+import { ResetsPage } from "./workbench/resets/ResetsPage";
+import { FIXTURE_RESET_HISTORY } from "./workbench/resets/fixture";
+import { SkillsPage } from "./workbench/skills/SkillsPage";
+import { FIXTURE_SKILLS } from "./workbench/skills/fixture";
+import { SettingsPage } from "./workbench/settings/SettingsPage";
+import { FIXTURE_INFO, FIXTURE_PRICING } from "./workbench/settings/fixture";
+import "./workbench/porcelain.css";
 import { FIXTURE_COST, FIXTURE_NOW, FIXTURE_SETTINGS, FIXTURE_STATUS, FIXTURE_VIEW } from "./popover/fixture";
 import "./popover/popover.css";
 
@@ -100,9 +111,51 @@ function PopoverPreview() {
   );
 }
 
+function UsagePreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <UsageStatsPage fixture={FIXTURE_USAGE} now={FIXTURE_NOW} />
+    </div>
+  );
+}
+function SessionsPreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <SessionsPage fixture={{ listing: FIXTURE_SESSIONS, transcript: FIXTURE_TRANSCRIPT }} now={FIXTURE_NOW} />
+    </div>
+  );
+}
+function ResetsPreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <ResetsPage view={FIXTURE_VIEW} settings={FIXTURE_SETTINGS as never} now={FIXTURE_NOW} history={FIXTURE_RESET_HISTORY} />
+    </div>
+  );
+}
+function SkillsPreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <SkillsPage fixture={FIXTURE_SKILLS} dark={dark} />
+    </div>
+  );
+}
+function SettingsPreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  const settings = { ...(FIXTURE_SETTINGS as never as Record<string, unknown>), menuBar: { isVisible: true, showTitle: false, layout: "twoRows" }, miscProviderInstances: [{ id: "copilot-1", tool: "copilot", name: "Copilot", isVisible: true }, { id: "opencodego-1", tool: "openCodeGo", name: "OpenCode Go", isVisible: true }] } as never;
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <SettingsPage settings={settings} info={FIXTURE_INFO} cost={FIXTURE_COST} view={FIXTURE_VIEW} dark={dark} onSave={() => undefined} replacedKeys={null} onDismissReplaced={() => undefined} onRescanCost={async () => undefined} onCheckConnections={async () => undefined} fixture pricingFixture={FIXTURE_PRICING} initialSection={(new URLSearchParams(location.search).get("section") ?? "system") as never} />
+    </div>
+  );
+}
+const surface = new URLSearchParams(location.search).get("surface");
 createRoot(document.getElementById("root")!).render(
   <>
-    <PopoverPreview />
+    {surface === "usage" ? <UsagePreview /> : surface === "sessions" ? <SessionsPreview /> : surface === "resets" ? <ResetsPreview /> : surface === "skills" ? <SkillsPreview /> : surface === "settings" ? <SettingsPreview /> : <PopoverPreview />}
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
     {[
       "regular",

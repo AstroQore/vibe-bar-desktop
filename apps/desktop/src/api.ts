@@ -34,6 +34,9 @@ export interface QuotaBucket {
   resetAt?: number;
   rawWindowSeconds?: number;
   groupTitle?: string;
+  /** The account whose read produced this bucket when a merged card folds
+   *  several routes; history is recorded under it. */
+  sourceAccountId?: string;
   /** Absent when there is not enough history yet — shown as such, never as
    *  a confident verdict. */
   forecast?: QuotaForecast;
@@ -138,6 +141,8 @@ export interface SessionRow {
   harness: string;
   sessionId: string;
   providerVariant?: string;
+  /** The model the index recorded for the session, when it knows one. */
+  model?: string;
   title?: string;
   projectDir?: string;
   lastActiveAt?: number;
@@ -148,7 +153,24 @@ export interface SessionRow {
   excerpt?: string;
 }
 
+export interface HarnessCount {
+  harness: string;
+  provider: string;
+  count: number;
+}
+export interface SessionListingQuery {
+  query?: string;
+  /** Raw provider ids (`codex`, `claude`, ...); unset means every provider. */
+  providers?: string[];
+  harnesses?: string[];
+  since?: number;
+  offset?: number;
+  limit?: number;
+}
 export interface SessionListing {
+  /** Sessions per harness across the store (bounded), independent of the
+   *  query's own filters — the Harness menu's counts. */
+  harnessCounts: HarnessCount[];
   source: SessionSource;
   rows: SessionRow[];
   indexedTotal?: number;
@@ -223,6 +245,10 @@ export interface PresentationSettings {
   /** "main" | "dev" — which release channel this machine follows. Shared with
    *  the native client, so choosing Dev in either window applies to both. */
   updateChannel: string;
+  /** The menu bar item as the shared settings describe it. */
+  menuBar: { isVisible: boolean; showTitle: boolean; layout: string };
+  /** Misc provider instances the user configured; credentials never ride along. */
+  miscProviderInstances: { id: string; tool: string; name: string; isVisible: boolean }[];
   /** "compact" | "regular" | "spacious" — the popover's density, native's
    *  `popoverDensity`. Missing on files written before it was read here. */
   popoverDensity?: string;
@@ -297,6 +323,131 @@ export interface CostView {
   privacySuppressed: boolean;
 }
 
+/** Usage Stats: the retained per-request ledger, filtered and folded by the
+ *  core. Harness labels are `ToolType` tool names ("Codex", "Claude Code"). */
+export type TrendBucket = "hour" | "day" | "week";
+export interface UsageStatsQuery {
+  rangeStart?: number;
+  rangeEnd?: number;
+  /** Unset = every harness; empty = none (the All chip is a switch). */
+  harnesses?: string[];
+  models?: string[];
+  granularity?: TrendBucket;
+  requestLimit?: number;
+}
+export interface UsageSummary {
+  requests: number;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number | null;
+  unpricedRequests: number;
+  cacheHitRate: number;
+}
+export interface TrendPoint {
+  bucketStart: number;
+  requests: number;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number;
+}
+export interface ProviderTrend {
+  harness: string;
+  company: string;
+  points: TrendPoint[];
+}
+export interface TrendSeries {
+  bucket: TrendBucket;
+  points: TrendPoint[];
+  providers: ProviderTrend[];
+}
+export interface GroupStat {
+  name: string;
+  company: string;
+  requests: number;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number;
+  unpricedRequests: number;
+}
+export interface RequestRow {
+  time: number;
+  harness: string;
+  company: string;
+  model: string;
+  tier: string | null;
+  freshInput: number;
+  output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  totalTokens: number;
+  costMicros: number | null;
+  sessionId: string | null;
+}
+export interface ChipGroup {
+  company: string;
+  harnesses: string[];
+}
+export interface UsageStatsView {
+  ledgerAvailable: boolean;
+  privacySuppressed: boolean;
+  scannedAt: number;
+  rangeStart: number;
+  rangeEnd: number;
+  summary: UsageSummary;
+  trend: TrendSeries;
+  granularity: { hour: boolean; day: boolean; week: boolean };
+  harnesses: GroupStat[];
+  providers: GroupStat[];
+  models: GroupStat[];
+  requests: RequestRow[];
+  totalRequests: number;
+  availableModels: string[];
+  chipGroups: ChipGroup[];
+}
+/** One observed quota cycle, as the forecast store keeps it. */
+export interface QuotaCycle {
+  windowEnd: number;
+  windowStart?: number;
+  peakUsedPercent: number;
+  lastUsedPercent: number;
+  observationCount: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  completion?: "refillDetected" | "scheduledReset";
+  resetKind: string;
+  intervalSeconds?: number;
+}
+export interface ResetHistory {
+  completed: QuotaCycle[];
+  current: QuotaCycle | null;
+}
+/** One row of the effective price table, USD per million tokens. */
+export interface EffectiveModelPricingRow {
+  provider: string;
+  company: string;
+  subProvider: string;
+  model: string;
+  displayLabel?: string | null;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion?: number | null;
+  cacheWritePerMillion?: number | null;
+  thresholdTokens?: number | null;
+  inputAboveThresholdPerMillion?: number | null;
+  outputAboveThresholdPerMillion?: number | null;
+  cacheReadAboveThresholdPerMillion?: number | null;
+  cacheWriteAboveThresholdPerMillion?: number | null;
+  fastMultiplier?: number | null;
+}
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 export const SETTINGS_EVENT = "vibebar://settings-changed";
@@ -312,11 +463,25 @@ export const api = {
   hideMini: () => invoke<void>("hide_mini"),
   appInfo: () => invoke<AppInfo>("app_info"),
   skillsInventory: () => invoke<SkillsInventoryView>("skills_inventory"),
+  /** Reveal a skill directory in the file manager; only paths inside the
+   *  shared skill library are accepted. */
+  revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  autostartEnabled: () => invoke<boolean>("autostart_enabled"),
+  setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
+  pricingEffective: () => invoke<EffectiveModelPricingRow[]>("pricing_effective"),
+  /** Open a project link; only https links to github.com are accepted. */
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
   presentationSettings: () => invoke<PresentationSettings>("presentation_settings"),
   statusSnapshot: () => invoke<ServiceStatusView>("status_snapshot"),
   refreshStatus: () => invoke<ServiceStatusView>("refresh_status"),
   costView: () => invoke<CostView>("cost_view"),
   refreshCost: () => invoke<CostView>("refresh_cost"),
+  usageStats: (query: UsageStatsQuery) => invoke<UsageStatsView>("usage_stats", { query }),
+  quotaCycles: (accountId: string, bucketId: string) =>
+    invoke<ResetHistory>("quota_cycles", { accountId, bucketId }),
+  sessionListing: (query: SessionListingQuery) => invoke<SessionListing>("session_listing", { query }),
+  openInTerminal: (command: string, terminal: "terminal" | "iterm2") =>
+    invoke<void>("open_in_terminal", { command, terminal }),
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),

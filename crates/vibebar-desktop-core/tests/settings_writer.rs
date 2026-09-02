@@ -313,9 +313,9 @@ fn reports_a_save_that_could_not_be_written() {
 fn the_whitelist_is_only_what_desktop_presents() {
     use vibebar_desktop_core::shared::settings_writer::WRITABLE_KEYS;
     let controls = std::fs::read_to_string(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps/desktop/src/components/Settings.tsx"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps/desktop/src/workbench/settings/SettingsPage.tsx"),
     )
-    .expect("Settings.tsx");
+    .expect("SettingsPage.tsx");
     for key in WRITABLE_KEYS {
         assert!(
             controls.contains(&format!("{key}:")),

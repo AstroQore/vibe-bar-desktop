@@ -160,6 +160,9 @@ pub struct CostEngine {
     store: crate::client_store::ClientStore,
     is_demo: bool,
     cached: Arc<RwLock<CostView>>,
+    /// The deduplicated events behind `cached`, kept only after this process
+    /// has scanned: the restart snapshot holds totals, not requests.
+    events: Arc<RwLock<Option<Arc<Vec<UsageEvent>>>>>,
     refresh_gate: Arc<std::sync::Mutex<()>>,
 }
 
@@ -180,8 +183,35 @@ impl CostEngine {
             store,
             is_demo: root.is_demo(),
             cached: Arc::new(RwLock::new(cached)),
+            events: Arc::new(RwLock::new(None)),
             refresh_gate: Arc::new(std::sync::Mutex::new(())),
         }
+    }
+
+    /// The Usage Stats page's view of the scanned events. Scans first when
+    /// this process has not read the ledger yet, so the page never shows an
+    /// empty ledger that a refresh would have filled.
+    pub fn usage_stats(
+        &self,
+        query: &crate::usage_stats::UsageStatsQuery,
+    ) -> Result<crate::usage_stats::UsageStatsView, String> {
+        if crate::shared::settings::SharedSettings::load(&self.root).cost_privacy_mode() {
+            return Ok(crate::usage_stats::UsageStatsView::suppressed(now_unix()));
+        }
+        let events = match self.retained_events() {
+            Some(events) => events,
+            None => {
+                self.refresh()?;
+                self.retained_events()
+                    .unwrap_or_else(|| Arc::new(Vec::new()))
+            }
+        };
+        let scanned_at = self.cached().scanned_at;
+        Ok(crate::usage_stats::query(&events, query, now_unix(), scanned_at))
+    }
+
+    fn retained_events(&self) -> Option<Arc<Vec<UsageEvent>>> {
+        self.events.read().ok().and_then(|slot| slot.clone())
     }
 
     pub fn cached(&self) -> CostView {
@@ -205,6 +235,9 @@ impl CostEngine {
             let view = suppressed_view(now_unix());
             if let Ok(mut cached) = self.cached.write() {
                 *cached = view.clone();
+            }
+            if let Ok(mut events) = self.events.write() {
+                *events = None;
             }
             return Ok(view);
         }
@@ -244,6 +277,9 @@ impl CostEngine {
         if let Ok(mut cached) = self.cached.write() {
             *cached = view.clone();
         }
+        if let Ok(mut retained) = self.events.write() {
+            *retained = Some(Arc::new(events));
+        }
         if !self.is_demo && !view.truncated {
             // The snapshot is only a restart cache. A completed local scan
             // remains useful even when the private namespace is unwritable.
@@ -277,26 +313,26 @@ struct SourceFile {
 }
 
 #[derive(Debug, Clone)]
-struct UsageEvent {
-    tool: ToolType,
-    date: f64,
-    model: String,
-    input: u64,
-    cache_read: u64,
-    output: u64,
-    cache_creation_5m: u64,
-    cache_creation_1h: u64,
-    service_tier: Option<String>,
-    session_id: Option<String>,
-    message_id: Option<String>,
-    request_id: Option<String>,
-    is_sidechain: bool,
-    is_parent_path: bool,
-    source_key: Arc<str>,
+pub(crate) struct UsageEvent {
+    pub(crate) tool: ToolType,
+    pub(crate) date: f64,
+    pub(crate) model: String,
+    pub(crate) input: u64,
+    pub(crate) cache_read: u64,
+    pub(crate) output: u64,
+    pub(crate) cache_creation_5m: u64,
+    pub(crate) cache_creation_1h: u64,
+    pub(crate) service_tier: Option<String>,
+    pub(crate) session_id: Option<String>,
+    pub(crate) message_id: Option<String>,
+    pub(crate) request_id: Option<String>,
+    pub(crate) is_sidechain: bool,
+    pub(crate) is_parent_path: bool,
+    pub(crate) source_key: Arc<str>,
 }
 
 impl UsageEvent {
-    fn tokens(&self) -> u64 {
+    pub(crate) fn tokens(&self) -> u64 {
         self.input
             .saturating_add(self.cache_read)
             .saturating_add(self.output)
@@ -1484,7 +1520,7 @@ fn public_pricing_row(
     }
 }
 
-fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
+pub(crate) fn priced_cost_micros(event: &UsageEvent) -> Option<i64> {
     let pricing = match event.tool {
         ToolType::Codex => codex_pricing(&event.model)?,
         ToolType::Claude => claude_pricing(&event.model)?,
@@ -1970,6 +2006,54 @@ mod tests {
         let costs: Vec<i64> = view.providers.iter().map(|r| r.priced_cost_micros).collect();
         assert!(costs.windows(2).all(|w| w[0] >= w[1]), "not ordered by spend: {costs:?}");
         assert_eq!(view.providers[0].company, "OpenAI");
+    }
+
+    #[test]
+    fn usage_stats_scans_lazily_and_keeps_the_ledger_for_later_queries() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        write_jsonl(
+            &home.path().join(".codex/sessions/2026/session.jsonl"),
+            &[
+                serde_json::json!({"type":"turn_context","payload":{"model":"gpt-5.4"}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-10.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-5.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"cached_input_tokens":40,"output_tokens":30}}}}),
+            ],
+        );
+        let engine = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path());
+        assert!(engine.retained_events().is_none(), "nothing scanned yet");
+        let view = engine
+            .usage_stats(&crate::usage_stats::UsageStatsQuery::default())
+            .unwrap();
+        assert!(view.ledger_available);
+        assert_eq!(view.total_requests, 2);
+        assert_eq!(view.summary.total_tokens, engine.cached().all_time.tokens);
+        assert_eq!(view.chip_groups[0].harnesses, ["Codex"]);
+        assert_eq!(view.requests[0].model, "gpt-5.4");
+        assert!(engine.retained_events().is_some(), "the lazy scan retains the ledger");
+        let narrowed = engine
+            .usage_stats(&crate::usage_stats::UsageStatsQuery {
+                harnesses: Some(vec!["Claude Code".to_string()]),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(narrowed.total_requests, 0);
+        assert_eq!(narrowed.chip_groups.len(), 1, "chips still list every ingested harness");
+    }
+
+    #[test]
+    fn usage_stats_says_not_looked_at_under_privacy_mode() {
+        let home = tempfile::tempdir().unwrap();
+        let vibebar = home.path().join(".vibebar");
+        fs::create_dir_all(&vibebar).unwrap();
+        fs::write(vibebar.join("settings.json"), "{\"costData\": {\"privacyModeEnabled\": true}}").unwrap();
+        let engine = CostEngine::new(DataRoot::at(vibebar), home.path());
+        let view = engine
+            .usage_stats(&crate::usage_stats::UsageStatsQuery::default())
+            .unwrap();
+        assert!(view.privacy_suppressed);
+        assert!(!view.ledger_available);
+        assert!(engine.retained_events().is_none());
     }
 
     #[test]

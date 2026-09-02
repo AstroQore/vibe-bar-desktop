@@ -395,7 +395,21 @@ const LANE_HORIZON_DAYS = 7;
  * is the refill it brings and whose colour is what is left now. Markers that
  * would land on each other are fanned apart by the rail's rule.
  */
-function ResetLane({ events, now }: { events: { id: string; remainingPercent: number; gainPercent: number; resetAt: number }[]; now: number }) {
+/** The native `ResetLaneView`: one column per reset, its height the share
+ *  that comes back, on a rail of `horizonDays` days. The popover uses the
+ *  defaults; the Resets page asks for a taller seven-day lane and a
+ *  one-day sub-daily lane with hourly ticks. */
+export function ResetLane({
+  events,
+  now,
+  horizonDays = LANE_HORIZON_DAYS,
+  height = LANE_HEIGHT,
+}: {
+  events: { id: string; remainingPercent: number; gainPercent: number; resetAt: number; label?: string }[];
+  now: number;
+  horizonDays?: number;
+  height?: number;
+}) {
   const [width, setWidth] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -406,10 +420,14 @@ function ResetLane({ events, now }: { events: { id: string; remainingPercent: nu
     setWidth(el.getBoundingClientRect().width);
     return () => observer.disconnect();
   }, []);
-  const horizon = LANE_HORIZON_DAYS * 86_400;
+  const horizon = horizonDays * 86_400;
+  const LANE_HEIGHT = height;
   const rail = events.map((e) => ({ id: e.id, fraction: Math.min(1, (e.resetAt - now) / horizon) }));
   const offsets = width > 0 ? fannedOffsets(rail as never, width) : [];
-  const ticks = Array.from({ length: LANE_HORIZON_DAYS }, (_, i) => ({ fraction: (i + 1) / LANE_HORIZON_DAYS, label: `+${i + 1}d` }));
+  const ticks =
+    horizonDays >= 2
+      ? Array.from({ length: horizonDays }, (_, i) => ({ fraction: (i + 1) / horizonDays, label: `+${i + 1}d` }))
+      : Array.from({ length: 6 }, (_, i) => ({ fraction: (i + 1) / 6, label: `+${(i + 1) * 4}h` }));
   return (
     <div ref={ref} className="pv-lane" style={{ height: LANE_HEIGHT }}>
       <div className="pv-lane-baseline" style={{ top: LANE_HEIGHT - 14 }} />
@@ -422,13 +440,15 @@ function ResetLane({ events, now }: { events: { id: string; remainingPercent: nu
       ))}
       {events.map((event, index) => {
         const fraction = Math.min(1, (event.resetAt - now) / horizon);
-        const x = width > 0 ? Math.max(4, Math.min(width - 4, (offsets[index] ?? width * fraction))) : 0;
+        // `fannedOffsets` returns how far each marker was nudged from its
+        // natural spot, not where it landed: add it to the rail position.
+        const x = width > 0 ? Math.max(4, Math.min(width - 4, width * fraction + (offsets[index] ?? 0))) : 0;
         const height = 6 + (LANE_HEIGHT - 30) * (event.gainPercent / 100);
         return (
           <span
             key={event.id}
             className="pv-lane-marker"
-            title={`${Math.round(event.remainingPercent)}% left now · +${Math.round(event.gainPercent)}% comes back`}
+            title={`${event.label ? `${event.label} · ` : ""}${Math.round(event.remainingPercent)}% left now · +${Math.round(event.gainPercent)}% comes back`}
             style={{ left: x - 3.5, top: LANE_HEIGHT - 14 - height, height, background: quotaBarColor(event.remainingPercent, false) }}
           />
         );
