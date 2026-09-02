@@ -15,6 +15,9 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import type { AccountQuota, PresentationSettings, QuotaView } from "./api";
 import { MiniQuotaBody, arrange } from "./components/MiniQuota";
+import { PopoverRoot } from "./popover/PopoverRoot";
+import { FIXTURE_COST, FIXTURE_NOW, FIXTURE_SETTINGS, FIXTURE_STATUS, FIXTURE_VIEW } from "./popover/fixture";
+import "./popover/popover.css";
 
 const NOW = Math.floor(Date.now() / 1000);
 
@@ -79,7 +82,27 @@ const panel = {
   width: "fit-content",
 } as const;
 
+const popoverActions = {
+  refreshAll: () => undefined, refreshCost: () => undefined, refreshStatus: () => undefined,
+  refreshProvider: () => undefined, toggleMini: () => undefined, showWorkbench: () => undefined, showSettings: () => undefined,
+};
+const popoverData = {
+  view: FIXTURE_VIEW, settings: FIXTURE_SETTINGS, cost: FIXTURE_COST, status: FIXTURE_STATUS, info: null,
+  refreshing: false, statusRefreshing: false, costRefreshing: false,
+};
+/** The native docs/screenshots/popover-overview.png, drawn by this client. */
+function PopoverPreview() {
+  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  return (
+    <div id="popover-preview" style={{ display: "inline-block", borderRadius: 14, background: dark ? "#1e1e20" : "#f7f7f9", margin: "24px 0 8px" }}>
+      <PopoverRoot data={popoverData} actions={popoverActions} now={FIXTURE_NOW} dark={dark} />
+    </div>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
+  <>
+    <PopoverPreview />
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
     {[
       "regular",
@@ -105,5 +128,6 @@ createRoot(document.getElementById("root")!).render(
         </div>
       </div>
     ))}
-  </div>,
+  </div>
+  </>,
 );

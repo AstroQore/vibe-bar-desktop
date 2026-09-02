@@ -35,6 +35,7 @@
 * {
   box-sizing: border-box;
 }
+html.popover-window, html.popover-window body { background: transparent; }
 
 body {
   margin: 0;
