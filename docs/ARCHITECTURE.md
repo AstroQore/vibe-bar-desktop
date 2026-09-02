@@ -227,3 +227,23 @@ Three things this client says plainly instead of pretending:
 - Opening a terminal. `open_in_terminal` runs only a line shaped like a
   resume command — one known CLI, plain arguments, no shell operators —
   through `osascript` on macOS; elsewhere it says to copy the command.
+
+### Resets
+
+The page is the native `ResetsPage`: the seven-day Refill Horizon lane,
+one card per SubProvider cycle on an adaptive 270 pt grid, the reset
+calendar with its sub-daily lane, and the 320 pt Run-out Risk column.
+`src/workbench/resets/model.ts` carries the rules — buckets grouped by
+SubProvider and group title in first-seen order and headlined by the
+longest window; risk rows for buckets whose forecast is uneasy or that
+sit at 15% or less, soonest run-out first, badged OUT / RISK / WATCH /
+LOW by the verdict rather than the raw remaining; calendar entries from
+the completed cycles the forecast store keeps (`quota_cycles`, one call
+per bucket, bounded) plus every scheduled reset in the month. `now` is
+rounded down to five minutes the way the native page does, so the cards
+do not re-lay out every second.
+
+The native card also draws the remaining-percent curve across the
+current cycle from the fill timeline's observations; this client's
+forecast store keeps cycle summaries, not samples, so the card omits the
+curve rather than sketching one.

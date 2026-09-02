@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { AccountQuota, QuotaView } from "../api";
-import { collectResetEvents } from "./Resets";
+import type { AccountQuota, QuotaView } from "../../api";
+import { collectResetEvents } from "./model";
 
 const NOW = 1_800_000_000;
 

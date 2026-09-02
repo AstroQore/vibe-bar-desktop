@@ -20,6 +20,8 @@ import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { FIXTURE_USAGE } from "./workbench/usage/fixture";
 import { SessionsPage } from "./workbench/sessions/SessionsPage";
 import { FIXTURE_SESSIONS, FIXTURE_TRANSCRIPT } from "./workbench/sessions/fixture";
+import { ResetsPage } from "./workbench/resets/ResetsPage";
+import { FIXTURE_RESET_HISTORY } from "./workbench/resets/fixture";
 import "./workbench/porcelain.css";
 import { FIXTURE_COST, FIXTURE_NOW, FIXTURE_SETTINGS, FIXTURE_STATUS, FIXTURE_VIEW } from "./popover/fixture";
 import "./popover/popover.css";
@@ -121,10 +123,18 @@ function SessionsPreview() {
     </div>
   );
 }
+function ResetsPreview() {
+  const dark = new URLSearchParams(location.search).get("dark") === "1";
+  return (
+    <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <ResetsPage view={FIXTURE_VIEW} settings={FIXTURE_SETTINGS as never} now={FIXTURE_NOW} history={FIXTURE_RESET_HISTORY} />
+    </div>
+  );
+}
 const surface = new URLSearchParams(location.search).get("surface");
 createRoot(document.getElementById("root")!).render(
   <>
-    {surface === "usage" ? <UsagePreview /> : surface === "sessions" ? <SessionsPreview /> : <PopoverPreview />}
+    {surface === "usage" ? <UsagePreview /> : surface === "sessions" ? <SessionsPreview /> : surface === "resets" ? <ResetsPreview /> : <PopoverPreview />}
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
     {[
       "regular",

@@ -4,7 +4,7 @@ import type { AppInfo, CostView, PresentationSettings, QuotaView } from "./api";
 import { api, formatRelative } from "./api";
 import { About } from "./components/About";
 import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
-import { Resets } from "./components/Resets";
+import { ResetsPage } from "./workbench/resets/ResetsPage";
 import { SessionsPage } from "./workbench/sessions/SessionsPage";
 import { Settings } from "./components/Settings";
 import { Skills } from "./components/Skills";
@@ -96,11 +96,7 @@ export function App() {
   const pages = {
     usageStats: <UsageStatsPage refreshToken={refreshToken} />,
     sessionManager: <SessionsPage refreshToken={refreshToken} />,
-    resets: (
-      <div style={{ padding: "0 22px 22px" }}>
-        {view ? <Resets view={view} settings={presentation} /> : <p className="wb-empty">Loading quota…</p>}
-      </div>
-    ),
+    resets: view ? <ResetsPage view={view} settings={presentation} /> : <p className="wb-empty" style={{ padding: 22 }}>Loading quota…</p>,
     skillsManager: <div style={{ padding: "0 22px 22px" }}><Skills /></div>,
     settings: (
       <div style={{ padding: "0 22px 22px" }}>

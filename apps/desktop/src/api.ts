@@ -406,6 +406,23 @@ export interface UsageStatsView {
   availableModels: string[];
   chipGroups: ChipGroup[];
 }
+/** One observed quota cycle, as the forecast store keeps it. */
+export interface QuotaCycle {
+  windowEnd: number;
+  windowStart?: number;
+  peakUsedPercent: number;
+  lastUsedPercent: number;
+  observationCount: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  completion?: "refillDetected" | "scheduledReset";
+  resetKind: string;
+  intervalSeconds?: number;
+}
+export interface ResetHistory {
+  completed: QuotaCycle[];
+  current: QuotaCycle | null;
+}
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 export const SETTINGS_EVENT = "vibebar://settings-changed";
@@ -427,6 +444,8 @@ export const api = {
   costView: () => invoke<CostView>("cost_view"),
   refreshCost: () => invoke<CostView>("refresh_cost"),
   usageStats: (query: UsageStatsQuery) => invoke<UsageStatsView>("usage_stats", { query }),
+  quotaCycles: (accountId: string, bucketId: string) =>
+    invoke<ResetHistory>("quota_cycles", { accountId, bucketId }),
   sessionListing: (query: SessionListingQuery) => invoke<SessionListing>("session_listing", { query }),
   openInTerminal: (command: string, terminal: "terminal" | "iterm2") =>
     invoke<void>("open_in_terminal", { command, terminal }),

@@ -1,0 +1,56 @@
+/* Resets — the native ResetsPage: refill lane, cycle grid (adaptive 270),
+   the calendar beside a 320 pt risk column. */
+.rs-page { display: flex; flex-direction: column; gap: 14px; padding: 16px 22px 22px; overflow: auto; height: 100%; }
+.wb-card.rs-box { gap: 10px; }
+.rs-box-head { display: flex; align-items: baseline; gap: 8px; }
+.rs-box-title { font-size: 13px; font-weight: 600; }
+.rs-box-detail { font-size: 10.5px; color: var(--wb-tertiary); }
+.rs-empty { font-size: 11.5px; color: var(--wb-tertiary); padding: 6px 0; }
+.rs-spacer { flex: 1 1 auto; }
+
+/* Cycle cards */
+.rs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; align-items: start; }
+.wb-card.rs-cycle { gap: 6px; padding: 14px; }
+.rs-cycle-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rs-cycle-head i { width: 6px; height: 6px; border-radius: 3px; flex: none; }
+.rs-cycle-name { font-size: 10px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--wb-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-cycle-account { font-size: 10px; color: var(--wb-tertiary); white-space: nowrap; }
+.rs-plan { margin-left: auto; height: 16px; padding: 0 6px; border-radius: 8px; font-size: 9.5px; font-weight: 600; color: var(--wb-secondary); background: var(--wb-field); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); display: inline-flex; align-items: center; white-space: nowrap; }
+.rs-cycle-big { font-size: 22px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+.rs-cycle-line { font-size: 10.5px; color: var(--wb-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-bar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--wb-text) 8%, transparent); overflow: hidden; }
+.rs-bar span { display: block; height: 100%; border-radius: 3px; }
+.rs-cycle-forecast { font-size: 10.5px; font-weight: 600; }
+.rs-cycle-buckets { display: flex; flex-direction: column; gap: 3px; padding-top: 4px; border-top: 0.5px solid var(--wb-hairline); }
+.rs-cycle-bucket { display: flex; align-items: center; gap: 8px; font-size: 10.5px; }
+.rs-cycle-bucket-title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--wb-secondary); }
+.rs-cycle-bucket-left { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rs-cycle-bucket-when { color: var(--wb-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Calendar + risk */
+.rs-columns { display: flex; align-items: flex-start; gap: 14px; }
+.rs-cal-head { display: flex; align-items: center; gap: 6px; }
+.rs-cal-nav { width: 20px; height: 20px; }
+.rs-cal-month { min-width: 110px; text-align: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rs-today { height: 22px; padding: 0 9px; border-radius: 11px; font-size: 11px; font-weight: 600; color: var(--wb-text); background: var(--wb-field); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); }
+.rs-subdaily { display: flex; flex-direction: column; gap: 2px; padding-bottom: 2px; }
+.rs-subdaily-label { font-size: 8.5px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--wb-tertiary); font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+.rs-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.rs-weekday { font-size: 9px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--wb-tertiary); text-align: center; padding-bottom: 2px; }
+.rs-day { min-height: 54px; padding: 4px 5px; border-radius: 8px; background: color-mix(in srgb, var(--wb-text) 3%, transparent); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rs-day.blank { background: transparent; box-shadow: none; }
+.rs-day.today { box-shadow: inset 0 0 0 1px var(--wb-accent); }
+.rs-day-number { font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rs-day.today .rs-day-number { color: var(--wb-accent); }
+.rs-entry { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--wb-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rs-entry i { width: 4.5px; height: 4.5px; border-radius: 3px; flex: none; }
+.rs-entry span { overflow: hidden; text-overflow: ellipsis; }
+.rs-entry.next { color: var(--wb-text); }
+.rs-entry.more { color: var(--wb-tertiary); }
+.rs-risks { display: flex; flex-direction: column; }
+.rs-risk { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid var(--wb-hairline); }
+.rs-risk:last-child { border-bottom: 0; }
+.rs-risk-badge { flex: none; min-width: 44px; height: 16px; padding: 0 6px; border-radius: 8px; font-size: 9px; font-weight: 700; letter-spacing: 0.4px; color: #fff; display: inline-flex; align-items: center; justify-content: center; margin-top: 1px; }
+.rs-risk-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rs-risk-name { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-risk-detail { font-size: 10px; color: var(--wb-secondary); font-variant-numeric: tabular-nums; }
