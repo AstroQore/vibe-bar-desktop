@@ -158,3 +158,45 @@ The popover draws what the core serves. These native cards wait on core work:
 - **Projects** and **Token Flow** in the usage mix — both need per-request
   attribution the core does not keep.
 - **Quota history** — the chart with its brush, which needs the timelines.
+
+## The Workbench
+
+The main window is the native Workbench: a 206 pt sidebar of pages
+(Usage Stats, Sessions, Resets, Skills, Settings) and a page header with
+the page's status line, the appearance toggle, and refresh.
+`src/workbench/porcelain.css` carries the porcelain tokens the native
+`WorkbenchPorcelainStyle` defines — window, sidebar, toolbar, field, and
+card fills, the 0.5 pt hairline, the `#4E5FE0` accent — and every page
+composes from `.wb-card`, `.wb-toolbar`, `.wb-pill`, and `.wb-table`
+rather than restating them.
+
+### Usage Stats
+
+The page is the native `UsageStatsPage` composition — filters toolbar,
+hero card, trend chart with a brush navigator, five distribution donuts,
+breakdown tables — fed by one core query, `usage_stats`, instead of the
+webview holding the ledger. `CostEngine` keeps the deduplicated events
+after a scan and `usage_stats` scans lazily when nothing is retained yet,
+so the page never shows an empty ledger a refresh would have filled.
+`crates/vibebar-desktop-core/src/usage_stats.rs` owns the rules that
+matter for parity:
+
+- Buckets are local calendar hours, days, and weeks (Monday start). Auto
+  picks hour for ranges up to 24 h, day up to 45 d, week beyond, and any
+  choice coarsens until the range fits 1,200 buckets — the native
+  interactive budget.
+- Harness labels are `ToolType::hierarchy().tool` ("Codex", "Claude
+  Code", "Gemini Web"); chip groups fold them under their billing
+  company in `ToolType` order and list every harness ever ingested, not
+  only those in range.
+- Model choices cascade from the harness pick; an unset harness list
+  means every harness, an empty one means none, matching the native All
+  chip that is a switch rather than a shortcut.
+- Cost is unset, not zero, when nothing in range carried a price, so the
+  hero shows "—" rather than a $0 that reads as free.
+
+`src/workbench/usage/model.ts` holds the page's own rules — presets,
+formatting that matches `UsageFormatting`, the chart window floor of two
+buckets — and `fixture.ts` renders the page at `/preview.html?surface=usage`
+without Tauri. Project attribution is not available in this client, so
+the Project Mix card says so instead of drawing an empty ring.

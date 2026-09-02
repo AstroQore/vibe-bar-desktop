@@ -2009,6 +2009,54 @@ mod tests {
     }
 
     #[test]
+    fn usage_stats_scans_lazily_and_keeps_the_ledger_for_later_queries() {
+        let home = tempfile::tempdir().unwrap();
+        let scanned_at = now_unix();
+        write_jsonl(
+            &home.path().join(".codex/sessions/2026/session.jsonl"),
+            &[
+                serde_json::json!({"type":"turn_context","payload":{"model":"gpt-5.4"}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-10.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20}}}}),
+                serde_json::json!({"type":"event_msg","timestamp":rfc3339(scanned_at-5.0),"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"cached_input_tokens":40,"output_tokens":30}}}}),
+            ],
+        );
+        let engine = CostEngine::new(DataRoot::at(home.path().join(".vibebar")), home.path());
+        assert!(engine.retained_events().is_none(), "nothing scanned yet");
+        let view = engine
+            .usage_stats(&crate::usage_stats::UsageStatsQuery::default())
+            .unwrap();
+        assert!(view.ledger_available);
+        assert_eq!(view.total_requests, 2);
+        assert_eq!(view.summary.total_tokens, engine.cached().all_time.tokens);
+        assert_eq!(view.chip_groups[0].harnesses, ["Codex"]);
+        assert_eq!(view.requests[0].model, "gpt-5.4");
+        assert!(engine.retained_events().is_some(), "the lazy scan retains the ledger");
+        let narrowed = engine
+            .usage_stats(&crate::usage_stats::UsageStatsQuery {
+                harnesses: Some(vec!["Claude Code".to_string()]),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(narrowed.total_requests, 0);
+        assert_eq!(narrowed.chip_groups.len(), 1, "chips still list every ingested harness");
+    }
+
+    #[test]
+    fn usage_stats_says_not_looked_at_under_privacy_mode() {
+        let home = tempfile::tempdir().unwrap();
+        let vibebar = home.path().join(".vibebar");
+        fs::create_dir_all(&vibebar).unwrap();
+        fs::write(vibebar.join("settings.json"), "{\"costData\": {\"privacyModeEnabled\": true}}").unwrap();
+        let engine = CostEngine::new(DataRoot::at(vibebar), home.path());
+        let view = engine
+            .usage_stats(&crate::usage_stats::UsageStatsQuery::default())
+            .unwrap();
+        assert!(view.privacy_suppressed);
+        assert!(!view.ledger_available);
+        assert!(engine.retained_events().is_none());
+    }
+
+    #[test]
     fn scans_codex_deltas_and_uses_only_event_level_service_tier() {
         let home = tempfile::tempdir().unwrap();
         let scanned_at = now_unix();
