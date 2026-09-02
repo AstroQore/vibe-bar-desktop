@@ -15,10 +15,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 vibebar-desktop-core = { path = "../../../crates/vibebar-desktop-core" }
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-opener = "2"
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
 tauri-plugin-updater = "2.11.0"
+window-vibrancy = "0.6"

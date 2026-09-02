@@ -137,6 +137,9 @@ pub struct SharedSettings {
     /// "main" | "dev". Shared with the native client.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_channel: Option<String>,
+    /// "compact" | "regular" | "spacious" — native's `popoverDensity`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub popover_density: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mini_window: Option<MiniWindowSettings>,
 
@@ -164,6 +167,10 @@ pub struct PresentationSettings {
     pub mini_strip_density: String,
     /// "main" | "dev" — which release channel this machine follows.
     pub update_channel: String,
+    /// "compact" | "regular" | "spacious" — the popover's density profile.
+    /// Read from the shared file; a value this build does not know reads as
+    /// regular, which is what native does with its own unknown case.
+    pub popover_density: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -215,6 +222,15 @@ impl SharedSettings {
     /// this client draws. A mode it has not ported yet falls back to
     /// `regular`: showing the arrangement in a shape the user did not pick is
     /// better than showing nothing, and the parity table says which exist.
+    /// Native's `PopoverDensity`, with its unknown-case fallback.
+    pub fn popover_density(&self) -> &'static str {
+        match self.popover_density.as_deref() {
+            Some("compact") => "compact",
+            Some("spacious") => "spacious",
+            _ => "regular",
+        }
+    }
+
     pub fn mini_display_mode(&self) -> &'static str {
         match self
             .mini_window
@@ -346,6 +362,7 @@ impl SharedSettings {
             mini_display_mode: self.mini_display_mode().to_string(),
             mini_strip_density: self.mini_strip_density().to_string(),
             update_channel: self.update_channel().as_settings_value().to_string(),
+            popover_density: self.popover_density().to_string(),
         }
     }
 
@@ -491,6 +508,21 @@ mod tests {
                 channel
             );
         }
+    }
+
+    #[test]
+    fn the_popover_density_is_native_s_with_its_fallback() {
+        let density = |json: &str| {
+            serde_json::from_str::<SharedSettings>(json)
+                .expect("settings parse")
+                .popover_density()
+        };
+        assert_eq!(density(r#"{"popoverDensity":"compact"}"#), "compact");
+        assert_eq!(density(r#"{"popoverDensity":"spacious"}"#), "spacious");
+        assert_eq!(density(r#"{"popoverDensity":"regular"}"#), "regular");
+        // Native decodes an unknown case as regular; so does this.
+        assert_eq!(density(r#"{"popoverDensity":"wide"}"#), "regular");
+        assert_eq!(density("{}"), "regular");
     }
 
     #[test]

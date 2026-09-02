@@ -1,7 +1,7 @@
 //! IPC surface for the web UI.
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::forecast::cycles::CycleSummary;
@@ -235,6 +235,37 @@ pub async fn install_update(
 #[tauri::command]
 pub fn hide_mini(app: AppHandle) {
     crate::mini_window::hide(&app);
+}
+
+/// The popover's Mini button.
+#[tauri::command]
+pub fn toggle_mini(app: AppHandle) {
+    crate::mini_window::toggle(&app);
+}
+
+/// The popover's Workbench and Settings buttons: the main window, on a page.
+/// The page travels as an event because the window may already be open on
+/// another one.
+#[tauri::command]
+pub fn show_main_window(app: AppHandle, page: String) {
+    crate::popover::hide(&app);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit("navigate", page);
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// The popover's page lost focus: native's transient popover closes.
+#[tauri::command]
+pub fn hide_popover(app: AppHandle) {
+    crate::popover::hide(&app);
+}
+
+/// The popover's content told the shell how big it is.
+#[tauri::command]
+pub fn resize_popover(app: AppHandle, width: f64, height: f64) {
+    crate::popover::resize_to_content(&app, width, height);
 }
 
 #[tauri::command]

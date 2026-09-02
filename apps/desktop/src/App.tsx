@@ -73,6 +73,11 @@ export function App() {
           .catch(() => setStatusRefreshFailed(true));
       });
     const unlisten = api.onQuotaUpdated(setView);
+    // The popover's Workbench and Settings buttons land here on a page.
+    const unlistenNavigate = api.onNavigate((page) => {
+      if (page === "settings" || page === "resets" || page === "sessions" || page === "skills" || page === "about") setTab(page);
+      else setTab("overview");
+    });
     // The settings file is shared: re-read it whenever the other client writes,
     // rather than showing what it said when this window opened.
     const unlistenSettings = api.onSettingsChanged((replacedKeys) => {
@@ -89,6 +94,7 @@ export function App() {
     return () => {
       unlisten.then((off) => off()).catch(() => undefined);
       unlistenSettings.then((off) => off()).catch(() => undefined);
+      unlistenNavigate.then((off) => off()).catch(() => undefined);
     };
   }, []);
 

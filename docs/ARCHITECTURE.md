@@ -116,3 +116,45 @@ handle rather than reopening a checked pathname.
 - **No notifications, no cost pipeline, no MCP server, no remote sync.** These
   are parity work, tracked in `HANDOVER.md`, not omissions to be patched in
   ad hoc.
+
+## The popover
+
+Native's primary surface is the menu-bar popover: a transient `NSPopover`
+with a tabbed shell — Overview, one page per core company, Misc, Machines —
+whose Overview is a two-column waterfall of cards. Desktop draws the same
+shell in a second window, `popover`, that the tray's left click toggles.
+
+| Piece | Where | Native counterpart |
+| --- | --- | --- |
+| Density profiles, widths, heights | `src/popover/theme.ts` | `Theme.Density`, `overviewDensity` — copied number for number, tested |
+| Placement | `src/popover/masonry.ts` | `OverviewMasonryPlanner` — summary row, four-quota exhaustive order, cost exhaustive columns, auxiliary shortest-first; `reflow` keeps columns when a card grows |
+| Wording | `src/popover/format.ts` | `ResetCountdownFormatter`, `QuotaFreshnessLabel`, `QuotaForecastRow`, `UsagePace`, `ProviderPlanDisplay` |
+| Cards | `src/popover/cards.tsx` | `OverviewCostSummaryCard`, `OverviewStatusSummaryCard`, `ProviderQuotaCard` (+ the Google AI and SpaceXAI combined cards), `ProviderBucketRow`, `ForecastQuotaBar`, `PaceMarkerCapsule`, `UpcomingResetsCard` with `ResetLaneView`, `OverviewUsageMixCard` |
+| Shell | `src/popover/PopoverRoot.tsx` | `PopoverRoot`, `HeaderView`, `OverviewPageSwitch` |
+| Window | `src-tauri/src/popover.rs` | `NSPopover` — decorationless, always on top, placed under the tray icon, hidden on blur, sized to its content, drawn on `NSVisualEffectMaterial.Popover` |
+
+The window is transparent and the page paints nothing behind its cards, so
+the system material shows through; that needs `macOSPrivateApi` for WKWebView
+to stop painting its own background. The popover's arrow is the one piece of
+native chrome this cannot draw.
+
+`VIBEBAR_DEMO_SURFACE=popover` presents it without a tray click, as native's
+switch does, for the screenshot scripts. `apps/desktop/preview.html` renders
+the same shell on `src/popover/fixture.ts`, the data behind the native
+README's Overview screenshot.
+
+### What the shell cannot feed yet
+
+The popover draws what the core serves. These native cards wait on core work:
+
+- **Forecast rows** on shared-cache buckets — native computes them from its
+  fill/forecast timelines; the core attaches a forecast only where it has its
+  own observations, so cached buckets get the pace row instead.
+- **Cost**, and with it the **cost history**, **model ranking** and the two
+  **heatmaps** — the core scans JSONL itself and keeps no ledger, so a machine
+  whose usage lives in native's ledger reads as no usage here.
+- **Uptime percentages** on the status tiles — the core's status model has
+  no aggregate uptime.
+- **Projects** and **Token Flow** in the usage mix — both need per-request
+  attribution the core does not keep.
+- **Quota history** — the chart with its brush, which needs the timelines.

@@ -223,6 +223,9 @@ export interface PresentationSettings {
   /** "main" | "dev" — which release channel this machine follows. Shared with
    *  the native client, so choosing Dev in either window applies to both. */
   updateChannel: string;
+  /** "compact" | "regular" | "spacious" — the popover's density, native's
+   *  `popoverDensity`. Missing on files written before it was read here. */
+  popoverDensity?: string;
 }
 
 export interface StatusIncident {
@@ -338,6 +341,16 @@ export const api = {
    *  window to it. */
   resizeMini: (width: number, height: number) =>
     invoke<void>("resize_mini", { width, height }),
+  /** Show or hide the mini window, as the popover's Mini button does. */
+  toggleMini: () => invoke<void>("toggle_mini"),
+  /** Bring the main window up on a page — the popover's Workbench and
+   *  Settings buttons. */
+  showMainWindow: (page: string) => invoke<void>("show_main_window", { page }),
+  /** The popover lost focus; native's transient popover closes. */
+  hidePopover: () => invoke<void>("hide_popover"),
+  /** Tell the shell how large the popover's content is. */
+  resizePopover: (width: number, height: number) =>
+    invoke<void>("resize_popover", { width, height }),
   /** The version waiting on this machine's channel, or null. Checking never
    *  installs — `installUpdate` is the step that does, and only when asked.
    *  The `id` names this answer: two checks can be in flight at once, and
@@ -347,6 +360,9 @@ export const api = {
   installUpdate: (id: number) => invoke<void>("install_update", { id }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
     listen<QuotaView>(QUOTA_EVENT, (event) => handler(event.payload)),
+  /** The popover asked the main window to open on a page. */
+  onNavigate: (handler: (page: string) => void) =>
+    listen<string>("navigate", (event) => handler(event.payload)),
   /** The shared settings file changed. The payload names the settings chosen
    *  here that now hold the other client's value, and is null when nothing
    *  was lost — much the commoner case. */

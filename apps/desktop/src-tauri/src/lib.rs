@@ -6,6 +6,7 @@
 
 mod commands;
 mod mini_window;
+mod popover;
 mod native_app;
 mod state;
 mod tray;
@@ -68,6 +69,10 @@ pub fn run() {
             commands::refresh_cost,
             commands::refresh_quota,
             commands::hide_mini,
+            commands::toggle_mini,
+            commands::show_main_window,
+            commands::resize_popover,
+            commands::hide_popover,
             commands::resize_mini,
             commands::check_for_update,
             commands::install_update,
@@ -93,6 +98,22 @@ pub fn run() {
             // Tray failure deliberately does not abort setup: without a tray,
             // hiding the only window would leave the user no way back in.
             let tray_installed = tray::install(app.handle(), &state).is_ok();
+            // The popover exists only where a tray exists to anchor it.
+            if tray_installed {
+                let _ = popover::install(app.handle());
+                // Native's demo surface switch, for the screenshot scripts: the
+                // popover cannot be clicked open by a script, so demo mode
+                // presents it on request.
+                if state.data_root().is_demo()
+                    && std::env::var("VIBEBAR_DEMO_SURFACE").map(|s| s.starts_with("popover")).unwrap_or(false)
+                {
+                    let handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                        popover::show_centered(&handle);
+                    });
+                }
+            }
             setup_tray_available.store(tray_installed, Ordering::Release);
             let store = ClientStore::new(state.data_root().clone());
             let action = startup_action(

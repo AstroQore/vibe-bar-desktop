@@ -56,8 +56,16 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Resul
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { .. } = event {
-                show_main_window(tray.app_handle());
+            // A left click toggles the popover under the icon, as native's
+            // status item does. The menu stays on the right button.
+            if let TrayIconEvent::Click {
+                rect,
+                button: tauri::tray::MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = event
+            {
+                crate::popover::toggle_at(tray.app_handle(), rect);
             }
         })
         .build(app)?;
