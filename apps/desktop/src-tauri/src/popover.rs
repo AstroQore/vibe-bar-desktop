@@ -135,10 +135,32 @@ pub fn hide<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// The monitor the tray icon is on. Asked for by the anchor rather than by
+/// the window: a hidden popover still reports the display it was last shown
+/// on, and a click on a status item on another display would be clamped to
+/// that stale work area — and converted at its scale.
+fn monitor_under<R: Runtime>(window: &tauri::WebviewWindow<R>, anchor: &Rect) -> Option<tauri::Monitor> {
+    let monitors = window.available_monitors().ok()?;
+    let hit = monitors.iter().find(|monitor| {
+        let scale = monitor.scale_factor();
+        let point = anchor.position.to_physical::<i32>(scale);
+        let origin = monitor.position();
+        let size = monitor.size();
+        point.x >= origin.x
+            && point.y >= origin.y
+            && point.x < origin.x + size.width as i32
+            && point.y < origin.y + size.height as i32
+    });
+    hit.cloned()
+        .or_else(|| window.current_monitor().ok().flatten())
+        .or_else(|| window.primary_monitor().ok().flatten())
+}
+
 /// Centre the popover on the tray icon, just below the menu bar, and keep
-/// every edge inside the monitor's work area.
+/// every edge inside that monitor's work area.
 fn place<R: Runtime>(window: &tauri::WebviewWindow<R>, anchor: Rect) {
-    let scale = window.scale_factor().unwrap_or(1.0);
+    let monitor = monitor_under(window, &anchor);
+    let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
     let anchor_pos = anchor.position.to_logical::<f64>(scale);
     let anchor_size = anchor.size.to_logical::<f64>(scale);
     let size = window
@@ -147,10 +169,10 @@ fn place<R: Runtime>(window: &tauri::WebviewWindow<R>, anchor: Rect) {
         .unwrap_or_else(|_| LogicalSize::new(INITIAL.0, INITIAL.1));
     let mut x = anchor_pos.x + anchor_size.width / 2.0 - size.width / 2.0;
     let mut y = anchor_pos.y + anchor_size.height + ANCHOR_GAP;
-    if let Ok(Some(monitor)) = window.current_monitor().or_else(|_| window.primary_monitor()) {
+    if let Some(monitor) = monitor {
         let area = monitor.work_area();
-        let origin = area.position.to_logical::<f64>(monitor.scale_factor());
-        let bounds = area.size.to_logical::<f64>(monitor.scale_factor());
+        let origin = area.position.to_logical::<f64>(scale);
+        let bounds = area.size.to_logical::<f64>(scale);
         let max_x = origin.x + bounds.width - size.width - SCREEN_MARGIN;
         let max_y = origin.y + bounds.height - size.height - SCREEN_MARGIN;
         x = x.min(max_x).max(origin.x + SCREEN_MARGIN);

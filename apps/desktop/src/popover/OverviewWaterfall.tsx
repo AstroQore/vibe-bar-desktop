@@ -9,7 +9,7 @@
  * neighbours down without anything jumping across — native's `Session`.
  */
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { plan, reflow, type Item, type Plan } from "./masonry";
+import { step, type Item, type Plan } from "./masonry";
 import type { Density } from "./theme";
 
 export interface WaterfallCard { id: string; phase: Item["phase"]; node: ReactNode }
@@ -42,15 +42,10 @@ export function OverviewWaterfall({ cards, width, density }: { cards: WaterfallC
 
   const layout: Plan = useMemo(() => {
     const items: Item[] = cards.map((c) => ({ id: c.id, phase: c.phase, height: heights[c.id] ?? 0 }));
-    const ids = new Set(items.map((i) => i.id));
-    const known = Object.keys(columnsRef.current).filter((id) => ids.has(id));
-    // A fresh set of cards chooses columns; the same set only re-flows.
-    if (known.length !== items.length || items.some((i) => !(i.id in columnsRef.current))) {
-      const first = plan(items, 2, spacing);
-      columnsRef.current = Object.fromEntries(Object.entries(first.positions).map(([id, p]) => [id, p.column]));
-      return first;
-    }
-    return reflow(items, columnsRef.current, 2, spacing);
+    const measured = new Set(Object.keys(heights));
+    const next = step({ columns: columnsRef.current }, items, measured, 2, spacing);
+    columnsRef.current = next.session.columns;
+    return next.plan;
   }, [cards, heights, spacing]);
 
   const height = Math.max(...layout.columnHeights, 0);

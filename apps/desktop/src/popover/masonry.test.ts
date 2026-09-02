@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plan, reflow, type Item } from "./masonry";
+import { plan, reflow, step, type Item } from "./masonry";
 
 const item = (id: string, height: number, phase: Item["phase"]): Item => ({ id, height, phase });
 
@@ -86,5 +86,30 @@ describe("the overview's two-column placement", () => {
     expect(p.positions.anthropic.column).toBe(0);
     expect(p.positions.spacexai.column).toBe(1);
     expect(p.positions.mix.column).toBe(0);
+  });
+
+  it("does not freeze columns until every card has been measured", () => {
+    const items = [item("a", 0, "quota"), item("b", 0, "quota"), item("c", 0, "quota"), item("d", 0, "quota")];
+    const first = step({ columns: {} }, items, new Set());
+    expect(first.session.columns).toEqual({});
+    // Half measured: still no freeze, still a fresh plan.
+    const half = step(first.session, items.map((i) => (i.id < "c" ? { ...i, height: 300 } : i)), new Set(["a", "b"]));
+    expect(half.session.columns).toEqual({});
+    // All measured: the plan that counts, and the columns it chose stick.
+    const measured = [item("a", 580, "quota"), item("b", 560, "quota"), item("c", 1080, "quota"), item("d", 300, "quota")];
+    const full = step(half.session, measured, new Set(["a", "b", "c", "d"]));
+    expect(Object.keys(full.session.columns).sort()).toEqual(["a", "b", "c", "d"]);
+    expect(full.plan.positions.c.column).not.toBe(full.plan.positions.a.column);
+    // A later height change re-flows within those columns.
+    const grown = step(full.session, measured.map((i) => (i.id === "a" ? { ...i, height: 900 } : i)), new Set(["a", "b", "c", "d"]));
+    expect(grown.session).toBe(full.session);
+    for (const id of ["a", "b", "c", "d"]) expect(grown.plan.positions[id].column).toBe(full.plan.positions[id].column);
+  });
+
+  it("re-plans when the card set changes", () => {
+    const measured = [item("a", 100, "quota"), item("b", 100, "quota")];
+    const frozen = step({ columns: {} }, measured, new Set(["a", "b"]));
+    const changed = step(frozen.session, [...measured, item("c", 100, "quota")], new Set(["a", "b", "c"]));
+    expect(Object.keys(changed.session.columns).sort()).toEqual(["a", "b", "c"]);
   });
 });

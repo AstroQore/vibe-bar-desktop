@@ -164,3 +164,34 @@ function permutations<T>(values: T[]): T[][] {
     return permutations(rest).map((tail) => [head, ...tail]);
   });
 }
+
+export interface Session {
+  /** Column per card, frozen once every card has been measured. */
+  columns: Record<string, number>;
+}
+
+/**
+ * One pass of the waterfall's session: plan while any card is unmeasured or
+ * the card set has changed, freeze columns the first time every card has a
+ * real height, and only re-flow after that.
+ *
+ * Freezing on the first plan — before `ResizeObserver` had reported — meant
+ * the exhaustive balancing ran on zeros and the measured heights only ever
+ * re-flowed those columns. The plan that counts is the first one with real
+ * numbers in it.
+ */
+export function step(session: Session, items: Item[], measured: Set<string>, columns = 2, spacing = 12): { plan: Plan; session: Session } {
+  const ids = new Set(items.map((i) => i.id));
+  const frozenIds = Object.keys(session.columns);
+  const sameSet = frozenIds.length === items.length && frozenIds.every((id) => ids.has(id));
+  const allMeasured = items.every((i) => measured.has(i.id));
+  if (sameSet && frozenIds.length > 0) {
+    return { plan: reflow(items, session.columns, columns, spacing), session };
+  }
+  const fresh = plan(items, columns, spacing);
+  if (!allMeasured || items.length === 0) return { plan: fresh, session: { columns: {} } };
+  return {
+    plan: fresh,
+    session: { columns: Object.fromEntries(Object.entries(fresh.positions).map(([id, p]) => [id, p.column])) },
+  };
+}

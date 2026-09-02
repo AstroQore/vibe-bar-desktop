@@ -61,18 +61,42 @@ export function visibleCorePages(view: QuotaView, settings: PresentationSettings
   return CORE_PAGES.filter((page) => companies.has(page.company));
 }
 
-/** Every visible account of a company, grouped by SubProvider in first-seen order. */
-export function companySections(view: QuotaView, settings: PresentationSettings | null, company: string) {
-  const sections: { subProvider: string; tool: string; accounts: AccountQuota[] }[] = [];
+export interface SubProviderSection {
+  subProvider: string;
+  tool: string;
+  /** One block per account that contributes buckets to this SubProvider. */
+  blocks: { account: AccountQuota; buckets: QuotaBucket[] }[];
+}
+
+/**
+ * A company's visible accounts, partitioned by SubProvider **per bucket**,
+ * in first-seen order. Per bucket, not per account: the naming contract
+ * files Cursor's `grok_bot_weekly` under Grok Bot, so one account can feed
+ * two sections. An account with no buckets still gets a section, so its
+ * error or empty state has somewhere to be said.
+ */
+export function companySections(view: QuotaView, settings: PresentationSettings | null, company: string): SubProviderSection[] {
+  const sections: SubProviderSection[] = [];
+  const section = (name: string, tool: string) => {
+    let found = sections.find((s) => s.subProvider === name);
+    if (!found) {
+      found = { subProvider: name, tool, blocks: [] };
+      sections.push(found);
+    }
+    return found;
+  };
   for (const account of orderedVisibleAccounts(view.accounts, settings)) {
     if (companyFor(account.tool) !== company) continue;
-    const name = subProviderFor(account.tool);
-    let section = sections.find((s) => s.subProvider === name);
-    if (!section) {
-      section = { subProvider: name, tool: account.tool, accounts: [] };
-      sections.push(section);
+    if (account.buckets.length === 0) {
+      section(subProviderFor(account.tool), account.tool).blocks.push({ account, buckets: [] });
+      continue;
     }
-    section.accounts.push(account);
+    const byName = new Map<string, QuotaBucket[]>();
+    for (const bucket of account.buckets) {
+      const name = subProviderFor(account.tool, bucket.id);
+      byName.set(name, [...(byName.get(name) ?? []), bucket]);
+    }
+    for (const [name, buckets] of byName) section(name, account.tool).blocks.push({ account, buckets });
   }
   return sections;
 }

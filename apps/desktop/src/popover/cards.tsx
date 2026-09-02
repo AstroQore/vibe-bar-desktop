@@ -171,10 +171,11 @@ export function ProviderQuotaCard({ view, settings, company, tool, now, mode, re
         sections.map((section, index) => (
           <div key={section.subProvider} className="pv-subprovider">
             {index > 0 ? <hr className="pv-rule" /> : null}
-            {section.accounts.map((account) => (
+            {section.blocks.map(({ account, buckets }) => (
               <SubProviderBlock
-                key={account.accountId}
+                key={`${account.accountId}:${section.subProvider}`}
                 account={account}
+                buckets={buckets}
                 subProvider={section.subProvider}
                 now={now}
                 mode={mode}
@@ -189,7 +190,7 @@ export function ProviderQuotaCard({ view, settings, company, tool, now, mode, re
   );
 }
 
-function SubProviderBlock({ account, subProvider, now, mode, staleAfter, planOverrides }: { account: AccountQuota; subProvider: string; now: number; mode: DisplayMode; staleAfter: number; planOverrides?: Record<string, string> | null }) {
+function SubProviderBlock({ account, buckets, subProvider, now, mode, staleAfter, planOverrides }: { account: AccountQuota; buckets: QuotaBucket[]; subProvider: string; now: number; mode: DisplayMode; staleAfter: number; planOverrides?: Record<string, string> | null }) {
   const stale = staleLabel(account.queriedAt, account.queriedAt, account.error?.detail ?? (account.error ? account.error.kind : undefined), staleAfter, now);
   return (
     <>
@@ -205,11 +206,11 @@ function SubProviderBlock({ account, subProvider, now, mode, staleAfter, planOve
           <span>{stale}</span>
         </div>
       ) : null}
-      {account.buckets.length === 0 ? (
+      {buckets.length === 0 ? (
         <MessageRow text={account.error ? account.error.detail ?? account.error.kind : "No quota windows reported."} tone={account.error ? "warning" : "secondary"} />
       ) : (
         <div className="pv-buckets">
-          {bucketGroups(account.buckets).map((group, index) => (
+          {bucketGroups(buckets).map((group, index) => (
             <div key={group.title ?? "__primary"} className="pv-bucket-group">
               {index > 0 ? <hr className="pv-rule faint" /> : null}
               {group.title ? <div className="pv-group-caption">{group.title}</div> : null}

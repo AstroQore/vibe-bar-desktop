@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketGroups, costSummary, overviewDescriptors, statusState, upcomingResets, usageMix } from "./data";
+import { bucketGroups, companySections, costSummary, overviewDescriptors, statusState, upcomingResets, usageMix } from "./data";
 import { FIXTURE_COST, FIXTURE_NOW, FIXTURE_SETTINGS, FIXTURE_VIEW } from "./fixture";
 
 describe("the overview's cards, in native's order", () => {
@@ -69,5 +69,32 @@ describe("service status states", () => {
     expect(statusState({ tool: "codex", indicator: "none", description: "", incidents: [] }, false)).toBe("up");
     expect(statusState({ tool: "codex", indicator: "critical", description: "", incidents: [] }, false)).toBe("down");
     expect(statusState({ tool: "codex", indicator: "minor", description: "", incidents: [] }, false)).toBe("degraded");
+  });
+});
+
+describe("a company's SubProvider sections", () => {
+  it("files each bucket under the SubProvider the naming contract gives it", () => {
+    // Cursor's account carries the Grok Bot weekly bucket; it is Grok Bot's.
+    const view = {
+      ...FIXTURE_VIEW,
+      accounts: [
+        {
+          accountId: "cursor-demo", tool: "cursor", queriedAt: FIXTURE_NOW, origin: "sharedCache",
+          buckets: [
+            { id: "models", title: "Monthly", shortLabel: "Monthly", usedPercent: 24 },
+            { id: "grok_bot_weekly", title: "Weekly", shortLabel: "Weekly", usedPercent: 0 },
+          ],
+        },
+        ...FIXTURE_VIEW.accounts.filter((a) => a.tool === "grok"),
+      ],
+    } as typeof FIXTURE_VIEW;
+    const sections = companySections(view, FIXTURE_SETTINGS, "SpaceXAI");
+    const names = sections.map((s) => s.subProvider);
+    expect(names).toContain("Grok Bot");
+    expect(names).toContain("Cursor");
+    const grokBot = sections.find((s) => s.subProvider === "Grok Bot")!;
+    expect(grokBot.blocks.flatMap((b) => b.buckets.map((x) => x.id))).toEqual(["grok_bot_weekly"]);
+    const cursor = sections.find((s) => s.subProvider === "Cursor")!;
+    expect(cursor.blocks.flatMap((b) => b.buckets.map((x) => x.id))).toEqual(["models"]);
   });
 });
