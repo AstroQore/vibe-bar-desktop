@@ -38,6 +38,13 @@ cannot redirect the final write.
 | everything else in the root | untouched, including files Desktop does not recognize |
 | `client/desktop/` | read and write |
 
+The one write outside both the client namespace and `settings.json` is not
+a Vibe Bar store at all: the macOS Control Center allow-list, rewritten by
+the menu bar health repair on the user's click or explicit opt-in, through
+the bundled repair script with a backup, an atomic write, and a Control
+Center restart — the same procedure the native app ships. `AGENTS.md`
+rule 1 names it so nothing else can hide behind it.
+
 ## Why Desktop does not write the other shared stores
 
 Not caution for its own sake — the shared stores currently have properties

@@ -288,3 +288,26 @@ CLI, OAuth, and credential-file routes — and says cookie routes are not
 used here. Remote probes, the MCP socket, the menu bar health monitor,
 WebView login, and cookie import remain the native app's; each section
 says so rather than presenting a control that would do nothing.
+
+## The menu bar health watchdog
+
+macOS 26 keeps a Control Center allow-list of menu bar apps. A hidden app
+can retain this app's bundle id in its own `menuItemLocations`, and
+Control Center then applies that app's `isAllowed=false` to us: the tray
+icon vanishes with no error anywhere. The native app learned this the
+hard way and ships `fix_menu_bar_allowlist.py`, which audits and, on
+request, removes only those stale cross-app references. This client
+bundles the same script with its own bundle id (`resources/`) and
+`src-tauri/src/menu_bar_health.rs` runs it every five minutes: an audit
+becomes a `HealthReport` (healthy / blocked / unavailable, with the
+Full Disk Access hint when the plist cannot be read), three consecutive
+blocked audits run the repair when the shared `menuBarAutoRepairEnabled`
+is on, and the report goes to the window as `vibebar://menu-bar-health`.
+The native AppKit probe — status item window height and occlusion — has
+no Tauri equivalent, so the verdict here is the allow-list's alone.
+
+Repair re-registers the tray (`tray::reregister`) so a fresh status item
+lands in the cleaned list. Settings › Menu Bar Health shows the report,
+Check Now, Repair & Re-register, Copy Repair Command, and the Full Disk
+Access pane link; the two switches are the shared settings' and are read
+here. The page header notes a blocked menu bar on every page.

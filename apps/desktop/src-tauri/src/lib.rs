@@ -10,6 +10,7 @@ mod popover;
 mod native_app;
 mod state;
 mod tray;
+mod menu_bar_health;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -76,6 +77,9 @@ pub fn run() {
             commands::set_autostart,
             commands::pricing_effective,
             commands::open_url,
+            commands::menu_bar_health,
+            commands::menu_bar_check_now,
+            commands::menu_bar_repair,
             commands::refresh_quota,
             commands::hide_mini,
             commands::toggle_mini,
@@ -134,6 +138,8 @@ pub fn run() {
             apply_startup_action(app.handle(), &store, action);
             spawn_refresh_loop(app.handle().clone());
             spawn_settings_watch(app.handle().clone());
+            app.manage(menu_bar_health::Watchdog::default());
+            menu_bar_health::spawn(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
