@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AppInfo, CostView, EffectiveModelPricingRow, PendingUpdate, PresentationSettings, QuotaView } from "../../api";
+import type { AppInfo, CostView, EffectiveModelPricingRow, MenuBarHealthReport, PendingUpdate, PresentationSettings, QuotaView } from "../../api";
 import { api } from "../../api";
 import { ToolBrandIcon } from "../../popover/brand";
 import { companyFor, subProviderFor } from "../../naming";
@@ -141,6 +141,8 @@ export function SettingsPage({
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [autostartNote, setAutostartNote] = useState<string | null>(null);
   const [pricing, setPricing] = useState<EffectiveModelPricingRow[] | null>(pricingFixture ?? null);
+  const [health, setHealth] = useState<MenuBarHealthReport | null>(null);
+  const [healthNote, setHealthNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const entries = useMemo(() => buildSections(settings), [settings]);
   const visible = filterSections(entries, search);
@@ -152,6 +154,15 @@ export function SettingsPage({
     }
     api.autostartEnabled().then(setAutostart).catch((error: unknown) => setAutostartNote(String(error)));
   }, [fixture]);
+  useEffect(() => {
+    if (section !== "menuBarHealth" || fixture) return;
+    let unlisten: (() => void) | undefined;
+    api.menuBarHealth().then(setHealth).catch(() => undefined);
+    api.onMenuBarHealth(setHealth).then((stop) => {
+      unlisten = stop;
+    }).catch(() => undefined);
+    return () => unlisten?.();
+  }, [section, fixture]);
   useEffect(() => {
     if (section !== "pricing" || pricing || fixture) return;
     api.pricingEffective().then(setPricing).catch(() => setPricing([]));
@@ -385,17 +396,75 @@ export function SettingsPage({
             </div>
           </Section>
         );
-      case "menuBarHealth":
+      case "menuBarHealth": {
+        const stateCopy: Record<MenuBarHealthReport["state"], string> = {
+          checking: "Checking menu bar status…",
+          healthy: "Vibe Bar Desktop is visible in the menu bar",
+          blocked: "macOS appears to be blocking Vibe Bar Desktop",
+          unavailable: "Menu bar status is unavailable",
+        };
+        const report = health;
+        const dot = report?.state === "healthy" ? "#34C759" : report?.state === "blocked" ? "#FF3B30" : report?.state === "unavailable" ? "var(--wb-track)" : "#FF9500";
         return (
           <Section title="Menu Bar Health">
-            <div className="st-line"><Check label="Alert when macOS blocks the status item" checked title="The watchdog arrives with a later Desktop release." /></div>
             <div className="st-line">
-              <button type="button" className="st-btn" disabled>Check Now</button>
-              <button type="button" className="st-btn" disabled>Repair &amp; Re-register</button>
+              <Check label="Alert when macOS blocks the status item" checked={report?.alertsEnabled ?? true} title={READ_ONLY_NOTE} />
             </div>
-            <p className="st-note">The menu bar health monitor is not attached in this process.</p>
+            <p className="st-note">Alerts were disabled with “Don't check again” in the native app when this is off. Health checks remain visible here.</p>
+            <div className="st-line">
+              <Check label="Automatically repair confirmed allow-list blocks" checked={report?.autoRepairEnabled ?? false} title={READ_ONLY_NOTE} />
+            </div>
+            <p className="st-note">Off by default. When enabled, three consecutive blocked probes run the narrow repair, restart Control Center, and re-register only this app's status item. Full Disk Access is required. {READ_ONLY_NOTE}</p>
+            <div className="st-route" style={{ fontSize: 12.5 }}>
+              <i style={{ background: dot }} />
+              <span>{report ? stateCopy[report.state] : fixture ? stateCopy.unavailable : "Checking menu bar status…"}</span>
+            </div>
+            {report ? <p className="st-note">{report.message}{report.checkedAt > 0 ? ` · Checked ${new Date(report.checkedAt * 1000).toLocaleTimeString()}` : ""}</p> : null}
+            {healthNote ? <p className="st-note">{healthNote}</p> : null}
+            <div className="st-line">
+              <button type="button" className="st-btn" disabled={fixture || busy === "health"} onClick={() => void run("health", async () => setHealth(await api.menuBarCheckNow()))}>
+                <Refresh size={12} /> Check Now
+              </button>
+              <button
+                type="button"
+                className="st-btn"
+                disabled={fixture || busy === "repair"}
+                title="Removes stale cross-app references to this app from Control Center's allow-list, restarts Control Center, and re-registers the status item."
+                onClick={() =>
+                  void run("repair", async () => {
+                    try {
+                      setHealth(await api.menuBarRepair());
+                      setHealthNote(null);
+                    } catch (error) {
+                      setHealthNote(String(error));
+                    }
+                  })
+                }
+              >
+                Repair &amp; Re-register
+              </button>
+              <button
+                type="button"
+                className="st-btn"
+                disabled={!report?.repairCommand}
+                onClick={() => {
+                  if (report?.repairCommand) void navigator.clipboard.writeText(report.repairCommand).then(() => setHealthNote("Repair command copied.")).catch(() => setHealthNote("Could not reach the clipboard."));
+                }}
+              >
+                Copy Repair Command
+              </button>
+            </div>
+            <p className="st-note">On macOS 26, a hidden app can retain this app in its Control Center menuItemLocations and apply its own isAllowed=false state to it. Repair removes only that stale cross-app reference; it never changes another app's show/hide setting.</p>
+            {report?.needsFullDiskAccess ? (
+              <div className="st-line">
+                <button type="button" className="st-btn" onClick={() => void api.openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").catch((error: unknown) => setHealthNote(String(error)))}>
+                  Open Full Disk Access settings
+                </button>
+              </div>
+            ) : null}
           </Section>
         );
+      }
       case "miniWindow":
         return (
           <Section title="Mini Windows">
