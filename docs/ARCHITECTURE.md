@@ -125,13 +125,15 @@ handle rather than reopening a checked pathname.
 
 ## What is deliberately absent
 
-- **Six authorized write domains, and nothing else.** Shared settings and the
+- **A closed list of authorized write domains.** Shared settings and the
   quota cache under `~/.vibebar`; the Control Center allow-list, which is a
   macOS preference; whole-session deletion, which removes logs under a
   harness's own directory; the skill library under `~/.agents/skills` with the
   managed app directories; and the OS login-item registration behind launch at
-  login. Each goes through one documented writer with the native app's rules;
-  everything else those roots hold is read here. See
+  login. Installing an accepted update replaces the application itself, which
+  is a seventh and needs saying out loud. Each goes through one documented
+  writer with the native app's rules; everything else those roots hold is
+  read here. See
   [SHARED-STORAGE.md](SHARED-STORAGE.md) and [AGENTS.md](../AGENTS.md) rule 1.
 - **No dependency on the native app.** Its presence is detected only to offer
   a link, and never changes what Desktop can do.

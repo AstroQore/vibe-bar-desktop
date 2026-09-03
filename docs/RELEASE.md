@@ -2,7 +2,7 @@
 
 **This is built and running.** `release.yml` builds and signs from a tag,
 `publish-update-feed.yml` rebuilds the feed from what is published, and both
-channels have shipped versions — the Dev channel is on `0.1.0-dev.4` at the
+channels have shipped versions — the Dev channel is on `0.1.0-dev.5` at the
 time of writing. This document is both the design and the runbook: the pieces
 constrain each other, and half of them are one-way doors once a version has
 shipped to someone, so the reasoning is kept alongside the steps.

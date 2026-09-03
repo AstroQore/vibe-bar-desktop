@@ -13,7 +13,7 @@ this note says where the work stands and which lanes are open.
 
 | Item | State |
 | --- | --- |
-| Desktop version | `0.1.0-dev.4` on `main`, released; pre-parity `0.x` versioning is intentional |
+| Desktop version | `0.1.0-dev.5` on `main`; pre-parity `0.x` versioning is intentional |
 | Release channels | Main (`vX.Y.Z`) and Dev (`vX.Y.Z-dev.N`) tags build through `release.yml`; the updater feed lives on the `updates` branch. See [docs/RELEASE.md](docs/RELEASE.md) |
 | Native baseline | `AstroQore/vibe-bar` `1.6.2`, Dev channel at `v1.6.2-dev.63` |
 | Session kit | Desktop pins `agent-session-core` to the release tag `0.8.0`, which added the Rust `deletion` module both clients' rules now come from |
@@ -39,7 +39,7 @@ this note says where the work stands and which lanes are open.
 | Sessions | Shared index when compatible, otherwise bounded local discovery; full-text search, paged transcripts with find, resume command, and deletion through the kit's fenced deleter |
 | First run | The native setup assistant, step for step, marking completion in the shared settings |
 | MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot`. Quota, status, cost and pricing answer from what the last run recorded; the session tools read the shared index, or discover locally at request time when it is absent |
-| Writes | Six authorized write domains and nothing else — shared settings and the quota cache, the Control Center allow-list, whole-session deletion under a harness's own directory, the skill library with its managed app directories, and the OS login-item registration behind launch at login; see [AGENTS.md](AGENTS.md) rule 1 |
+| Writes | Six authorized write domains and nothing else — shared settings and the quota cache, the Control Center allow-list, whole-session deletion under a harness's own directory, the skill library with its managed app directories, and the OS login-item registration behind launch at login. Installing an update is the seventh and the loudest: at the person's explicit yes, the updater replaces the application itself. See [AGENTS.md](AGENTS.md) rule 1 |
 | Platforms | The core crate is tested on macOS, Linux and Windows on every pull request; the GUI has had its end-to-end pass on macOS only |
 
 Desktop does not depend on the native process, native binaries, or the native
@@ -136,12 +136,13 @@ the SQLite `session_index.sqlite3-shm` mtime.
 
 ## 5. Invariants that must not be weakened
 
-1. Write outside `<data root>/client/desktop/` only in the six authorized
+1. Write outside `<data root>/client/desktop/` only in the authorized
    domains, each through its documented writer, on the terms
    [AGENTS.md](AGENTS.md) rule 1 sets out. Most are not under the Vibe Bar
    root at all: one is a macOS preference, one removes a harness's own logs,
-   one is the skill library and the app directories it projects into, and one
-   is the OS login-item registration.
+   one is the skill library and the app directories it projects into, one is
+   the OS login-item registration, and installing an accepted update replaces
+   the application itself.
 2. Never repair, migrate, prune, rebuild, or downgrade another client's shared
    store. Unknown or unreadable versions degrade to unavailable with a reason.
 3. Keep quota hierarchy and usage-harness grouping as separate naming axes.
