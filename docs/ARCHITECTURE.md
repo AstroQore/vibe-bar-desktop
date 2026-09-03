@@ -66,8 +66,9 @@ invisible against the fill it sits on: all found there, none by a unit test.
 ## Data flow for a refresh
 
 1. `QuotaEngine::refresh` fetches every provider with a live adapter
-   (Codex, Claude, Cursor, Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro,
-   OpenRouter, and Warp today), in sequence, each with a 30-second ceiling.
+   (Codex, Claude, Cursor, Grok, Alibaba, Copilot, Z.ai, MiniMax, Kilo,
+   Kiro, OpenRouter, and Warp today), in sequence, each with a 30-second
+   ceiling.
 2. Each success is persisted to `client/desktop/quotas/` and kept in hand —
    a failed write must not lose an observation already obtained.
 3. The shared cache is read, with account ids claimed from both the native
