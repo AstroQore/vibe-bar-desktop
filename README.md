@@ -61,7 +61,7 @@ and Desktop runs standalone on a machine that has never had the native app.
 | The question | Desktop's answer |
 | --- | --- |
 | **How much is left, and will it last?** | Every quota card carries its reset countdown and a personal forecast built from the observations recorded here: run-out or surplus, with a verdict that admits when it is still learning. Nothing is manufactured — a forecast appears only where enough cycles support one. |
-| **Which of these numbers is fresh?** | Codex and Claude are fetched with the credentials their CLIs already keep, Cursor with the session Cursor.app keeps, eight more plans with an explicit key or their own CLI, and the remaining providers are read from the shared cache and labelled `shared data`. The UI never overstates how fresh a number is. |
+| **Which of these numbers is fresh?** | Codex, Claude and Grok are fetched with the credentials their CLIs already keep, Cursor with the session Cursor.app keeps, eight more plans with an explicit key or their own CLI, and the remaining providers are read from the shared cache and labelled `shared data`. The UI never overstates how fresh a number is. |
 | **Where did the work go?** | The Workbench prices the Codex, Claude Code and Gemini CLI session logs on this machine into a usage view by harness, by model and by the company that bills for it, and indexes every local agent session for full-text search, reading and one-click resume. |
 | **Can my agents use this context?** | The same binary, launched with `--mcp-stdio`, answers quota, session, status, pricing and cost questions over JSON-RPC on stdin/stdout — no port, no socket, no credentials. |
 
@@ -357,8 +357,8 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Feature | macOS native | Desktop | Note |
 | --- | :---: | :---: | --- |
 | **Quota** |
-| Live provider fetch | ● 25 | ◐ 11 | Codex, Claude, Cursor, Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, Warp. The rest is read from the shared cache and labelled as such |
-| Browser-cookie providers | ● | ○ | Gemini, Grok and the cookie-slot plans need a cookie reader; Windows blocks third-party cookie reads, so it will be an explicit import there |
+| Live provider fetch | ● 25 | ◐ 12 | Codex, Claude, Cursor, Grok, Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, Warp. The rest is read from the shared cache and labelled as such |
+| Browser-cookie providers | ● | ○ | Gemini and the cookie-slot plans need a cookie reader; Windows blocks third-party cookie reads, so it will be an explicit import there |
 | Observation and forecast history | ● | ◐ | Desktop records observations and draws the reset-history strip; the quota history chart with its brush is not ported |
 | Service status sources | ● 5 | ● 4 | OpenAI, Anthropic, Google, Cursor; xAI's page is scraped and not ported |
 | **Menu bar / tray** |
