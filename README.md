@@ -371,7 +371,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Layout editor with presets | ● | ○ | |
 | **Mini window** |
 | Multiple independent windows | ● | ○ | One mini window, seven layouts |
-| Translucent surface | ● Liquid Glass | ○ | Planned as a platform blur, deliberately not a copy. The window is currently opaque and undecorated |
+| Translucent surface | ● Liquid Glass | ◐ | On macOS the main window, popover and mini window carry real `NSVisualEffect` materials — sidebar and popover, deliberately the platform's own rather than a copy of Liquid Glass. Windows and Linux draw them opaque for now |
 | **Workbench** |
 | Skills: install, import, discover, backups | ● | ◐ | Install from a folder, import, projections, uninstall and backups are here; repository install, discover and the harness activation patches stay native for now |
 | Session hand-off to a terminal | ● | ◐ | Desktop copies the resume command; native opens Terminal with it |
@@ -464,6 +464,56 @@ Session reading and deletion come from
 Rust lane of `agent-session-kit` — the same kit the native app's Swift
 implementation uses, so both clients handle sessions by one set of rules.
 
+## Acknowledgements
+
+Desktop is a port: nearly every rule in it — the provider endpoints, the
+bucket shapes, the storage layout, the sync engine's fences — was read out of
+[Vibe Bar](https://github.com/AstroQore/vibe-bar)'s Swift source and
+reimplemented here so both clients behave the same way. Where that source
+credits someone, so does this one:
+
+- [CodexBar](https://github.com/steipete/CodexBar) is the technical reference
+  behind the menu-bar quota experience the native app built, and several
+  behaviours this client ports reach it through that: the Cursor endpoint set
+  and the gate on its legacy request-plan fallback, the shape of Grok's
+  billing response, and the idea of discovering AntiGravity from the language
+  server running on the machine.
+- [CC Switch](https://github.com/farion1231/cc-switch) informed the unified
+  skills workflow the Skills manager reconciles, and remains the
+  interoperability reference for existing cross-agent skill layouts.
+- [ccusage](https://github.com/ccusage/ccusage) informed the local
+  session-cost parsing and pricing semantics this client's scanner follows.
+- [LiteLLM](https://github.com/BerriAI/litellm),
+  [models.dev](https://github.com/anomalyco/models.dev) and
+  [Portkey Models](https://github.com/Portkey-AI/models) maintain the public
+  model-price catalogs the rates in this client's static table trace back to,
+  by way of the native app's merged catalog and the small Vibe Bar supplement
+  in [vibebar-model-pricing](https://github.com/AstroQore/vibebar-model-pricing).
+  Desktop does not refresh or merge those catalogs yet.
+
+Desktop is built on [Tauri 2](https://github.com/tauri-apps/tauri) and its
+single-instance, autostart, updater, dialog and opener plugins, with
+[window-vibrancy](https://github.com/tauri-apps/window-vibrancy) for the
+translucent surfaces, [rusqlite](https://github.com/rusqlite/rusqlite) and
+[reqwest](https://github.com/seanmonstar/reqwest) underneath, and
+[React](https://github.com/facebook/react) with
+[Vite](https://github.com/vitejs/vite) in front. Sessions come from
+[agent-session-kit](https://github.com/AstroQore/agent-session-kit), which is
+ours and shared with the native app. Every dependency and its version is in
+`Cargo.lock` and `apps/desktop/pnpm-lock.yaml`; each carries its own licence
+in its own repository.
+
+These projects are independent from Vibe Bar. Acknowledgement does not imply
+affiliation or endorsement.
+
 ## License
 
 AGPL-3.0-only, same as the native app.
+
+## Star History
+
+<p align="center">
+  <a href="https://star-history.com/#AstroQore/vibe-bar-desktop&Date">
+    <img src="https://api.star-history.com/svg?repos=AstroQore/vibe-bar-desktop&type=Date" alt="Star History Chart">
+  </a>
+</p>

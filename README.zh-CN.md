@@ -315,7 +315,7 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | 带预设的布局编辑器 | ● | ○ | |
 | **Mini 窗** |
 | 多个独立窗口 | ● | ○ | 一个 mini 窗，七种布局 |
-| 半透明表面 | ● Liquid Glass | ○ | 计划做成平台模糊，有意不做复刻。目前窗口不透明、无装饰 |
+| 半透明表面 | ● Liquid Glass | ◐ | macOS 上主窗、popover 和 mini 窗都用了真实的 `NSVisualEffect` 材质（sidebar 与 popover），有意用平台自己的东西而不是复刻 Liquid Glass。Windows 和 Linux 目前画成不透明 |
 | **Workbench** |
 | Skills：安装、导入、发现、备份 | ● | ◐ | 从文件夹安装、导入、投影、卸载和备份都在；仓库安装、发现和 harness 激活补丁暂留原生版 |
 | 会话交接到终端 | ● | ◐ | Desktop 复制 resume 命令；原生版直接打开 Terminal 执行 |
@@ -393,6 +393,47 @@ docs/                          架构、共享存储规则、设计语言、发�
 会话的读取和删除来自 [`agent-session-core`](https://github.com/AstroQore/agent-session-kit)，
 即 `agent-session-kit` 的 Rust 实现——与原生版 Swift 实现用的是同一个 kit，所以两个客户端按同一套规则处理会话。
 
+## 致谢
+
+Desktop 是一次移植：里面几乎每一条规则——provider 的端点、bucket 的形状、存储布局、
+同步引擎的围栏——都是从 [Vibe Bar](https://github.com/AstroQore/vibe-bar) 的 Swift
+源码里读出来、在这里重新实现的，为的是让两个客户端表现一致。那份源码致谢谁，这里也致谢谁：
+
+- [CodexBar](https://github.com/steipete/CodexBar) 是原生版菜单栏配额体验的技术参考，
+  本客户端移植的若干行为经由原生版追溯到它：Cursor 的端点组合与 legacy request-plan
+  回退的触发条件、Grok 计费响应的形状，以及「从本机运行的 language server 发现
+  AntiGravity」这个思路。
+- [CC Switch](https://github.com/farion1231/cc-switch) 启发了 Skills 管理器所协调的
+  统一 skill 工作流，也仍是现有跨 agent skill 布局的互操作参考。
+- [ccusage](https://github.com/ccusage/ccusage) 启发了本客户端扫描器所遵循的本地
+  会话成本解析与定价语义。
+- [LiteLLM](https://github.com/BerriAI/litellm)、
+  [models.dev](https://github.com/anomalyco/models.dev) 和
+  [Portkey Models](https://github.com/Portkey-AI/models) 维护着公开的模型价格目录，
+  本客户端静态价格表里的费率经由原生版合并后的目录与
+  [vibebar-model-pricing](https://github.com/AstroQore/vibebar-model-pricing)
+  这层小补充追溯到它们。Desktop 目前还不会刷新或合并这些目录。
+
+Desktop 构建在 [Tauri 2](https://github.com/tauri-apps/tauri) 及其 single-instance、
+autostart、updater、dialog、opener 插件之上，半透明表面用
+[window-vibrancy](https://github.com/tauri-apps/window-vibrancy)，底层是
+[rusqlite](https://github.com/rusqlite/rusqlite) 与
+[reqwest](https://github.com/seanmonstar/reqwest)，前端是
+[React](https://github.com/facebook/react) 加 [Vite](https://github.com/vitejs/vite)。
+会话来自 [agent-session-kit](https://github.com/AstroQore/agent-session-kit)，它是我们自己的，
+与原生版共用。每个依赖及其版本都记在 `Cargo.lock` 和 `apps/desktop/pnpm-lock.yaml` 里，
+各自的许可证在各自的仓库中。
+
+这些项目与 Vibe Bar 相互独立，致谢不代表任何关联或背书。
+
 ## 许可证
 
 AGPL-3.0-only，与原生版相同。
+
+## Star 历史
+
+<p align="center">
+  <a href="https://star-history.com/#AstroQore/vibe-bar-desktop&Date">
+    <img src="https://api.star-history.com/svg?repos=AstroQore/vibe-bar-desktop&type=Date" alt="Star 历史曲线">
+  </a>
+</p>
