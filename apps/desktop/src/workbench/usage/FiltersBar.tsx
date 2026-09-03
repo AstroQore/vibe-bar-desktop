@@ -87,7 +87,7 @@ export function FiltersBar({
       <div className="us-chips" role="group" aria-label="Harness filter">
         <button
           type="button"
-          className={`us-chip us-chip-all${allOn ? " on" : ""}`}
+          className={`wb-pill us-pill-all${allOn ? " on" : ""}`}
           title={allOn ? "Click to select no harness" : "Click to include every harness"}
           onClick={() => onChange({ ...state, harnesses: allOn ? [] : null, models: null })}
         >
@@ -101,8 +101,8 @@ export function FiltersBar({
             <div className="us-chip-group" key={group.company}>
               <button
                 type="button"
-                className={`us-chip us-chip-company${every ? " on" : some ? " partial" : ""}`}
-                style={{ "--tint": color } as React.CSSProperties}
+                className={`wb-pill us-pill-company${every ? " on" : some ? " partial" : ""}`}
+                style={{ "--wb-pill-tint": color } as React.CSSProperties}
                 title={`${group.company} · ${group.harnesses.join(" + ")}`}
                 onClick={() => onChange({ ...state, harnesses: toggleCompany(selected, all, group.harnesses), models: null })}
               >
@@ -113,8 +113,8 @@ export function FiltersBar({
                 <button
                   type="button"
                   key={harness}
-                  className={`us-chip${isOn(harness) ? " on" : ""}`}
-                  style={{ "--tint": color } as React.CSSProperties}
+                  className={`wb-pill${isOn(harness) ? " on" : ""}`}
+                  style={{ "--wb-pill-tint": color } as React.CSSProperties}
                   onClick={() => onChange({ ...state, harnesses: toggleHarness(selected, all, harness), models: null })}
                 >
                   {HARNESS_TOOL[harness] ? <ToolBrandIcon tool={HARNESS_TOOL[harness]} size={11} /> : null}
