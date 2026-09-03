@@ -192,6 +192,7 @@ impl ToolType {
                 | ToolType::Copilot
                 | ToolType::Cursor
                 | ToolType::Grok
+                | ToolType::Antigravity
                 | ToolType::Zai
                 | ToolType::Minimax
                 | ToolType::Kilo
