@@ -5,7 +5,7 @@
 //! kept in free functions taking bytes so the wire shapes are unit-tested
 //! against synthetic fixtures without a network.
 //!
-//! This preview slice ships eleven live adapters. The remaining providers render
+//! This preview slice ships twelve live adapters. The remaining providers render
 //! from the shared cache, attributed as such, until their adapters land.
 
 pub mod alibaba;
@@ -13,10 +13,12 @@ pub mod claude;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
+pub mod grok;
 pub mod kilo;
 pub mod kiro;
 pub mod minimax;
 pub mod openrouter;
+pub mod plan_display;
 pub mod warp;
 pub mod zai;
 
@@ -47,6 +49,7 @@ pub async fn fetch(
             ToolType::Alibaba => alibaba::fetch(home, client).await,
             ToolType::Copilot => copilot::fetch(home, client).await,
             ToolType::Cursor => cursor::fetch(home, client).await,
+            ToolType::Grok => grok::fetch(home, client).await,
             ToolType::Zai => zai::fetch(home, client).await,
             ToolType::Minimax => minimax::fetch(client).await,
             ToolType::Kilo => kilo::fetch(client, home).await,

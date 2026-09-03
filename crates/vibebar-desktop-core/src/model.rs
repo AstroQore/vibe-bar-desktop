@@ -191,6 +191,7 @@ impl ToolType {
                 | ToolType::Alibaba
                 | ToolType::Copilot
                 | ToolType::Cursor
+                | ToolType::Grok
                 | ToolType::Zai
                 | ToolType::Minimax
                 | ToolType::Kilo
