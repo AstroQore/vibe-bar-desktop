@@ -11,7 +11,8 @@ export function Menu({
   caps = true,
   children,
 }: {
-  icon: ReactNode;
+  /** Optional: the design language's filter pill is key + value alone. */
+  icon?: ReactNode;
   title: string;
   detail: string;
   ariaLabel: string;
@@ -53,8 +54,8 @@ export function Menu({
           setOpen((value) => !value);
         }}
       >
-        <span className="us-menulabel-icon">{icon}</span>
-        <span className={caps ? "us-menulabel-title" : "us-menulabel-detail"}>{title}</span>
+        {icon ? <span className="us-menulabel-icon">{icon}</span> : null}
+        {title ? <span className={caps ? "us-menulabel-title" : "us-menulabel-detail"}>{title}</span> : null}
         {detail ? <span className="us-menulabel-detail">{detail}</span> : null}
       </button>
       {open ? (

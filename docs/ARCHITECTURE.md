@@ -213,6 +213,9 @@ the Project Mix card says so instead of drawing an empty ring.
 
 ### Sessions
 
+The page is the first on the codified porcelain language — see
+`docs/DESIGN.md` for the tokens, controls and patterns it composes.
+
 The page is the native `SessionManagerPage`: a filters toolbar (search,
 scope, folders, index status, the All chip, company/harness/when/sort/
 options menus, delete controls), a resizable split of the session list

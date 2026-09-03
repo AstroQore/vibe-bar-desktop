@@ -1,9 +1,6 @@
 import type { SessionRow } from "../../api";
 import { ToolBrandBadge } from "../../popover/brand";
-import { Folder } from "../icons";
-import { type RowGroup, brandTool, companyOf, projectTitle, relativeTime } from "./model";
-
-const COMPANY_TINT: Record<string, string> = { OpenAI: "#5F8F7A", Anthropic: "#D97757", "Google AI": "#4285F4", SpaceXAI: "#6E6E73" };
+import { type RowGroup, brandTool, projectTitle, relativeTime, rowSummary, rowTint, rowTitle } from "./model";
 
 function excerptNodes(excerpt: string | undefined): React.ReactNode {
   if (!excerpt) return null;
@@ -21,6 +18,7 @@ export function SessionRowView({
   deleteMode,
   checked,
   now,
+  dark,
   onSelect,
   onToggleCheck,
 }: {
@@ -29,11 +27,13 @@ export function SessionRowView({
   deleteMode: boolean;
   checked: boolean;
   now: number;
+  dark: boolean;
   onSelect: () => void;
   onToggleCheck: () => void;
 }) {
-  const tint = COMPANY_TINT[companyOf(row.harness)] ?? "var(--wb-accent)";
-  const title = row.title?.trim() || row.excerpt?.replace(/<\/?[a-z]+>/g, "").trim() || row.sessionId;
+  const tint = rowTint(row, dark);
+  const title = rowTitle(row);
+  const summary = rowSummary(row);
   return (
     <button
       type="button"
@@ -43,25 +43,24 @@ export function SessionRowView({
       aria-pressed={selected}
       title={deleteMode ? "Toggle this session for deletion" : "Show this transcript"}
     >
-      {deleteMode ? <span className={`ss-row-check${checked ? " on" : ""}`} aria-hidden="true" /> : <span className="ss-head-badge"><ToolBrandBadge tool={brandTool(row)} iconSize={17} containerSize={24} /></span>}
+      {deleteMode ? <span className={`ss-row-check${checked ? " on" : ""}`} aria-hidden="true" /> : <span className="ss-row-badge"><ToolBrandBadge tool={brandTool(row)} iconSize={17} containerSize={20} /></span>}
       <span className="ss-row-body">
         <span className="ss-row-title">{title}</span>
-        <span className="ss-row-line">
-          {row.harness}
-          {row.model ? <span className="ss-model">{row.model}</span> : row.providerVariant ? <span className="ss-model">{row.providerVariant}</span> : null}
-        </span>
-        {row.excerpt ? <span className="ss-row-excerpt">{excerptNodes(row.excerpt)}</span> : null}
-        <span className="ss-row-foot">
-          <Folder size={11} />
-          {projectTitle(row.projectDir)}
+        {summary ? <span className="ss-row-excerpt">{row.excerpt ? excerptNodes(row.excerpt) : summary}</span> : null}
+        <span className="wb-meta">
+          <span>{row.harness}</span>
+          {row.model ? <span className="wb-capsule mono">{row.model}</span> : row.providerVariant ? <span className="wb-capsule">{row.providerVariant}</span> : null}
+          <span className="wb-dot" aria-hidden="true" />
+          <span className="ss-row-project">{projectTitle(row.projectDir)}</span>
+          <span className="wb-dot" aria-hidden="true" />
           <span>{relativeTime(row.lastActiveAt, now)}</span>
-          {row.messageCount != null ? (
-            <span className="ss-count" title={`${row.messageCount} messages`}>
-              {row.messageCount}
-            </span>
-          ) : null}
         </span>
       </span>
+      {row.messageCount != null ? (
+        <span className="ss-count" title={`${row.messageCount} messages`}>
+          {row.messageCount}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -75,6 +74,7 @@ export function SessionList({
   deleteMode,
   checked,
   now,
+  dark,
   onSelect,
   onToggleCheck,
   empty,
@@ -88,6 +88,7 @@ export function SessionList({
   deleteMode: boolean;
   checked: Set<string>;
   now: number;
+  dark: boolean;
   onSelect: (row: SessionRow) => void;
   onToggleCheck: (row: SessionRow) => void;
   empty: { title: string; detail: string } | null;
@@ -103,6 +104,7 @@ export function SessionList({
       deleteMode={deleteMode}
       checked={checked.has(row.sessionRef)}
       now={now}
+      dark={dark}
       onSelect={() => onSelect(row)}
       onToggleCheck={() => onToggleCheck(row)}
     />

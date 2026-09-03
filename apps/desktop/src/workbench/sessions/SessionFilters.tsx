@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { HarnessCount } from "../../api";
-import { Building, Calendar, Folder, Refresh, Search, Sliders, Sort, Terminal, TextSearch, XCircle, CheckCircle, Trash } from "../icons";
+import { CheckCircle, Refresh, Search, Sliders, Trash, XCircle } from "../icons";
 import { Menu, MenuItem } from "../usage/Menu";
 import {
   COMPANY_ORDER,
@@ -83,7 +83,7 @@ export function SessionFilters({
             </button>
           ) : null}
         </div>
-        <Menu icon={<TextSearch size={12} />} title="Scope" detail={`${state.scopes.length}`} ariaLabel="Choose what the search reads" width={240}>
+        <Menu title="Scope" detail={`${state.scopes.length}`} ariaLabel="Choose what the search reads" width={240}>
           {() => (
             <>
               {SEARCH_SCOPES.map((scope) => (
@@ -104,7 +104,7 @@ export function SessionFilters({
             </>
           )}
         </Menu>
-        <Menu icon={<Folder size={12} />} title="Folders" detail={foldersActive ? "Filtered" : "All"} ariaLabel="Filter by project directory" width={376}>
+        <Menu title="Folders" detail={foldersActive ? "Filtered" : "All"} ariaLabel="Filter by project directory" width={376}>
           {(close) => (
             <div className="ss-folders">
               <h4>Directory filters</h4>
@@ -140,22 +140,15 @@ export function SessionFilters({
             </div>
           )}
         </Menu>
-        <span className="ss-index">
-          {scanning ? <progress /> : null}
-          {status}
-          <button type="button" className="wb-iconbtn" style={{ width: 22, height: 22 }} title="Rescan the session logs on disk" onClick={onRescan}>
-            <Refresh size={12} />
-          </button>
-        </span>
         <button
           type="button"
-          className={`ss-chip${allOn ? " on" : ""}`}
+          className={`wb-pill${allOn ? " on" : ""}`}
           title={allOn ? "Click to select no harness" : "Click to show sessions from every harness"}
           onClick={() => onChange({ ...state, companies: null, harnesses: allOn ? [] : null })}
         >
           All
         </button>
-        <Menu icon={<Building size={12} />} title="Company" detail={companySummary} ariaLabel="Filter by billing company" width={200}>
+        <Menu title="Company" detail={companySummary} ariaLabel="Filter by billing company" width={200}>
           {() => (
             <>
               {companies.map((company) => {
@@ -177,7 +170,7 @@ export function SessionFilters({
             </>
           )}
         </Menu>
-        <Menu icon={<Terminal size={12} />} title="Harness" detail={harnessSummary(state.harnesses, harnesses.length)} ariaLabel="Filter by harness" width={220}>
+        <Menu title="Harness" detail={harnessSummary(state.harnesses, harnesses.length)} ariaLabel="Filter by harness" width={220}>
           {() => (
             <>
               {counts.map((count) => {
@@ -199,7 +192,7 @@ export function SessionFilters({
             </>
           )}
         </Menu>
-        <Menu icon={<Calendar size={12} />} title="When" detail={DATE_RANGES.find((r) => r.id === state.range)?.title ?? "Any time"} ariaLabel="Choose how far back to list sessions" width={160}>
+        <Menu title="When" detail={DATE_RANGES.find((r) => r.id === state.range)?.title ?? "Any time"} ariaLabel="Choose how far back to list sessions" width={160}>
           {(close) => (
             <>
               {DATE_RANGES.map((range) => (
@@ -217,7 +210,7 @@ export function SessionFilters({
             </>
           )}
         </Menu>
-        <Menu icon={<Sort size={12} />} title="Sort" detail={`${SORT_ORDERS.find((s) => s.id === state.sort)?.title}${state.groupByProject ? " · grouped" : ""}`} ariaLabel="Choose how the list is ordered" width={190}>
+        <Menu title="Sort" detail={`${SORT_ORDERS.find((s) => s.id === state.sort)?.title.replace(/ first$/, "")}${state.groupByProject ? " · grouped" : ""}`} ariaLabel="Choose how the list is ordered" width={190}>
           {() => (
             <>
               {SORT_ORDERS.map((order) => (
@@ -233,7 +226,7 @@ export function SessionFilters({
             </>
           )}
         </Menu>
-        <Menu icon={<Sliders size={12} />} title="Options" detail={terminalTitle} ariaLabel="Terminal and index options" width={230}>
+        <Menu icon={<Sliders size={13} />} title="" detail="" ariaLabel={`Terminal and index options (opens in ${terminalTitle})`} width={230}>
           {() => (
             <>
               <div className="wb-label-caps" style={{ padding: "4px 8px 2px" }}>Open in</div>
@@ -250,17 +243,33 @@ export function SessionFilters({
                 Rebuild index…
               </MenuItem>
               <div className="ss-menu-note">The session index is shared with the native app, which builds it. This client reads it and rescans the logs itself when it is missing.</div>
+              <div style={{ height: 0.5, background: "var(--wb-hairline)", margin: "4px 0" }} />
+              <MenuItem checked={deleteMode} disabled={deleteDisabledReason !== null && !deleteMode} onSelect={onToggleDeleteMode}>
+                Select sessions to delete
+              </MenuItem>
+              {deleteDisabledReason ? <div className="ss-menu-note">{deleteDisabledReason}</div> : null}
             </>
           )}
         </Menu>
+        <span className="wb-spacer" />
         {deleteMode ? (
-          <button type="button" className="ss-delete danger" disabled={checkedCount === 0 || deleteDisabledReason !== null} title={deleteDisabledReason ?? "Delete the checked sessions"} onClick={onDelete}>
-            <Trash size={12} /> {checkedCount === 0 ? "Delete" : `Delete ${checkedCount}`}
-          </button>
-        ) : null}
-        <button type="button" className="ss-delete" title={deleteDisabledReason ?? "Pick sessions to delete"} onClick={onToggleDeleteMode} disabled={deleteDisabledReason !== null && !deleteMode}>
-          <CheckCircle size={12} /> {deleteMode ? "Done" : "Select"}
-        </button>
+          <>
+            <button type="button" className="wb-pill danger" disabled={checkedCount === 0 || deleteDisabledReason !== null} title={deleteDisabledReason ?? "Delete the checked sessions"} onClick={onDelete}>
+              <Trash size={12} /> {checkedCount === 0 ? "Delete" : `Delete ${checkedCount}`}
+            </button>
+            <button type="button" className="wb-pill" title="Leave selection mode" onClick={onToggleDeleteMode}>
+              <CheckCircle size={12} /> Done
+            </button>
+          </>
+        ) : (
+          <span className="ss-index">
+            {scanning ? <progress /> : null}
+            {status}
+            <button type="button" className="wb-iconbtn" style={{ width: 22, height: 22 }} title="Rescan the session logs on disk" onClick={onRescan}>
+              <Refresh size={12} />
+            </button>
+          </span>
+        )}
       </div>
     </div>
   );

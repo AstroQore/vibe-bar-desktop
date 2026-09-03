@@ -86,6 +86,12 @@
 /* ── Pills, toolbars, fields, cards ────────────────────────────────── */
 .wb-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border: 0; border-radius: 13px; background: var(--wb-toolbar); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); color: var(--wb-text); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .wb-pill:hover { background: var(--wb-hover); }
+/* The key of a filter pill: a 10pt eyebrow before the value. */
+.wb-pill-key { font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: var(--wb-tertiary); }
+.wb-pill-icon { display: inline-flex; color: var(--wb-secondary); }
+.wb-pill.on { background: color-mix(in srgb, var(--wb-pill-tint, var(--wb-accent)) 12%, transparent); color: var(--wb-pill-on, var(--wb-accent)); box-shadow: inset 0 0 0 0.7px color-mix(in srgb, var(--wb-pill-tint, var(--wb-accent)) 36%, transparent); }
+.wb-pill.on .wb-pill-icon { color: inherit; }
+.wb-pill.danger { color: #D0342C; }
 .wb-pill.prominent { background: var(--wb-accent); color: #fff; box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--wb-accent) 72%, transparent); }
 .wb-pill.selected { background: color-mix(in srgb, var(--wb-accent) 18%, transparent); color: var(--wb-text); box-shadow: inset 0 0 0 0.7px color-mix(in srgb, var(--wb-accent) 34%, transparent); }
 .wb-pill:disabled { opacity: 0.5; }
@@ -95,6 +101,20 @@
 .wb-field input::placeholder { color: var(--wb-tertiary); }
 .wb-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; background: var(--wb-card); box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--wb-separator) 40%, transparent); }
 .wb-caption { font-size: 12px; font-weight: 600; color: var(--wb-secondary); }
+/* Capsule: the inline tag — a model name, a count, an id, a status word. Never a button. */
+.wb-capsule { display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 6px; border-radius: 8px; background: color-mix(in srgb, var(--wb-text) 6%, transparent); font-size: 10.5px; color: var(--wb-secondary); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.wb-capsule.tall { height: 18px; }
+.wb-capsule.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.1px; }
+.wb-capsule.tint { background: color-mix(in srgb, var(--wb-capsule-tint, var(--wb-accent)) 14%, transparent); color: color-mix(in srgb, var(--wb-capsule-tint, var(--wb-accent)) 78%, var(--wb-text)); font-weight: 600; }
+/* Code: mono 11/16 on the field fill, radius 9. */
+.wb-code { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 16px; padding: 7px 9px; border-radius: 9px; background: var(--wb-field); color: var(--wb-text); white-space: pre-wrap; word-break: break-word; }
+.wb-code.quiet { color: color-mix(in srgb, var(--wb-text) 82%, transparent); }
+/* A tool's name in a transcript: an accent capsule. */
+.wb-toolname { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 9px; background: color-mix(in srgb, var(--wb-accent) 10%, transparent); color: var(--wb-accent); font-size: 10.5px; font-weight: 600; }
+/* The metadata line: 10.5 secondary, items parted by 3px dots. */
+.wb-meta { display: flex; align-items: center; gap: 6px; font-size: 10.5px; line-height: 14px; color: var(--wb-secondary); white-space: nowrap; overflow: hidden; min-width: 0; }
+.wb-meta > * { flex: none; }
+.wb-meta .wb-dot { width: 3px; height: 3px; border-radius: 2px; background: var(--wb-tertiary); }
 .wb-label-caps { font-size: 10px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--wb-tertiary); }
 .wb-empty { font-size: 12px; color: var(--wb-tertiary); }
 

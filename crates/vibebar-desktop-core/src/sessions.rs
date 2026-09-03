@@ -56,6 +56,9 @@ pub struct SessionRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_variant: Option<String>,
     pub title: Option<String>,
+    /// The index's one-line summary of the session, when it wrote one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
     pub project_dir: Option<String>,
     /// Unix epoch seconds.
     pub last_active_at: Option<i64>,
@@ -150,8 +153,19 @@ impl SessionsService {
                 .collect()
         });
         let limit = query.limit.unwrap_or(250).clamp(1, 500);
-        let mut listing = match query.query.as_deref().map(str::trim).filter(|text| !text.is_empty()) {
-            Some(text) => self.search_filtered_since(text, providers.as_deref(), query.harnesses.as_deref(), query.since, limit),
+        let mut listing = match query
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            Some(text) => self.search_filtered_since(
+                text,
+                providers.as_deref(),
+                query.harnesses.as_deref(),
+                query.since,
+                limit,
+            ),
             None => self.list_filtered(
                 providers.as_deref(),
                 query.harnesses.as_deref(),
@@ -180,7 +194,11 @@ impl SessionsService {
                 }),
             }
         }
-        counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.harness.cmp(&b.harness)));
+        counts.sort_by(|a, b| {
+            b.count
+                .cmp(&a.count)
+                .then_with(|| a.harness.cmp(&b.harness))
+        });
         counts
     }
 
@@ -666,11 +684,14 @@ fn indexed_row(session: agent_session_core::index::SessionSummary) -> SessionRow
         provider_variant: session.provider_variant,
         model: session.model,
         title: session.title,
+        summary: session.summary,
         project_dir: session.project_dir,
         last_active_at: session.last_active_at.or(session.created_at),
         session_ref: String::new(),
         source_path: session.source_path,
-        message_count: session.message_count,
+        // The shared index writes -1 for a count it does not know; that is
+        // an absence, not a number to show.
+        message_count: session.message_count.filter(|count| *count >= 0),
         resume_command,
         excerpt: None,
     }
@@ -698,6 +719,7 @@ fn scanned_row(session: DiscoveredSession) -> SessionRow {
         provider_variant: session.provider_variant,
         model: None,
         title: session.title,
+        summary: None,
         project_dir: session.project_dir,
         last_active_at: Some(session.modified_at),
         session_ref: String::new(),
@@ -826,8 +848,16 @@ mod tests {
     #[test]
     fn listing_carries_harness_counts_independent_of_its_own_filters() {
         let dir = tempfile::tempdir().unwrap();
-        write_codex_session_named(dir.path(), "019a1b2c-3d4e-7f80-9abc-def012345601", "Backfill the events table");
-        write_codex_session_named(dir.path(), "019a1b2c-3d4e-7f80-9abc-def012345602", "Rename the brand tokens");
+        write_codex_session_named(
+            dir.path(),
+            "019a1b2c-3d4e-7f80-9abc-def012345601",
+            "Backfill the events table",
+        );
+        write_codex_session_named(
+            dir.path(),
+            "019a1b2c-3d4e-7f80-9abc-def012345602",
+            "Rename the brand tokens",
+        );
         let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
 
         let all = service.listing(&SessionListingQuery::default());
@@ -841,14 +871,23 @@ mod tests {
             harnesses: Some(vec!["Claude Code".to_string()]),
             ..Default::default()
         });
-        assert!(claude_only.rows.is_empty(), "the harness filter narrows the rows");
-        assert_eq!(claude_only.harness_counts[0].count, 2, "the menu still counts every harness");
+        assert!(
+            claude_only.rows.is_empty(),
+            "the harness filter narrows the rows"
+        );
+        assert_eq!(
+            claude_only.harness_counts[0].count, 2,
+            "the menu still counts every harness"
+        );
 
         let unknown_provider = service.listing(&SessionListingQuery {
             providers: Some(vec!["not-a-provider".to_string()]),
             ..Default::default()
         });
-        assert!(unknown_provider.rows.is_empty(), "an unknown provider id selects nothing rather than everything");
+        assert!(
+            unknown_provider.rows.is_empty(),
+            "an unknown provider id selects nothing rather than everything"
+        );
 
         let searched = service.listing(&SessionListingQuery {
             query: Some("  brand tokens ".to_string()),
@@ -861,7 +900,11 @@ mod tests {
     #[test]
     fn listing_search_honours_the_time_bound() {
         let dir = tempfile::tempdir().unwrap();
-        write_codex_session_named(dir.path(), "019a1b2c-3d4e-7f80-9abc-def012345603", "Backfill the events table");
+        write_codex_session_named(
+            dir.path(),
+            "019a1b2c-3d4e-7f80-9abc-def012345603",
+            "Backfill the events table",
+        );
         let service = service(DataRoot::at(dir.path().join(".vibebar")), dir.path());
         let far_future = i64::MAX / 4;
         let searched = service.listing(&SessionListingQuery {
@@ -869,8 +912,14 @@ mod tests {
             since: Some(far_future),
             ..Default::default()
         });
-        assert!(searched.rows.is_empty(), "a bound after every session leaves the search empty");
-        let unbounded = service.listing(&SessionListingQuery { query: Some("events table".to_string()), ..Default::default() });
+        assert!(
+            searched.rows.is_empty(),
+            "a bound after every session leaves the search empty"
+        );
+        let unbounded = service.listing(&SessionListingQuery {
+            query: Some("events table".to_string()),
+            ..Default::default()
+        });
         assert_eq!(unbounded.rows.len(), 1);
     }
 
@@ -1149,6 +1198,7 @@ mod tests {
             session_id: "new-session".to_string(),
             provider_variant: None,
             title: None,
+            summary: None,
             project_dir: None,
             last_active_at: None,
             session_ref: String::new(),

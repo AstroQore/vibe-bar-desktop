@@ -113,7 +113,7 @@ export function App() {
 
   const pages = {
     usageStats: <UsageStatsPage refreshToken={refreshToken} />,
-    sessionManager: <SessionsPage refreshToken={refreshToken} />,
+    sessionManager: <SessionsPage refreshToken={refreshToken} dark={dark} />,
     resets: view ? <ResetsPage view={view} settings={presentation} /> : <p className="wb-empty" style={{ padding: 22 }}>Loading quota…</p>,
     skillsManager: <SkillsPage refreshToken={refreshToken} dark={dark} />,
     settings: (
