@@ -391,21 +391,22 @@ pub(crate) fn announce_update(app: &tauri::AppHandle, found: Option<&commands::P
     let _ = app.emit(UPDATE_EVENT, found);
 }
 
-/// Install what the last check is holding and restart into it; the tray's
-/// "Update to X…" item. A failure keeps the find so the next try can use it.
-pub(crate) async fn install_pending_update(app: &tauri::AppHandle) {
-    let Some(pending) = app.state::<AppState>().pending_update_summary() else {
-        return;
-    };
+/// Install the find with `id` and restart into it; the tray's "Update to
+/// X…" item, which names that id. A find a later check has replaced is not
+/// installed — the menu is rebuilt instead. A failure keeps the find so the
+/// next try can use it.
+pub(crate) async fn install_pending_update(app: &tauri::AppHandle, id: u64) {
     let state = app.state::<AppState>();
-    let Some(update) = state.take_update(pending.id) else {
+    let Some(update) = state.take_update(id) else {
+        eprintln!("[update] the menu's find was overtaken by a newer check; rebuilding the menu");
+        tray::refresh_menu(app);
         return;
     };
     match update.download_and_install(|_, _| {}, || {}).await {
         Ok(()) => app.restart(),
         Err(error) => {
             eprintln!("[update] install failed: {error}");
-            state.restore_update(pending.id, update);
+            state.restore_update(id, update);
         }
     }
 }

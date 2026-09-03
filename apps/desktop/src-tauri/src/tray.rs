@@ -33,7 +33,7 @@ pub fn reregister(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn install(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
-    let menu = build_menu(app, state.pending_update_summary().map(|update| update.version))?;
+    let menu = build_menu(app, state.pending_update_summary())?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -58,14 +58,16 @@ pub fn install(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
                 });
             }
             "mini" => crate::toggle_mini(app),
-            "update" => {
+            id if id.starts_with("update:") => {
                 // Installing replaces the running app; the Settings page
                 // offers the same with a confirmation step, the menu is the
                 // shortcut for someone who already decided.
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    crate::install_pending_update(&app).await;
-                });
+                if let Ok(id) = id["update:".len()..].parse::<u64>() {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        crate::install_pending_update(&app, id).await;
+                    });
+                }
             }
             "quit" => {
                 crate::persist_mini(app);
@@ -93,17 +95,31 @@ pub fn install(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
 /// Refresh the tray title after a quota pass.
 /// The tray menu. With an update found, an item to install it sits at the
 /// top — the way Sparkle's "Update to X…" does in the native app's menu.
-fn build_menu<R: Runtime>(app: &AppHandle<R>, update: Option<String>) -> tauri::Result<Menu<R>> {
+fn build_menu<R: Runtime>(
+    app: &AppHandle<R>,
+    update: Option<crate::commands::PendingUpdate>,
+) -> tauri::Result<Menu<R>> {
     let show = MenuItem::with_id(app, "show", "Open Vibe Bar Desktop", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
     let mini = MenuItem::with_id(app, "mini", "Toggle Mini", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     match update {
-        Some(version) => {
-            let update = MenuItem::with_id(app, "update", format!("Update to {version}…"), true, None::<&str>)?;
+        Some(pending) => {
+            // The item carries the id of the find it names, so a click
+            // installs that version and not whatever a later check holds.
+            let update = MenuItem::with_id(
+                app,
+                format!("update:{}", pending.id),
+                format!("Update to {}…", pending.version),
+                true,
+                None::<&str>,
+            )?;
             let after = PredefinedMenuItem::separator(app)?;
-            Menu::with_items(app, &[&update, &after, &show, &refresh, &mini, &separator, &quit])
+            Menu::with_items(
+                app,
+                &[&update, &after, &show, &refresh, &mini, &separator, &quit],
+            )
         }
         None => Menu::with_items(app, &[&show, &refresh, &mini, &separator, &quit]),
     }
@@ -111,7 +127,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>, update: Option<String>) -> tauri::
 
 /// Rebuild the menu after a check: the update item appears or goes away.
 pub fn refresh_menu(app: &AppHandle) {
-    let update = app.state::<AppState>().pending_update_summary().map(|update| update.version);
+    let update = app.state::<AppState>().pending_update_summary();
     if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_menu(app, update)) {
         let _ = tray.set_menu(Some(menu));
     }
