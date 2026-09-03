@@ -87,10 +87,18 @@ export function OnboardingAssistant({
     api.pricingEffective().then((rows) => setPricingRows(rows.length)).catch(() => setPricingRows(0));
   }, []);
 
+  const [saveError, setSaveError] = useState<string | null>(null);
   const save = async (changes: Record<string, unknown>) => {
     setRaw((currentRaw) => ({ ...(currentRaw ?? {}), ...changes }));
-    await api.saveSharedSettings(changes);
-    onSettingsChanged();
+    setSaveError(null);
+    try {
+      await api.saveSharedSettings(changes);
+      onSettingsChanged();
+    } catch (error) {
+      // The file did not take it: show what the file says, and say so.
+      setSaveError(`Could not save: ${String(error)}`);
+      api.sharedSettingsRaw().then(setRaw).catch(() => undefined);
+    }
   };
 
   const visibleCore = useMemo(() => {
@@ -243,7 +251,7 @@ export function OnboardingAssistant({
               </div>
               {autostartError ? <p className="ob-note ob-error">{autostartError}</p> : null}
             </Card>
-            <p className="ob-note">Vibe Bar is a menu-bar app with no Dock icon. Starting it at login keeps the quota readout and the local MCP server available from the moment you sign in; macOS may ask you to approve the login item in System Settings the first time.</p>
+            <p className="ob-note">Vibe Bar is a menu-bar app with no Dock icon. Starting it at login keeps the quota readout in your menu bar from the moment you sign in; macOS may ask you to approve the login item in System Settings the first time.</p>
           </>
         );
       case "done":
@@ -289,7 +297,7 @@ export function OnboardingAssistant({
           </div>
           <div className="ob-content">{content}</div>
           <div className="ob-footer">
-            {finishError ? <span className="ob-note ob-error">{finishError}</span> : null}
+            {finishError ?? saveError ? <span className="ob-note ob-error">{finishError ?? saveError}</span> : null}
             {index > 0 ? <button type="button" className="wb-pill" onClick={() => go(STEPS[index - 1].id)}>Back</button> : null}
             <span className="wb-spacer" />
             {step !== "done" ? <button type="button" className="wb-pill" disabled={finishing} onClick={() => void finish()}>Skip for now</button> : null}

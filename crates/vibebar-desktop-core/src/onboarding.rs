@@ -28,15 +28,10 @@ pub fn decide(has_completed_onboarding: bool, has_quota_caches: bool, had_settin
     Decision::Show
 }
 
-/// Any non-hidden entry in the shared quota directory.
+/// Any quota cache file the shared reader would accept — not an
+/// interrupted write's `.sb-*` remnant, not a stray directory.
 pub fn has_quota_caches(root: &DataRoot) -> bool {
-    std::fs::read_dir(root.quotas_dir())
-        .map(|entries| {
-            entries
-                .flatten()
-                .any(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
-        })
-        .unwrap_or(false)
+    !crate::shared::json_files_in(&root.quotas_dir()).is_empty()
 }
 
 /// The decision for this data root, read from the shared settings file and
@@ -69,7 +64,8 @@ mod tests {
         assert!(!has_quota_caches(&root));
         std::fs::create_dir_all(root.quotas_dir()).unwrap();
         std::fs::write(root.quotas_dir().join(".DS_Store"), "").unwrap();
-        assert!(!has_quota_caches(&root));
+        std::fs::write(root.quotas_dir().join("quota-v1-bbbb.json.sb-123-abc"), "{}").unwrap();
+        assert!(!has_quota_caches(&root), "an interrupted write's remnant is not a cache");
         std::fs::write(root.quotas_dir().join("quota-v1-abc.json"), "{}").unwrap();
         assert!(has_quota_caches(&root));
     }

@@ -139,7 +139,9 @@ impl SettingsWriter {
             "hasCompletedOnboarding".to_string(),
             serde_json::Value::Bool(true),
         );
-        self.apply_unfiltered(&changes)
+        let mut owned = Self::owned();
+        owned.insert("hasCompletedOnboarding".to_string());
+        self.apply_owned(&changes, &owned)
     }
 
     pub fn apply(&mut self, changes: &Object) -> Result<Applied, CoreError> {
@@ -149,18 +151,14 @@ impl SettingsWriter {
             refused.is_empty(),
             "settings Desktop does not present: {refused:?} — add the control first, then the key"
         );
-        self.apply_unfiltered(changes)
+        self.apply_owned(changes, &owned)
     }
 
-    /// The write itself — lock, re-read, merge only these keys, keep every
-    /// unknown one — without the Settings whitelist at the door. Reached by
-    /// `apply` and by the one key with its own documented writer.
-    fn apply_unfiltered(&mut self, changes: &Object) -> Result<Applied, CoreError> {
-        // The keys this write may put back: the Settings whitelist plus the
-        // keys of this very change, which is how the one key outside the
-        // whitelist reaches the file without widening what Settings owns.
-        let owned: std::collections::HashSet<String> =
-            Self::owned().into_iter().chain(changes.keys().cloned()).collect();
+    /// The write itself — lock, re-read, merge only the keys in `owned`,
+    /// keep every unknown one. `apply` passes the Settings whitelist; the
+    /// one key with its own documented writer passes that whitelist plus
+    /// itself, so neither path widens the other.
+    fn apply_owned(&mut self, changes: &Object, owned: &BTreeSet<String>) -> Result<Applied, CoreError> {
         let directory = self.directory().to_path_buf();
         file_lock::with_lock("settings", &directory, || {
             // A file that exists but cannot be read is not a file to rebuild.
