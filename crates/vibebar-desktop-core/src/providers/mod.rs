@@ -5,10 +5,11 @@
 //! kept in free functions taking bytes so the wire shapes are unit-tested
 //! against synthetic fixtures without a network.
 //!
-//! This preview slice ships twelve live adapters. The remaining providers render
+//! This preview slice ships thirteen live adapters. The remaining providers render
 //! from the shared cache, attributed as such, until their adapters land.
 
 pub mod alibaba;
+pub mod antigravity;
 pub mod claude;
 pub mod codex;
 pub mod copilot;
@@ -50,6 +51,9 @@ pub async fn fetch(
             ToolType::Copilot => copilot::fetch(home, client).await,
             ToolType::Cursor => cursor::fetch(home, client).await,
             ToolType::Grok => grok::fetch(home, client).await,
+            // The language server is on this machine; the shared HTTP client
+            // is not the one that talks to it (see `antigravity::probe`).
+            ToolType::Antigravity => antigravity::fetch().await,
             ToolType::Zai => zai::fetch(home, client).await,
             ToolType::Minimax => minimax::fetch(client).await,
             ToolType::Kilo => kilo::fetch(client, home).await,
