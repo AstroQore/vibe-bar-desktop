@@ -379,7 +379,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Local usage scan | ● 7 harnesses | ◐ 3 | Codex, Claude Code, Gemini CLI. Counts harnesses with a local scanner: Cursor's usage comes from dashboard events and Grok Bot has no usage source at all, so neither is a local scan on either side |
 | Per-request ledger, multi-source pricing, history | ● | ○ | Desktop keeps a priced aggregate under `client/desktop/` and a static price table; no shared ledger or history is written |
 | **Settings** |
-| Writable | ● | ◐ 12 keys | The keys Desktop's own Settings presents, through the cross-client write contract; provider credentials and the layout editor are not among them |
+| Writable | ● | ◐ | The keys Desktop's own Settings presents, through the cross-client write contract — the whitelist in `shared::settings_writer::WRITABLE_KEYS` is the boundary. Provider credentials and the layout editor are not among them |
 | Provider credential panes | ● 25 | ○ | API-key adapters read the process environment; nothing is persisted |
 | **Platform** |
 | MCP tools | ● 12 | ◐ 6 | Read-only subset over stdio; the Unix socket is native's |

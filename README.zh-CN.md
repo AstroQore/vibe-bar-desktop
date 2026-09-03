@@ -323,7 +323,7 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | 本地用量扫描 | ● 7 个 harness | ◐ 3 | Codex、Claude Code、Gemini CLI。只计有本地扫描器的 harness：Cursor 的用量来自 dashboard 事件，Grok Bot 根本没有用量来源，所以两端都不算本地扫描 |
 | 逐请求账本、多源价格、历史 | ● | ○ | Desktop 在 `client/desktop/` 下保存一份定价后的聚合和一张静态价格表；不写共享账本或历史 |
 | **设置** |
-| 可写 | ● | ◐ 12 个键 | Desktop 自己的设置页展示的那些键，经跨客户端写入契约；provider 凭据和布局编辑器不在其中 |
+| 可写 | ● | ◐ | Desktop 自己的设置页展示的那些键，经跨客户端写入契约——白名单 `shared::settings_writer::WRITABLE_KEYS` 就是边界。provider 凭据和布局编辑器不在其中 |
 | provider 凭据面板 | ● 25 | ○ | API-key 适配器读进程环境变量；不持久化任何东西 |
 | **平台** |
 | MCP 工具 | ● 12 | ◐ 6 | stdio 上的只读子集；Unix socket 属于原生版 |
