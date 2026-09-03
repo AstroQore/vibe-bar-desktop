@@ -1,3 +1,4 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PresentationSettings, QuotaBucket, QuotaForecast, QuotaView } from "../api";
@@ -36,6 +37,16 @@ interface Company {
   subProviders: SubProvider[];
 }
 
+/** The frameless mini window moves by its body, like the native panel. The
+ *  drag-region attribute only covers the element it sits on; a press on any
+ *  child that is not a control starts the drag explicitly. */
+function beginDrag(event: React.MouseEvent) {
+  if (event.button !== 0) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("button, a, input, select, textarea, [data-tauri-drag-region='false']")) return;
+  void getCurrentWindow().startDragging().catch(() => undefined);
+}
+
 export function MiniQuota() {
   const [view, setView] = useState<QuotaView | null>(null);
   const [settings, setSettings] = useState<PresentationSettings | null>(null);
@@ -69,7 +80,7 @@ export function MiniQuota() {
   const companies = view ? arrange(view, settings, fields.slice(0, MAX_CELLS)) : [];
 
   return (
-    <main className="mini-quota" data-tauri-drag-region>
+    <main className="mini-quota" data-tauri-drag-region onMouseDown={beginDrag}>
       <div className="mini-title" data-tauri-drag-region="deep">
         <span>Vibe Bar</span>
         <button

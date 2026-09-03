@@ -62,3 +62,80 @@ export const Terminal = (p: Props) => <Svg {...p}><rect x="3" y="4" width="18" h
 export const ListBullet = (p: Props) => <Svg {...p}><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="5" cy="6" r="1" fill="currentColor" /><circle cx="5" cy="12" r="1" fill="currentColor" /><circle cx="5" cy="18" r="1" fill="currentColor" /></Svg>;
 /** trash */
 export const Trash = (p: Props) => <Svg {...p}><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></Svg>;
+
+// ── Settings sidebar symbols (the native SF Symbols, redrawn) ─────────────
+const stroke = (size: number) => ({ width: size, height: size, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.4, strokeLinecap: "round" as const, strokeLinejoin: "round" as const });
+
+export function Monitor({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="8.5" rx="1.5" />
+      <path d="M5.5 13.5h5M8 11v2.5" />
+    </svg>
+  );
+}
+export function Nodes({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <circle cx="3.5" cy="12" r="1.7" />
+      <circle cx="12.5" cy="12" r="1.7" />
+      <circle cx="8" cy="4" r="1.7" />
+      <path d="M5 11l2-5.5M11 11L9 5.5M5.2 12h5.6" />
+    </svg>
+  );
+}
+export function Antenna({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <circle cx="8" cy="7" r="1.5" />
+      <path d="M8 8.5V14M5.2 9.8a4 4 0 0 1 0-5.6M10.8 4.2a4 4 0 0 1 0 5.6M3.4 11.6a6.5 6.5 0 0 1 0-9.2M12.6 2.4a6.5 6.5 0 0 1 0 9.2" />
+    </svg>
+  );
+}
+export function Hand({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <path d="M5 8.5V3.2a1 1 0 0 1 2 0V8M7 7.5V2.2a1 1 0 0 1 2 0V8M9 7.8V3.2a1 1 0 0 1 2 0v5.3M11 8.3V5.2a1 1 0 0 1 2 0V10c0 2.8-1.8 4.5-4.5 4.5S4 12.6 4 10.6V9.2a1 1 0 0 1 1.9-.4" />
+    </svg>
+  );
+}
+export function MenuBarIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+      <path d="M1.5 5.5h13M4 4h.01M6 4h.01" />
+    </svg>
+  );
+}
+export function Stethoscope({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <path d="M4 2v4.5a3 3 0 0 0 6 0V2M7 9.5v1.5a3 3 0 0 0 6 0v-1" />
+      <circle cx="13" cy="8.5" r="1.3" />
+    </svg>
+  );
+}
+export function Windows({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <rect x="1.5" y="4.5" width="9.5" height="9" rx="1.5" />
+      <path d="M5 4.5V3a1.5 1.5 0 0 1 1.5-1.5H13A1.5 1.5 0 0 1 14.5 3v6.5A1.5 1.5 0 0 1 13 11h-2" />
+    </svg>
+  );
+}
+export function Split({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+      <path d="M7 2.5v11" />
+    </svg>
+  );
+}
+export function Cookie({ size = 14 }: { size?: number }) {
+  return (
+    <svg {...stroke(size)} aria-hidden="true">
+      <path d="M8.5 1.6A6.4 6.4 0 1 0 14.4 8a2.4 2.4 0 0 1-2.8-2.2A2.4 2.4 0 0 1 9 3.4a2.2 2.2 0 0 1-.5-1.8z" />
+      <path d="M5.5 6.5h.01M6 10.5h.01M9.5 11h.01M10.5 8h.01" strokeWidth="2" />
+    </svg>
+  );
+}

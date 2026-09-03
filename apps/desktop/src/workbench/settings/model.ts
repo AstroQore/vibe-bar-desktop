@@ -64,8 +64,10 @@ export function sections(settings: PresentationSettings | null): SectionEntry[] 
     out.push({ id: provider.id, title: provider.title, group: "core", tool: provider.tool, enabled: visibleCore === null || visibleCore.includes(provider.tool) });
   }
   out.push({ id: "browserCookies", title: "Browser Cookies", group: "misc", tool: null });
+  const visibleMisc = settings?.visibleMiscProviders ?? null;
   for (const instance of settings?.miscProviderInstances ?? []) {
-    out.push({ id: `misc:${instance.id}`, title: instance.name || instance.tool, group: "misc", tool: instance.tool || null, enabled: instance.isVisible });
+    const shown = instance.isVisible && (visibleMisc === null || visibleMisc.includes(instance.id));
+    out.push({ id: `misc:${instance.id}`, title: instance.name || instance.tool, group: "misc", tool: instance.tool || null, enabled: shown });
   }
   return out;
 }
@@ -97,6 +99,32 @@ export const COLOR_BASIS_DETAIL =
   "Green projected to last · blue chunk will likely go unused · orange may run short · red projected to run out. Falls back to the percentage while a quota has too little history to forecast.";
 
 export const REFRESH_OPTIONS = [60, 120, 300, 600, 900, 1800, 3600] as const;
+
+/** `MiniWindowDisplayMode`, in the native order. */
+export const MINI_LAYOUTS: ReadonlyArray<{ id: string; title: string }> = [
+  { id: "regular", title: "Regular" },
+  { id: "compact", title: "Compact" },
+  { id: "ledger", title: "Ledger" },
+  { id: "strip", title: "Strip" },
+  { id: "tile", title: "Tile" },
+  { id: "focus", title: "Focus" },
+  { id: "rail", title: "Rail" },
+];
+
+export const STRIP_DENSITIES: ReadonlyArray<{ id: string; title: string }> = [
+  { id: "roomy", title: "Roomy" },
+  { id: "twoLine", title: "Two line" },
+  { id: "narrow", title: "Narrow" },
+];
+
+/** `CostDataSettings.retentionOptions`: 0 is unlimited. */
+export const RETENTION_OPTIONS: ReadonlyArray<{ days: number; title: string }> = [
+  { days: 0, title: "Forever" },
+  { days: 30, title: "30 days" },
+  { days: 90, title: "90 days" },
+  { days: 365, title: "1 year" },
+  { days: 1095, title: "3 years" },
+];
 
 export const UPDATE_CHANNELS: ReadonlyArray<{ id: string; title: string }> = [
   { id: "main", title: "Stable" },

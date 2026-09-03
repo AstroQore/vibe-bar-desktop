@@ -88,6 +88,12 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Resul
 
 /// Refresh the tray title after a quota pass.
 pub fn update<R: Runtime>(app: &AppHandle<R>, view: &QuotaView) {
+    // "Show in menu bar" is the shared item's own switch; the tray follows it.
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let state = app.state::<AppState>();
+        let visible = SharedSettings::load(state.data_root()).menu_bar_item_visible();
+        let _ = tray.set_visible(visible);
+    }
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_title(Some(title_for(app, view)));
     }

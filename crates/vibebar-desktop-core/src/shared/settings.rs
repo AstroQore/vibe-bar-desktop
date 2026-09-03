@@ -317,6 +317,15 @@ impl SharedSettings {
     /// text and keep the numbers. Getting this wrong is not cosmetic — the
     /// labelled form of a six-field selection is four times as wide as the
     /// native item, wide enough that macOS hides it behind the app menus.
+    /// The first menu bar item's "Show in menu bar" switch; absent means shown.
+    pub fn menu_bar_item_visible(&self) -> bool {
+        self.menu_bar_items
+            .as_ref()
+            .and_then(|items| items.first())
+            .and_then(|item| item.is_visible)
+            .unwrap_or(true)
+    }
+
     pub fn menu_bar_shows_title(&self) -> bool {
         self.menu_bar_items
             .as_ref()
@@ -695,4 +704,15 @@ mod tests {
         );
         assert_eq!(view.provider_plan_labels["kilo"], "Pro");
     }
+
+    #[test]
+    fn menu_bar_item_visibility_follows_the_first_item() {
+        let shown: SharedSettings = serde_json::from_str(r#"{"menuBarItems":[{"kind":"primary","isVisible":true}]}"#).unwrap();
+        assert!(shown.menu_bar_item_visible());
+        let hidden: SharedSettings = serde_json::from_str(r#"{"menuBarItems":[{"kind":"primary","isVisible":false}]}"#).unwrap();
+        assert!(!hidden.menu_bar_item_visible());
+        let absent: SharedSettings = serde_json::from_str("{}").unwrap();
+        assert!(absent.menu_bar_item_visible(), "no item means the default: shown");
+    }
+
 }

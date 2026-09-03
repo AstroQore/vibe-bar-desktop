@@ -1,6 +1,17 @@
 import { QUOTA_BAR } from "./tokens";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
+import { fixtureInvoke, inTauri } from "./fixtures/invoke";
+
+/** `invoke`, or the fixture answers when the page runs outside Tauri. */
+function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return inTauri() ? tauriInvoke<T>(command, args) : fixtureInvoke<T>(command, args);
+}
+
+/** `listen`, or a no-op outside Tauri: nothing emits there. */
+function listen<T>(event: string, handler: EventCallback<T>): Promise<UnlistenFn> {
+  return inTauri() ? tauriListen<T>(event, handler) : Promise.resolve(() => undefined);
+}
 
 /** Kept in sync with `vibebar_desktop_core::model`. */
 export type ForecastVerdict =
@@ -517,6 +528,9 @@ export const api = {
   /** Save shared settings. Returns them as they read afterwards, which is not
    *  necessarily what was asked for: the file is shared with the native app,
    *  and a value it changed in between wins over a stale idea of it here. */
+  /** The writable keys as they sit in the shared file, raw — for editing a
+   *  nested object (menu bar item, cost data, mini window) whole. */
+  sharedSettingsRaw: () => invoke<Record<string, unknown>>("shared_settings_raw"),
   saveSharedSettings: (changes: Record<string, unknown>) =>
     invoke<PresentationSettings>("save_shared_settings", { changes }),
   /** Tell the shell how large the mini window's content is, so it can fit the

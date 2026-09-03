@@ -22,6 +22,7 @@ const MAX_QUOTA_BYTES: u64 = 4 * 1024 * 1024;
 /// the writer, so there is nothing sensitive to read here.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(serde::Serialize)]
 struct StoredQuota {
     tool: String,
     #[serde(default)]
@@ -34,6 +35,7 @@ struct StoredQuota {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(serde::Serialize)]
 struct StoredBucket {
     id: String,
     title: String,
@@ -113,6 +115,46 @@ fn load_file(path: &Path, account_id: &str) -> Option<AccountQuota> {
         origin: QuotaOrigin::SharedCache,
         error: None,
     })
+}
+
+/// Write a quota the way the native `QuotaCacheStore` does — same file
+/// name, same fields, Apple reference seconds, pretty with sorted keys,
+/// written to a temporary file and renamed — so the native popover reads a
+/// Desktop refresh as one of its own. Both clients write this store;
+/// each file is one account, and the last atomic write wins.
+pub fn save(root: &DataRoot, quota: &AccountQuota) -> Result<(), crate::error::CoreError> {
+    let stored = StoredQuota {
+        tool: quota.tool.raw_value().to_string(),
+        buckets: quota
+            .buckets
+            .iter()
+            .map(|bucket| StoredBucket {
+                id: bucket.id.clone(),
+                title: bucket.title.clone(),
+                short_label: bucket.short_label.clone(),
+                used_percent: bucket.used_percent,
+                reset_at: bucket.reset_at.map(super::unix_to_apple_seconds),
+                raw_window_seconds: bucket.raw_window_seconds,
+                group_title: bucket.group_title.clone(),
+            })
+            .collect(),
+        plan: quota.plan.clone(),
+        queried_at: super::unix_to_apple_seconds(quota.queried_at),
+    };
+    let directory = root.quotas_dir();
+    std::fs::create_dir_all(&directory)?;
+    let path = directory.join(format!("{}.json", cache_file_component(&quota.account_id)));
+    let mut buffer = Vec::new();
+    let formatter = serde_json::ser::PrettyFormatter::with_indent(b"  ");
+    let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
+    // Through a Value: serde_json's map is ordered, which is the native
+    // encoder's `.sortedKeys`; a struct would serialize in field order.
+    let value = serde_json::to_value(&stored)?;
+    serde::Serialize::serialize(&value, &mut serializer)?;
+    buffer.push(b'\n');
+    super::write_atomic(&path, &buffer)?;
+    Ok(())
+
 }
 
 #[cfg(test)]
@@ -208,4 +250,48 @@ mod tests {
 
         assert!(load_all(&root, &[]).is_empty());
     }
+
+    #[test]
+    fn save_writes_what_the_native_store_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = DataRoot::at(dir.path().join(".vibebar"));
+        let quota = AccountQuota {
+            account_id: "oauth-codex".to_string(),
+            tool: ToolType::Codex,
+            buckets: vec![crate::model::QuotaBucket {
+                id: "weekly".into(),
+                title: "Weekly".into(),
+                short_label: "W".into(),
+                used_percent: 42.5,
+                reset_at: Some(1_756_800_000.0),
+                raw_window_seconds: Some(604_800),
+                group_title: None,
+                forecast: None,
+                source_account_id: None,
+            }],
+            plan: Some("ChatGPT Pro".into()),
+            queried_at: 1_756_700_000.0,
+            origin: crate::model::QuotaOrigin::Live,
+            error: None,
+        };
+        save(&root, &quota).unwrap();
+        let path = root.quotas_dir().join(format!("{}.json", cache_file_component("oauth-codex")));
+        let text = std::fs::read_to_string(&path).unwrap();
+        let stored: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(stored["tool"], "codex");
+        assert_eq!(stored["plan"], "ChatGPT Pro");
+        assert!((stored["queriedAt"].as_f64().unwrap() - (1_756_700_000.0 - 978_307_200.0)).abs() < 1e-6, "Apple reference seconds, as the native Date encodes");
+        assert!((stored["buckets"][0]["resetAt"].as_f64().unwrap() - (1_756_800_000.0 - 978_307_200.0)).abs() < 1e-6);
+        assert!(stored.get("origin").is_none() && stored.get("error").is_none(), "only the native fields travel");
+        assert!(text.starts_with("{\n  \"buckets\""), "pretty, two-space, sorted keys: {}", &text[..20]);
+        assert!(!dir.path().join(".vibebar/quotas").read_dir().unwrap().any(|e| e.unwrap().file_name().to_string_lossy().ends_with(".tmp")), "no temp file left behind");
+
+        let back = load_all(&root, &["oauth-codex".to_string()]);
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].account_id, "oauth-codex");
+        assert!((back[0].queried_at - 1_756_700_000.0).abs() < 1e-6, "round-trips to Unix seconds");
+        assert_eq!(back[0].buckets[0].used_percent, 42.5);
+        assert!((back[0].buckets[0].reset_at.unwrap() - 1_756_800_000.0).abs() < 1e-6);
+    }
 }
+

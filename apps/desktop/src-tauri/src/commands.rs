@@ -56,6 +56,19 @@ pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings
 /// Returns the settings as they read afterwards, which is not necessarily
 /// what was asked for: the file is shared, and a value the native app changed
 /// in between wins over a stale idea of it here.
+/// The writable keys as they sit in the shared file right now, raw. Nested
+/// objects are edited whole (top-level merge granularity), so the page reads
+/// the current value, changes the field, and saves the object back.
+#[tauri::command]
+pub fn shared_settings_raw(state: State<'_, AppState>) -> serde_json::Map<String, serde_json::Value> {
+    let path = state.data_root().settings_file();
+    let document = vibebar_desktop_core::shared::settings_document::read(&path).unwrap_or_default();
+    document
+        .into_iter()
+        .filter(|(key, _)| SETTINGS_WRITABLE_KEYS.contains(&key.as_str()))
+        .collect()
+}
+
 #[tauri::command]
 pub fn save_shared_settings(
     app: AppHandle,
@@ -90,7 +103,7 @@ pub fn save_shared_settings(
     // The menu bar renders from these, and nothing else would redraw it until
     // the next quota refresh — which, if the cadence is what just changed, is
     // exactly the wait this save was meant to shorten.
-    if applied.written.iter().any(|key| key == "displayMode" || key == "menuBarColorBasis") {
+    if applied.written.iter().any(|key| key == "displayMode" || key == "menuBarColorBasis" || key == "menuBarItems") {
         crate::tray::update(&app, &state.engine().cached_view());
     }
     if applied.written.iter().any(|key| key == "refreshIntervalSeconds") {

@@ -36,6 +36,13 @@
   box-sizing: border-box;
 }
 html.popover-window, html.popover-window body { background: transparent; }
+/* On a vibrant window the page paints translucent fills over the system
+   material; the body itself stays clear so the desktop shows through. */
+html.vibrant, html.vibrant body { background: transparent; }
+html.vibrant-standin { background: linear-gradient(135deg, #d9e4f5 0%, #f2d5e3 35%, #d7efe3 70%, #f5e6c8 100%) fixed; }
+html.vibrant .mini-quota { background: rgba(255, 255, 255, 0.42); }
+@media (prefers-color-scheme: dark) { html.vibrant .mini-quota { background: rgba(28, 30, 36, 0.5); } }
+html.vibrant .mini-quota { border-radius: 14px; }
 
 body {
   margin: 0;
@@ -45,7 +52,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button {
+:where(button) {
   font: inherit;
   color: inherit;
   background: transparent;
@@ -54,10 +61,10 @@ button {
   padding: 4px 10px;
   cursor: pointer;
 }
-button:hover:not(:disabled) {
+:where(button:hover:not(:disabled)) {
   background: var(--bg-raised);
 }
-button:disabled {
+:where(button:disabled) {
   opacity: 0.5;
   cursor: default;
 }

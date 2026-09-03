@@ -21,7 +21,8 @@
         "resizable": true,
         "visible": false,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "transparent": true
       }
     ],
     "security": {
@@ -46,7 +47,9 @@
       "minimumSystemVersion": "11.0"
     },
     "createUpdaterArtifacts": true,
-    "resources": ["resources/fix_menu_bar_allowlist.py"]
+    "resources": [
+      "resources/fix_menu_bar_allowlist.py"
+    ]
   },
   "plugins": {
     "updater": {

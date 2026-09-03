@@ -12,8 +12,16 @@ import type { WorkbenchPageId } from "./workbench/pages";
 import "./workbench/porcelain.css";
 
 
+/** `?page=<id>` opens that page first — how the tray, `show_main_window`,
+ *  and a headless screenshot land on a page without a click. */
+function initialPage(): WorkbenchPageId {
+  const wanted = new URLSearchParams(window.location.search).get("page");
+  const known: WorkbenchPageId[] = ["usageStats", "sessionManager", "resets", "skillsManager", "settings"];
+  return known.includes(wanted as WorkbenchPageId) ? (wanted as WorkbenchPageId) : "usageStats";
+}
+
 export function App() {
-  const [tab, setTab] = useState<WorkbenchPageId>("usageStats");
+  const [tab, setTab] = useState<WorkbenchPageId>(initialPage());
   const [dark, toggleDark] = useAppearance();
   const [view, setView] = useState<QuotaView | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -68,18 +76,21 @@ export function App() {
   const saveSettings = useCallback((changes: Record<string, unknown>) => {
     // The command returns the settings as they read after the write, which is
     // not always what was asked for: the native app may have changed the same
-    // one in between, and it wins.
-    api
+    // one in between, and it wins. The promise is returned so a page can
+    // sequence edits behind the write rather than ahead of it.
+    return api
       .saveSharedSettings(changes)
       .then((settings) => {
         setPresentation(settings);
         setSaveError(null);
+        return settings;
       })
       .catch((error: unknown) => {
         // A control that springs back with no explanation reads as a bug in
         // the app rather than a file it could not write.
         setSaveError(String(error));
         api.presentationSettings().then(setPresentation).catch(() => undefined);
+        throw error;
       });
   }, []);
 
@@ -118,6 +129,7 @@ export function App() {
         onDismissReplaced={() => setReplacedSettings(null)}
         onRescanCost={() => api.refreshCost().then(setCost)}
         onCheckConnections={() => api.refreshQuota().then(setView)}
+        initialSection={(new URLSearchParams(window.location.search).get("section") ?? "system") as never}
       />
     ),
   } as const;
