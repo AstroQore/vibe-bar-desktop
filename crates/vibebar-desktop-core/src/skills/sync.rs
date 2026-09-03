@@ -141,7 +141,7 @@ impl SyncEngine {
                     .link(&source, &destination)
                     .or_else(|_| self.copy(&source, &destination)),
                 Kind::Symlink => {
-                    std::fs::remove_file(&destination)?;
+                    remove_link(&destination)?;
                     self.link(&source, &destination)
                 }
                 Kind::Directory => {
@@ -155,7 +155,7 @@ impl SyncEngine {
             SyncMethod::Symlink => {
                 match existing {
                     Kind::Missing => {}
-                    Kind::Symlink => std::fs::remove_file(&destination)?,
+                    Kind::Symlink => remove_link(&destination)?,
                     Kind::Directory => {
                         if !self.is_vibebar_copy(&destination, recorded)? {
                             return Err(SkillError::DirectoryConflict(name.to_string()));
@@ -169,7 +169,7 @@ impl SyncEngine {
             SyncMethod::Copy => {
                 match existing {
                     Kind::Missing => {}
-                    Kind::Symlink => std::fs::remove_file(&destination)?,
+                    Kind::Symlink => remove_link(&destination)?,
                     Kind::Directory => {
                         if !self.is_vibebar_copy(&destination, recorded)? {
                             return Err(SkillError::DirectoryConflict(name.to_string()));
@@ -204,7 +204,7 @@ impl SyncEngine {
                 if resolved != source {
                     return Ok(false);
                 }
-                std::fs::remove_file(&destination)?;
+                remove_link(&destination)?;
                 Ok(true)
             }
             Kind::Directory => {
@@ -352,11 +352,26 @@ pub fn remove_tree_without_following_links(dir: &Path) -> std::io::Result<()> {
         let file_type = entry.file_type()?;
         if file_type.is_dir() && !file_type.is_symlink() {
             remove_tree_without_following_links(&entry.path())?;
+        } else if file_type.is_symlink() {
+            remove_link(&entry.path())?;
         } else {
             std::fs::remove_file(entry.path())?;
         }
     }
     std::fs::remove_dir(dir)
+}
+
+/// Unlink a symlink itself, never what it points at. Windows keeps directory
+/// links apart from file links and refuses `remove_file` on the former with
+/// "access denied", so the directory form is tried second there.
+pub fn remove_link(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        #[cfg(windows)]
+        Err(_) => std::fs::remove_dir(path),
+        #[cfg(not(windows))]
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(test)]

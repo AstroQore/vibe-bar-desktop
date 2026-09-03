@@ -281,7 +281,7 @@ impl SkillsService {
             Kind::Missing => Ok(()),
             Kind::Directory => Ok(sync::remove_tree_without_following_links(&path)?),
             // A link in the SSOT is unlinked, never followed.
-            Kind::Symlink => Ok(std::fs::remove_file(&path)?),
+            Kind::Symlink => Ok(sync::remove_link(&path)?),
             _ => Err(SkillError::SourceNotADirectory(name.to_string())),
         }
     }
