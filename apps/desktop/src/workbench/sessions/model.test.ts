@@ -19,6 +19,7 @@ import {
   sortRows,
   splitHighlights,
 } from "./model";
+import { foldedLines, messageParts, rowSummary, rowTitle } from "./model";
 
 function row(id: string, projectDir: string | undefined, lastActiveAt: number): SessionRow {
   return { provider: "codex", harness: "Codex", sessionId: id, sessionRef: id, projectDir, lastActiveAt };
@@ -131,5 +132,52 @@ describe("transcript", () => {
       { index: 1, seq: 1, title: "Make it wrap" },
       { index: 3, seq: 2, title: "Ship it" },
     ]);
+  });
+});
+
+describe("a message's parts", () => {
+  it("turns the kit's tool-call line into a name, a purpose and fields", () => {
+    const parts = messageParts('Looking first.\n[tool call] Bash {"command":"ls -lh","description":"Check the size"}');
+    expect(parts[0]).toEqual({ kind: "text", text: "Looking first." });
+    expect(parts[1]).toMatchObject({ kind: "tool", name: "Bash", purpose: "Check the size" });
+    expect((parts[1] as { fields: Array<{ key: string; block: boolean }> }).fields).toEqual([{ key: "command", value: "ls -lh", block: true }]);
+  });
+  it("reads the native app's two-line form as well", () => {
+    const parts = messageParts('[Tool: Read]\n{"file_path":"Sources/A.swift"}');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ kind: "tool", name: "Read", fields: [{ key: "file_path", value: "Sources/A.swift", block: false }] });
+  });
+  it("keeps a call without arguments and prose around it", () => {
+    const parts = messageParts("[tool call] Glob\nDone.");
+    expect(parts).toEqual([{ kind: "tool", name: "Glob", purpose: undefined, fields: [] }, { kind: "text", text: "Done." }]);
+  });
+  it("keeps unparseable arguments as one field", () => {
+    const parts = messageParts("[tool call] Bash not json");
+    expect(parts[0]).toMatchObject({ kind: "tool", name: "Bash", fields: [{ key: "input", value: "not json", block: false }] });
+  });
+});
+
+describe("row title and summary", () => {
+  const base = { sessionId: "abc", provider: "claude", harness: "Claude Code" };
+  it("prefers the title, then the summary, then the excerpt, then the id", () => {
+    expect(rowTitle({ ...base, title: "  Fix it " })).toBe("Fix it");
+    expect(rowTitle({ ...base, summary: "A summary" })).toBe("A summary");
+    expect(rowTitle({ ...base, excerpt: "an <mark>excerpt</mark>" })).toBe("an excerpt");
+    expect(rowTitle({ ...base })).toBe("abc");
+  });
+  it("does not repeat the title as its summary", () => {
+    expect(rowSummary({ ...base, summary: "Same" })).toBeUndefined();
+    expect(rowSummary({ ...base, title: "Title", summary: "Different" })).toBe("Different");
+    expect(rowSummary({ ...base, title: "Title", summary: "Different", excerpt: "hit <mark>x</mark>" })).toBe("hit x");
+  });
+});
+
+describe("folding a tool result", () => {
+  it("shows the first lines and counts the rest", () => {
+    const text = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join("\n");
+    const fold = foldedLines(text);
+    expect(fold.hidden).toBe(4);
+    expect(fold.shown.split("\n")).toHaveLength(8);
+    expect(foldedLines("one\ntwo")).toEqual({ shown: "one\ntwo", hidden: 0 });
   });
 });

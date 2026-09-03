@@ -3,6 +3,7 @@
  * filters, grouping and sorting, transcript paging and collapsing. Mirrors
  * the native `SessionManagerModel` so the components only render.
  */
+import { providerAccent } from "../../tokens";
 import type { SessionListingQuery, SessionRow, TranscriptMessage } from "../../api";
 
 export type DateRange = "all" | "today" | "week" | "month";
@@ -279,4 +280,117 @@ export function outline(messages: TranscriptMessage[]): Array<{ index: number; s
     entries.push({ index, seq, title: firstLine.trim().slice(0, 120) });
   });
   return entries;
+}
+
+
+/** Search hits come marked up by the index; everything else is plain text. */
+export function plainExcerpt(excerpt: string | undefined): string | undefined {
+  const text = excerpt?.replace(/<\/?[a-z]+>/g, "").trim();
+  return text || undefined;
+}
+
+/** The row's title: what the index recorded, else its summary, else the
+ *  search excerpt, else the id — never an empty line. */
+export function rowTitle(row: Pick<SessionRow, "title" | "summary" | "excerpt" | "sessionId">): string {
+  return row.title?.trim() || row.summary?.trim() || plainExcerpt(row.excerpt) || row.sessionId;
+}
+
+/** The one-line summary under the title: a search excerpt when the row came
+ *  from a search, else the index's summary — and nothing when that would
+ *  only repeat the title. */
+export function rowSummary(row: Pick<SessionRow, "title" | "summary" | "excerpt" | "sessionId">): string | undefined {
+  const title = rowTitle(row);
+  const excerpt = plainExcerpt(row.excerpt);
+  const candidate = row.excerpt ? excerpt : row.summary?.trim() || undefined;
+  return candidate && candidate !== title ? candidate : undefined;
+}
+
+/** The provider's hue for a row — the one table, the design language's rule. */
+export function rowTint(row: Pick<SessionRow, "provider" | "harness">): string {
+  return providerAccent(brandTool(row), false) ?? "var(--wb-accent)";
+}
+
+export interface ToolField {
+  key: string;
+  value: string;
+  /** Rendered as a code block rather than inline: multi-line or long. */
+  block: boolean;
+}
+
+export type MessagePart =
+  | { kind: "text"; text: string }
+  | { kind: "tool"; name: string; purpose?: string; fields: ToolField[] };
+
+const TOOL_CALL = /^\[tool call\] (\S+)\s*(.*)$/;
+/** The native app's older rendering: `[Tool: Name]` on one line, the JSON input on the next. */
+const TOOL_CALL_NATIVE = /^\[Tool: ([^\]]+)\]\s*(.*)$/;
+const BLOCK_KEYS = new Set(["command", "content", "old_string", "new_string", "prompt", "script", "text", "body", "diff", "patch"]);
+
+function toolFields(input: unknown): { purpose?: string; fields: ToolField[] } {
+  if (input === null || input === undefined) return { fields: [] };
+  if (typeof input !== "object" || Array.isArray(input)) {
+    const value = typeof input === "string" ? input : JSON.stringify(input);
+    return { fields: value ? [{ key: "input", value, block: value.includes("\n") || value.length > 72 }] : [] };
+  }
+  let purpose: string | undefined;
+  const fields: ToolField[] = [];
+  for (const [key, raw] of Object.entries(input as Record<string, unknown>)) {
+    if (key === "description" && typeof raw === "string") {
+      purpose = raw;
+      continue;
+    }
+    const value = typeof raw === "string" ? raw : JSON.stringify(raw);
+    fields.push({ key, value, block: BLOCK_KEYS.has(key) || value.includes("\n") || value.length > 72 });
+  }
+  return { purpose, fields };
+}
+
+/** A message's text split into prose and the tool calls the kit renders as
+ *  `[tool call] Name {json}` lines, so a call reads as a name, a purpose and
+ *  its arguments as fields instead of a JSON dump. */
+export function messageParts(text: string): MessagePart[] {
+  const parts: MessagePart[] = [];
+  let prose: string[] = [];
+  const flush = () => {
+    const joined = prose.join("\n").trim();
+    if (joined) parts.push({ kind: "text", text: joined });
+    prose = [];
+  };
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const call = line.match(TOOL_CALL) ?? line.match(TOOL_CALL_NATIVE);
+    if (!call) {
+      prose.push(line);
+      continue;
+    }
+    flush();
+    let raw = call[2];
+    // The native form puts the arguments on the following line.
+    if (!raw && lines[i + 1]?.trimStart().startsWith("{")) {
+      raw = lines[i + 1].trim();
+      i += 1;
+    }
+    let input: unknown = raw ? raw : null;
+    if (typeof input === "string") {
+      try {
+        input = JSON.parse(input);
+      } catch {
+        // Not JSON: keep the raw text as the one field.
+      }
+    }
+    const { purpose, fields } = toolFields(input);
+    parts.push({ kind: "tool", name: call[1], purpose, fields });
+  }
+  flush();
+  return parts;
+}
+
+/** A tool result shows its first lines; the rest waits behind one click. */
+export const RESULT_FOLD_LINES = 8;
+
+export function foldedLines(text: string, limit = RESULT_FOLD_LINES): { shown: string; hidden: number } {
+  const lines = text.split("\n");
+  if (lines.length <= limit) return { shown: text, hidden: 0 };
+  return { shown: lines.slice(0, limit).join("\n"), hidden: lines.length - limit };
 }

@@ -155,6 +155,8 @@ export interface SessionRow {
   /** The model the index recorded for the session, when it knows one. */
   model?: string;
   title?: string;
+  /** The index's one-line summary of the session, when it wrote one. */
+  summary?: string;
   projectDir?: string;
   lastActiveAt?: number;
   /** Opaque backend-issued reference; never a filesystem path. */
