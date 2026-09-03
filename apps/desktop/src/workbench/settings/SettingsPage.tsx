@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AppInfo, CostView, EffectiveModelPricingRow, MenuBarHealthReport, PendingUpdate, PresentationSettings, QuotaView } from "../../api";
 import { api } from "../../api";
 import { ToolBrandIcon } from "../../popover/brand";
@@ -161,19 +161,33 @@ export function SettingsPage({
   const [pricing, setPricing] = useState<EffectiveModelPricingRow[] | null>(pricingFixture ?? null);
   const [health, setHealth] = useState<MenuBarHealthReport | null>(null);
   const [raw, setRaw] = useState<Record<string, unknown> | null>(null);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const reloadRaw = () => api.sharedSettingsRaw().then(setRaw).catch(() => undefined);
   useEffect(() => {
     void reloadRaw();
   }, [settings]);
-  /** Save top-level keys, then re-read the file: the merge may have put a
-   *  sibling client's value back, and the page shows what is on disk. */
-  const save = async (changes: Record<string, unknown>) => {
-    await onSave(changes);
-    await reloadRaw();
+  /** Nested objects are edited whole, so an edit must be built on the file's
+   *  current value: the page has to have read it, and successive edits run
+   *  one after another, each on top of what the previous write produced. */
+  const ready = raw !== null;
+  const save = (changes: Record<string, unknown>) => {
+    if (!ready) return Promise.resolve();
+    // The next edit sees this one at once, before the write lands.
+    setRaw((current) => (current ? { ...current, ...changes } : current));
+    const run = queue.current.then(async () => {
+      try {
+        await onSave(changes);
+      } finally {
+        await reloadRaw();
+      }
+    });
+    queue.current = run.catch(() => undefined);
+    return run;
   };
   const menuBarItems = (Array.isArray(raw?.menuBarItems) ? (raw!.menuBarItems as Record<string, unknown>[]) : []) as Record<string, unknown>[];
   const item0: Record<string, unknown> = menuBarItems[0] ?? { kind: "primary", isVisible: true, showTitle: false, layout: "singleLine", selectedFieldIds: [], customLabels: {}, fieldStyles: {} };
   const saveItem = (patch: Record<string, unknown>) => {
+    if (!ready) return Promise.resolve();
     const next = menuBarItems.length > 0 ? menuBarItems.map((item, index) => (index === 0 ? { ...item, ...patch } : item)) : [{ ...item0, ...patch }];
     return save({ menuBarItems: next });
   };
@@ -186,6 +200,15 @@ export function SettingsPage({
   const coreOrder = (Array.isArray(raw?.coreProviderOrder) ? (raw!.coreProviderOrder as string[]) : settings?.coreProviderOrder ?? ["codex", "claude", "gemini", "grok"]) as string[];
   const visibleCore = (Array.isArray(raw?.visibleCoreProviders) ? (raw!.visibleCoreProviders as string[]) : null) as string[] | null;
   const visibleMisc = (Array.isArray(raw?.visibleMiscProviders) ? (raw!.visibleMiscProviders as string[]) : null) as string[] | null;
+  /** Visibility of a misc instance lives on the instance (`isVisible`), which
+   *  is what `presentation()` reads; the id list is kept in step for readers
+   *  of the older key. */
+  const saveMiscVisible = (id: string, next: boolean) => {
+    const list = (Array.isArray(raw?.miscProviderInstances) ? (raw!.miscProviderInstances as Record<string, unknown>[]) : []) as Record<string, unknown>[];
+    const instances = list.map((i) => (i.id === id ? { ...i, isVisible: next } : i));
+    const visibleIds = instances.filter((i) => i.isVisible !== false).map((i) => String(i.id));
+    return save({ miscProviderInstances: instances, visibleMiscProviders: visibleIds });
+  };
   const knownFields = (view?.accounts ?? []).flatMap((account) =>
     account.buckets.map((bucket) => ({ id: `${account.tool}.${bucket.id}`, tool: account.tool, title: bucketLabelFor(account.tool, bucket.id, bucket.title, bucket.shortLabel, bucket.groupTitle, " · ") })),
   );
@@ -241,8 +264,12 @@ export function SettingsPage({
   const current = entries.find((e) => e.id === section);
   const providerSection = CORE_PROVIDERS.find((p) => p.id === section);
 
+  const NESTED: SectionId[] = ["menuBar", "menuBarHealth", "miniWindow", "layout", "costData"];
   const content = () => {
     if (!settings) return <p className="wb-empty">Loading settings…</p>;
+    if (!ready && (NESTED.includes(section) || section.startsWith("misc:") || CORE_PROVIDERS.some((c) => c.id === section))) {
+      return <p className="wb-empty">Reading the shared settings…</p>;
+    }
     switch (section) {
       case "system":
         return (
@@ -320,11 +347,11 @@ export function SettingsPage({
                   ))}
                 </select>
               </div>
-              <p className="st-note">Applies to cost history and subscription fill history.</p>
+              <p className="st-note">Applies to the native app's cost history and subscription fill history; this client keeps no history beyond its restart snapshot, so the value is shared, not enforced here.</p>
               <div className="st-line">
-                <Check label="Privacy mode" checked={Boolean(costData.privacyModeEnabled)} onChange={(next) => void save({ costData: { ...costData, privacyModeEnabled: next } })} />
+                <Check label="Privacy mode" checked={Boolean(costData.privacyModeEnabled)} onChange={(next) => void save({ costData: { ...costData, privacyModeEnabled: next } }).then(() => onRescanCost())} />
               </div>
-              <p className="st-note">Privacy mode keeps cost data off disk and clears local cost history, snapshots, and scan cache.</p>
+              <p className="st-note">Privacy mode keeps cost data off disk and clears local cost history, snapshots, and scan cache; this client drops its restart snapshot and re-reads at once.</p>
               <div className="st-line">
                 <button type="button" className="st-btn" disabled={busy === "rescan" || fixture} onClick={() => void run("rescan", onRescanCost)}>
                   <Refresh size={12} /> {busy === "rescan" ? "Rescanning…" : "Rescan cost logs"}
@@ -616,7 +643,7 @@ export function SettingsPage({
                 <div className="st-field" key={instance.id}>
                   {instance.tool ? <ToolBrandIcon tool={instance.tool} size={13} /> : <i />}
                   <span className="st-field-title">{instance.name || instance.tool}</span>
-                  <Check label="Visible" checked={miscVisible(instance.id)} onChange={(next) => void save({ visibleMiscProviders: settings.miscProviderInstances.map((i) => i.id).filter((id) => (id === instance.id ? next : miscVisible(id))) })} />
+                  <Check label="Visible" checked={miscVisible(instance.id)} onChange={(next) => void saveMiscVisible(instance.id, next)} />
                 </div>
               ))}
             </div>
@@ -702,7 +729,7 @@ export function SettingsPage({
               </dl>
               {instance ? (
                 <div className="st-line">
-                  <Check label="Show this provider" checked={visibleMisc === null || visibleMisc.includes(instance.id)} onChange={(next) => void save({ visibleMiscProviders: settings.miscProviderInstances.map((i) => i.id).filter((id) => (id === instance.id ? next : visibleMisc === null || visibleMisc.includes(id))) })} />
+                  <Check label="Show this provider" checked={visibleMisc === null || visibleMisc.includes(instance.id)} onChange={(next) => void saveMiscVisible(instance.id, next)} />
                   <input
                     className="st-field-label"
                     style={{ minWidth: 160 }}

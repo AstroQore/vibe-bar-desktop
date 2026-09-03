@@ -76,18 +76,21 @@ export function App() {
   const saveSettings = useCallback((changes: Record<string, unknown>) => {
     // The command returns the settings as they read after the write, which is
     // not always what was asked for: the native app may have changed the same
-    // one in between, and it wins.
-    api
+    // one in between, and it wins. The promise is returned so a page can
+    // sequence edits behind the write rather than ahead of it.
+    return api
       .saveSharedSettings(changes)
       .then((settings) => {
         setPresentation(settings);
         setSaveError(null);
+        return settings;
       })
       .catch((error: unknown) => {
         // A control that springs back with no explanation reads as a bug in
         // the app rather than a file it could not write.
         setSaveError(String(error));
         api.presentationSettings().then(setPresentation).catch(() => undefined);
+        throw error;
       });
   }, []);
 
