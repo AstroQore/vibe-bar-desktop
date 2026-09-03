@@ -64,11 +64,16 @@ enum MiniWindowGeometryFile {
     Unavailable,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct LaunchStateFile {
     schema: u8,
     has_completed_first_run: bool,
+    /// Unix seconds of the last scheduled update check, so a relaunch inside
+    /// the daily cadence does not check again. Absent on files written
+    /// before it existed; `deny_unknown_fields` is deliberately not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_update_check_at: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,13 +288,39 @@ impl ClientStore {
     }
 
     pub fn mark_first_run_complete(&self) -> Result<(), CoreError> {
-        self.write_json(
-            &self.root.client_launch_state_file(),
-            &LaunchStateFile {
-                schema: 1,
-                has_completed_first_run: true,
-            },
-        )
+        let mut state = self.launch_state().unwrap_or(LaunchStateFile {
+            schema: 1,
+            has_completed_first_run: false,
+            last_update_check_at: None,
+        });
+        state.has_completed_first_run = true;
+        self.write_json(&self.root.client_launch_state_file(), &state)
+    }
+
+    /// When the scheduled update check last ran, if the record is usable.
+    pub fn last_update_check_at(&self) -> Option<f64> {
+        self.launch_state().and_then(|state| state.last_update_check_at)
+    }
+
+    /// Record a scheduled update check, keeping the first-run flag as it is.
+    pub fn record_update_check(&self, at: f64) -> Result<(), CoreError> {
+        let mut state = self.launch_state().unwrap_or(LaunchStateFile {
+            schema: 1,
+            has_completed_first_run: false,
+            last_update_check_at: None,
+        });
+        state.last_update_check_at = Some(at);
+        self.write_json(&self.root.client_launch_state_file(), &state)
+    }
+
+    fn launch_state(&self) -> Option<LaunchStateFile> {
+        let path = self.root.client_launch_state_file();
+        let metadata = std::fs::symlink_metadata(&path).ok()?;
+        if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > 16 * 1024 {
+            return None;
+        }
+        crate::shared::read_json_file::<LaunchStateFile>(&path, 16 * 1024)
+            .filter(|state| state.schema == 1)
     }
 
     /// A completed Desktop-local cost scan. This is aggregate-only and never
@@ -884,6 +915,21 @@ mod tests {
         assert_eq!(store.load_cost_snapshot(), Some(view));
         assert!(root.client_cost_snapshot_file().is_file());
         assert!(!root.settings_file().exists());
+    }
+
+    #[test]
+    fn the_update_check_record_keeps_the_first_run_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ClientStore::new(DataRoot::at(dir.path().join(".vibebar")));
+        assert_eq!(store.last_update_check_at(), None);
+        store.record_update_check(1_700_000_000.0).unwrap();
+        assert_eq!(store.first_run_state(), FirstRunState::Missing);
+        store.mark_first_run_complete().unwrap();
+        assert_eq!(store.first_run_state(), FirstRunState::Completed);
+        assert_eq!(store.last_update_check_at(), Some(1_700_000_000.0));
+        store.record_update_check(1_700_100_000.0).unwrap();
+        assert_eq!(store.first_run_state(), FirstRunState::Completed);
+        assert_eq!(store.last_update_check_at(), Some(1_700_100_000.0));
     }
 
     #[test]

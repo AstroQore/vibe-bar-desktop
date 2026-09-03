@@ -471,6 +471,7 @@ export interface MenuBarHealthReport {
   repairCommand?: string | null;
 }
 export const MENU_BAR_HEALTH_EVENT = "vibebar://menu-bar-health";
+export const UPDATE_EVENT = "vibebar://update-available";
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
 export const SETTINGS_EVENT = "vibebar://settings-changed";
@@ -552,6 +553,10 @@ export const api = {
    *  The `id` names this answer: two checks can be in flight at once, and
    *  installing has to mean the one that was shown. */
   checkForUpdate: () => invoke<PendingUpdate | null>("check_for_update"),
+  /** What the scheduled daily check found and is holding, if anything. */
+  pendingUpdate: () => invoke<PendingUpdate | null>("pending_update"),
+  onUpdateAvailable: (handler: (update: PendingUpdate) => void) =>
+    listen<PendingUpdate>(UPDATE_EVENT, (event) => handler(event.payload)).then((unlisten) => unlisten),
   /** Installs what that check found and restarts into it. */
   installUpdate: (id: number) => invoke<void>("install_update", { id }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>

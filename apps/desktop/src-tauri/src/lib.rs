@@ -91,6 +91,7 @@ pub fn run() {
             commands::hide_popover,
             commands::resize_mini,
             commands::check_for_update,
+            commands::pending_update,
             commands::install_update,
             commands::session_list,
             commands::session_search,
@@ -155,6 +156,7 @@ pub fn run() {
             apply_startup_action(app.handle(), action);
             spawn_refresh_loop(app.handle().clone());
             spawn_load_watchdog(app.handle().clone());
+            spawn_update_check_loop(app.handle().clone());
             spawn_settings_watch(app.handle().clone());
             app.manage(menu_bar_health::Watchdog::default());
             menu_bar_health::spawn(app.handle().clone());
@@ -323,4 +325,70 @@ fn spawn_load_watchdog(app: tauri::AppHandle) {
             tray::show_main_window(&app);
         }
     });
+}
+
+/// What a page and the tray learn when the scheduled check finds an update.
+pub const UPDATE_EVENT: &str = "vibebar://update-available";
+
+/// The scheduled update check, as the native app's Sparkle does daily: a
+/// first look shortly after launch — unless one ran within the last twenty
+/// hours, so relaunching all day does not hammer the feed — then every day.
+/// A find is held for the Settings page and the tray to offer; nothing is
+/// downloaded or installed until the person asks. Demo mode never checks.
+fn spawn_update_check_loop(app: tauri::AppHandle) {
+    const FIRST_LOOK: Duration = Duration::from_secs(90);
+    const DAILY: Duration = Duration::from_secs(24 * 60 * 60);
+    const RECENT: f64 = 20.0 * 60.0 * 60.0;
+    tauri::async_runtime::spawn(async move {
+        if app.state::<AppState>().data_root().is_demo() {
+            return;
+        }
+        tokio::time::sleep(FIRST_LOOK).await;
+        loop {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_secs_f64())
+                .unwrap_or(0.0);
+            let store = ClientStore::new(app.state::<AppState>().data_root().clone());
+            let recently = store
+                .last_update_check_at()
+                .is_some_and(|at| at <= now && now - at < RECENT);
+            if !recently {
+                let found = {
+                    let state = app.state::<AppState>();
+                    commands::perform_update_check(&app, &state).await
+                };
+                let _ = store.record_update_check(now);
+                match found {
+                    Ok(Some(update)) => {
+                        eprintln!("[update] {} is available", update.version);
+                        tray::refresh_menu(&app);
+                        let _ = app.emit(UPDATE_EVENT, &update);
+                    }
+                    Ok(None) => tray::refresh_menu(&app),
+                    Err(error) => eprintln!("[update] scheduled check failed: {error}"),
+                }
+            }
+            tokio::time::sleep(DAILY).await;
+        }
+    });
+}
+
+/// Install what the last check is holding and restart into it; the tray's
+/// "Update to X…" item. A failure keeps the find so the next try can use it.
+pub(crate) async fn install_pending_update(app: &tauri::AppHandle) {
+    let Some(pending) = app.state::<AppState>().pending_update_summary() else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let Some(update) = state.take_update(pending.id) else {
+        return;
+    };
+    match update.download_and_install(|_, _| {}, || {}).await {
+        Ok(()) => app.restart(),
+        Err(error) => {
+            eprintln!("[update] install failed: {error}");
+            state.restore_update(pending.id, update);
+        }
+    }
 }

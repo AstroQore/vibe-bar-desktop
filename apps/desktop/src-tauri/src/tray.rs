@@ -32,13 +32,8 @@ pub fn reregister(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Open Vibe Bar Desktop", true, None::<&str>)?;
-    let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
-    let mini = MenuItem::with_id(app, "mini", "Toggle Mini", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &refresh, &mini, &separator, &quit])?;
+pub fn install(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
+    let menu = build_menu(app, state.pending_update_summary().map(|update| update.version))?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -63,6 +58,15 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Resul
                 });
             }
             "mini" => crate::toggle_mini(app),
+            "update" => {
+                // Installing replaces the running app; the Settings page
+                // offers the same with a confirmation step, the menu is the
+                // shortcut for someone who already decided.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::install_pending_update(&app).await;
+                });
+            }
             "quit" => {
                 crate::persist_mini(app);
                 app.exit(0)
@@ -87,6 +91,32 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> tauri::Resul
 }
 
 /// Refresh the tray title after a quota pass.
+/// The tray menu. With an update found, an item to install it sits at the
+/// top — the way Sparkle's "Update to X…" does in the native app's menu.
+fn build_menu<R: Runtime>(app: &AppHandle<R>, update: Option<String>) -> tauri::Result<Menu<R>> {
+    let show = MenuItem::with_id(app, "show", "Open Vibe Bar Desktop", true, None::<&str>)?;
+    let refresh = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
+    let mini = MenuItem::with_id(app, "mini", "Toggle Mini", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    match update {
+        Some(version) => {
+            let update = MenuItem::with_id(app, "update", format!("Update to {version}…"), true, None::<&str>)?;
+            let after = PredefinedMenuItem::separator(app)?;
+            Menu::with_items(app, &[&update, &after, &show, &refresh, &mini, &separator, &quit])
+        }
+        None => Menu::with_items(app, &[&show, &refresh, &mini, &separator, &quit]),
+    }
+}
+
+/// Rebuild the menu after a check: the update item appears or goes away.
+pub fn refresh_menu(app: &AppHandle) {
+    let update = app.state::<AppState>().pending_update_summary().map(|update| update.version);
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_menu(app, update)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
 pub fn update<R: Runtime>(app: &AppHandle<R>, view: &QuotaView) {
     // "Show in menu bar" is the shared item's own switch; the tray follows it.
     if let Some(tray) = app.tray_by_id(TRAY_ID) {

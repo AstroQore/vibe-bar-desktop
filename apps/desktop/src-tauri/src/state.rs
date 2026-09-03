@@ -51,6 +51,14 @@ impl AppState {
         self.pending_update.clear();
     }
 
+    /// The version and id of the update being held, if any — what a page
+    /// opening after the scheduled check needs to offer the install.
+    pub fn pending_update_summary(&self) -> Option<crate::commands::PendingUpdate> {
+        self.pending_update
+            .peek(|update| update.version.clone())
+            .map(|(id, version)| crate::commands::PendingUpdate { version, id })
+    }
+
     pub fn new() -> Self {
         let data_root = DataRoot::discover();
         let scan_home: PathBuf = if data_root.is_demo() {
@@ -225,6 +233,13 @@ impl<T> Pending<T> {
         if let Ok(mut slot) = self.slot.lock() {
             *slot = None;
         }
+    }
+
+    /// Look at what is held without taking it: the id, and whatever the
+    /// caller reads off the value.
+    fn peek<U>(&self, read: impl FnOnce(&T) -> U) -> Option<(u64, U)> {
+        let slot = self.slot.lock().ok()?;
+        slot.as_ref().map(|(id, value)| (*id, read(value)))
     }
 }
 

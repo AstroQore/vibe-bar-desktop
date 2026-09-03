@@ -81,6 +81,20 @@ function Check({ label, checked, onChange, disabled, title }: { label: string; c
 
 function UpdateCheck({ fixture }: { fixture: boolean }) {
   const [state, setState] = useState<{ at: "idle" | "checking" | "installing"; note?: string } | { at: "found"; update: PendingUpdate; note?: string }>({ at: "idle" });
+  useEffect(() => {
+    if (fixture) return;
+    let live = true;
+    void api.pendingUpdate().then((update) => {
+      if (live && update) setState((current) => (current.at === "installing" ? current : { at: "found", update }));
+    }).catch(() => undefined);
+    const off = api.onUpdateAvailable((update) => {
+      if (live) setState((current) => (current.at === "installing" ? current : { at: "found", update }));
+    });
+    return () => {
+      live = false;
+      void off.then((unlisten) => unlisten());
+    };
+  }, [fixture]);
   if (state.at === "found") {
     return (
       <div className="st-line">
@@ -305,7 +319,7 @@ export function SettingsPage({
             </Section>
             <Section title="Updates">
               <p className="st-text">Vibe Bar Desktop {info?.version ?? "…"}</p>
-              <p className="st-note">Checks run when you ask; a scheduled daily check arrives with a later release. Installing asks first.</p>
+              <p className="st-note">A check runs shortly after launch and then daily, and when you ask. Nothing is installed until you say so.</p>
               {info?.isDemo ? <p className="st-note">Demo mode: update checks are off.</p> : <UpdateCheck fixture={fixture} />}
               <div className="st-line">
                 <span className="st-label">Update channel</span>
