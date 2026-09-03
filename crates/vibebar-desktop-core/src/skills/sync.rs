@@ -145,7 +145,7 @@ impl SyncEngine {
                     self.link(&source, &destination)
                 }
                 Kind::Directory => {
-                    if !self.is_vibebar_copy(&destination, &source, recorded)? {
+                    if !self.is_vibebar_copy(&destination, recorded)? {
                         return Err(SkillError::DirectoryConflict(name.to_string()));
                     }
                     self.copy(&source, &destination)
@@ -157,7 +157,7 @@ impl SyncEngine {
                     Kind::Missing => {}
                     Kind::Symlink => std::fs::remove_file(&destination)?,
                     Kind::Directory => {
-                        if !self.is_vibebar_copy(&destination, &source, recorded)? {
+                        if !self.is_vibebar_copy(&destination, recorded)? {
                             return Err(SkillError::DirectoryConflict(name.to_string()));
                         }
                         remove_tree_without_following_links(&destination)?;
@@ -171,7 +171,7 @@ impl SyncEngine {
                     Kind::Missing => {}
                     Kind::Symlink => std::fs::remove_file(&destination)?,
                     Kind::Directory => {
-                        if !self.is_vibebar_copy(&destination, &source, recorded)? {
+                        if !self.is_vibebar_copy(&destination, recorded)? {
                             return Err(SkillError::DirectoryConflict(name.to_string()));
                         }
                     }
@@ -208,21 +208,35 @@ impl SyncEngine {
                 Ok(true)
             }
             Kind::Directory => {
+                // Only the hash recorded when Vibe Bar made the copy says the
+                // copy is Vibe Bar's. Matching the SSOT byte for byte does not:
+                // a directory someone else put there can look identical.
                 let Ok(current) = hasher::hash(&destination) else {
                     return Ok(false);
                 };
                 let recorded_hash = recorded.and_then(|r| r.content_hash_at_copy.as_deref());
-                let matches_recorded = recorded_hash == Some(current.as_str());
-                let matches_source = self.source_directory(name).is_dir()
-                    && hasher::hash(&self.source_directory(name)).ok().as_deref()
-                        == Some(current.as_str());
-                if !(matches_recorded || matches_source) {
+                if recorded_hash != Some(current.as_str()) {
                     return Ok(false);
                 }
                 remove_tree_without_following_links(&destination)?;
                 Ok(true)
             }
             Kind::RegularFile | Kind::Other => Ok(false),
+        }
+    }
+
+    /// Whether `materialize` could run without displacing anything: the slot
+    /// is missing, or already this skill's own link. A directory is a
+    /// conflict here because a fresh install has no recorded copy to match.
+    pub fn preflight(&self, name: &str, app: AppTarget) -> Result<(), SkillError> {
+        validator::validate(name)?;
+        let destination = self.destination(name, app);
+        check_write_fence(&destination, &self.home)?;
+        let source = self.source_directory(name);
+        match kind(&destination) {
+            Kind::Missing => Ok(()),
+            Kind::Symlink if self.is_our_link(&destination, &source) => Ok(()),
+            _ => Err(SkillError::DirectoryConflict(name.to_string())),
         }
     }
 
@@ -283,17 +297,15 @@ impl SyncEngine {
         Ok(Materialization::copy(hash))
     }
 
+    /// A copied slot is Vibe Bar's only if its hash is the one recorded when
+    /// the copy was made — never because it happens to match the SSOT.
     fn is_vibebar_copy(
         &self,
         destination: &Path,
-        source: &Path,
         recorded: Option<&Materialization>,
     ) -> Result<bool, SkillError> {
         let current = hasher::hash(destination)?;
-        if recorded.and_then(|r| r.content_hash_at_copy.as_deref()) == Some(current.as_str()) {
-            return Ok(true);
-        }
-        Ok(hasher::hash(source)? == current)
+        Ok(recorded.and_then(|r| r.content_hash_at_copy.as_deref()) == Some(current.as_str()))
     }
 }
 
@@ -478,5 +490,34 @@ mod tests {
         std::fs::create_dir_all(&ssot).unwrap();
         assert!(!has_symlinked_ancestor(&ssot, real.path()));
         check_write_fence(&ssot, real.path()).unwrap();
+    }
+
+    #[test]
+    fn a_copy_without_a_recorded_hash_is_left_alone() {
+        let (_dir, engine) = home_with_skill("docx");
+        // A directory that happens to match the SSOT byte for byte, but that
+        // no record says Vibe Bar made.
+        let dest = engine.destination("docx", AppTarget::Codex);
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        assert!(!engine
+            .unmaterialize("docx", AppTarget::Codex, None)
+            .unwrap());
+        let unhashed = Materialization {
+            content_hash_at_copy: None,
+            ..Materialization::symlink()
+        };
+        assert!(!engine
+            .unmaterialize("docx", AppTarget::Codex, Some(&unhashed))
+            .unwrap());
+        assert!(dest.join("SKILL.md").is_file());
+        assert!(matches!(
+            engine.materialize("docx", AppTarget::Codex, SyncMethod::Copy, None),
+            Err(SkillError::DirectoryConflict(_))
+        ));
+        assert!(matches!(
+            engine.preflight("docx", AppTarget::Codex),
+            Err(SkillError::DirectoryConflict(_))
+        ));
     }
 }

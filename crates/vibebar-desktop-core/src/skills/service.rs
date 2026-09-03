@@ -75,16 +75,44 @@ impl SkillsService {
         if !source.join("SKILL.md").is_file() {
             return Err(SkillError::MissingSkillMd(name.to_string()));
         }
+        // Preflight before the first mutation: the registry must be one this
+        // build may write, and every slot must be free (or already ours), so a
+        // conflict surfaces before anything is copied rather than after.
+        self.registry()?;
+        for app in enable_for {
+            self.engine.preflight(name, *app)?;
+        }
         self.copy_into_ssot(source, name)?;
         let mut skill = self.make_local_skill(name)?;
         for app in enable_for {
-            let materialization = self
-                .engine
-                .materialize(name, *app, SyncMethod::Auto, None)?;
-            skill.apps.insert(app.raw().to_string(), materialization);
+            match self.engine.materialize(name, *app, SyncMethod::Auto, None) {
+                Ok(materialization) => {
+                    skill.apps.insert(app.raw().to_string(), materialization);
+                }
+                Err(error) => {
+                    self.roll_back_install(&skill);
+                    return Err(error);
+                }
+            }
         }
-        self.upsert(skill.clone())?;
+        if let Err(error) = self.upsert(skill.clone()) {
+            self.roll_back_install(&skill);
+            return Err(error);
+        }
         Ok(skill)
+    }
+
+    /// Undo an install that failed part-way: take back the projections it
+    /// made (each through the same ownership checks as a toggle) and the
+    /// SSOT copy, so nothing unrecorded is left behind. Best effort — the
+    /// error that triggered it is the one the caller sees.
+    fn roll_back_install(&self, skill: &Skill) {
+        for app in skill.projected_apps() {
+            let _ = self
+                .engine
+                .unmaterialize(&skill.directory, app, skill.materialization(app));
+        }
+        let _ = self.remove_from_ssot(&skill.directory);
     }
 
     /// Adopt a folder that is already in the SSOT (put there by hand, by
@@ -424,5 +452,52 @@ mod tests {
             Err(SkillError::WriteOutsideAllowedRoots(_))
         ));
         assert!(skill.join("SKILL.md").is_file());
+    }
+
+    #[test]
+    fn install_leaves_nothing_behind_when_a_slot_is_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("incoming/docx");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        // Claude already has a foreign docx directory.
+        let taken = catalog::skills_dir(AppTarget::Claude, dir.path()).join("docx");
+        std::fs::create_dir_all(&taken).unwrap();
+        std::fs::write(taken.join("SKILL.md"), "theirs").unwrap();
+        let vibebar = dir.path().join(".vibebar");
+        std::fs::create_dir_all(&vibebar).unwrap();
+        let service = SkillsService::new(dir.path().to_path_buf(), vibebar.clone());
+        assert!(matches!(
+            service.install_local(&source, "docx", &[AppTarget::Codex, AppTarget::Claude]),
+            Err(SkillError::DirectoryConflict(_))
+        ));
+        assert_eq!(
+            sync::kind(&catalog::ssot_dir(dir.path()).join("docx")),
+            Kind::Missing
+        );
+        assert_eq!(
+            sync::kind(&catalog::skills_dir(AppTarget::Codex, dir.path()).join("docx")),
+            Kind::Missing
+        );
+        assert_eq!(
+            std::fs::read_to_string(taken.join("SKILL.md")).unwrap(),
+            "theirs"
+        );
+        assert!(service.registry().unwrap().skills.is_empty());
+        // A registry this build may not write stops the install before any copy.
+        std::fs::write(
+            vibebar.join("skills.json"),
+            r#"{"schemaVersion":2,"skills":[]}"#,
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&taken).unwrap();
+        assert!(matches!(
+            service.install_local(&source, "docx", &[AppTarget::Codex]),
+            Err(SkillError::UnsupportedRegistrySchema(2))
+        ));
+        assert_eq!(
+            sync::kind(&catalog::ssot_dir(dir.path()).join("docx")),
+            Kind::Missing
+        );
     }
 }

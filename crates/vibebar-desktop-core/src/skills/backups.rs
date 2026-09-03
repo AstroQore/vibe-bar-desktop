@@ -63,7 +63,7 @@ impl BackupManager {
         if sync::kind(&source) != sync::Kind::Directory {
             return Err(SkillError::SourceDirectoryMissing(skill.directory.clone()));
         }
-        let root = root(&self.vibebar_dir);
+        let root = self.fenced_root()?;
         std::fs::create_dir_all(&root)?;
         #[cfg(unix)]
         {
@@ -96,7 +96,9 @@ impl BackupManager {
 
     /// Newest first.
     pub fn list(&self) -> Vec<Backup> {
-        let root = root(&self.vibebar_dir);
+        let Ok(root) = self.fenced_root() else {
+            return Vec::new();
+        };
         let mut backups: Vec<Backup> = std::fs::read_dir(&root)
             .map(|entries| {
                 entries
@@ -154,7 +156,7 @@ impl BackupManager {
     /// Put the snapshot back into the SSOT. The destination must be missing:
     /// a restore never overwrites a skill that is installed now.
     pub fn restore(&self, backup: &Path) -> Result<Skill, SkillError> {
-        let root = catalog::lexical_normalize(&root(&self.vibebar_dir));
+        let root = catalog::lexical_normalize(&self.fenced_root()?);
         let backup = catalog::lexical_normalize(backup);
         if !backup.starts_with(&root) || backup == root {
             return Err(SkillError::BackupNotFound(backup.display().to_string()));
@@ -188,6 +190,22 @@ impl BackupManager {
         for backup in backups.into_iter().skip(keeping) {
             let _ = sync::remove_tree_without_following_links(Path::new(&backup.path));
         }
+    }
+
+    /// The backup root, refused when it is a symlink or sits behind one:
+    /// pruning deletes below it, and a link would carry that elsewhere.
+    fn fenced_root(&self) -> Result<PathBuf, SkillError> {
+        let root = root(&self.vibebar_dir);
+        let ok = matches!(
+            sync::kind(&root),
+            sync::Kind::Missing | sync::Kind::Directory
+        ) && !sync::has_symlinked_ancestor(&root, &self.vibebar_dir);
+        if !ok {
+            return Err(SkillError::WriteOutsideAllowedRoots(
+                root.display().to_string(),
+            ));
+        }
+        Ok(root)
     }
 
     fn unique_backup_path(&self, name: &str, created_at: f64, root: &Path) -> PathBuf {
@@ -291,6 +309,28 @@ mod tests {
         assert!(matches!(
             manager.restore(&dir.path().join("elsewhere")),
             Err(SkillError::BackupNotFound(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_backup_root_is_neither_listed_nor_pruned() {
+        let dir = tempfile::tempdir().unwrap();
+        let vibebar = dir.path().join(".vibebar");
+        std::fs::create_dir_all(&vibebar).unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        for i in 0..25 {
+            std::fs::create_dir_all(elsewhere.join(format!("20260101_0000{i:02}_docx/skill")))
+                .unwrap();
+        }
+        std::os::unix::fs::symlink(&elsewhere, root(&vibebar)).unwrap();
+        let manager = BackupManager::new(dir.path().to_path_buf(), vibebar);
+        assert!(manager.list().is_empty());
+        manager.prune(20);
+        assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 25);
+        assert!(matches!(
+            manager.restore(&elsewhere.join("20260101_000000_docx")),
+            Err(SkillError::WriteOutsideAllowedRoots(_))
         ));
     }
 }

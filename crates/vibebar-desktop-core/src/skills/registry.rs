@@ -214,10 +214,17 @@ pub fn read(vibebar_dir: &Path) -> Result<Registry, SkillError> {
     let object = value
         .as_object()
         .ok_or_else(|| SkillError::Io("skills.json is not an object".into()))?;
-    let schema_version = object
-        .get("schemaVersion")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1) as u32;
+    let schema_version = match object.get("schemaVersion") {
+        None => SCHEMA_VERSION,
+        Some(value) => value
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| {
+                SkillError::Io(format!(
+                    "skills.json: schemaVersion {value} is not a version"
+                ))
+            })?,
+    };
     // Fail closed on a newer document: every write here serializes only the
     // fields this build knows, so reading a newer schema would later erase
     // whatever the other client added.
@@ -330,5 +337,17 @@ mod tests {
             read(dir.path()),
             Err(SkillError::UnsupportedRegistrySchema(2))
         ));
+        // A version field that is not a number is as unknown as a newer one.
+        for malformed in [
+            r#"{"schemaVersion":"2","skills":[]}"#,
+            r#"{"schemaVersion":null,"skills":[]}"#,
+            r#"{"schemaVersion":4294967297,"skills":[]}"#,
+        ] {
+            std::fs::write(registry_file(dir.path()), malformed).unwrap();
+            assert!(
+                matches!(read(dir.path()), Err(SkillError::Io(_))),
+                "{malformed}"
+            );
+        }
     }
 }
