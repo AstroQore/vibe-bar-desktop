@@ -92,6 +92,7 @@
 .wb-pill.on { background: color-mix(in srgb, var(--wb-pill-tint, var(--wb-accent)) 12%, transparent); color: var(--wb-pill-on, var(--wb-accent)); box-shadow: inset 0 0 0 0.7px color-mix(in srgb, var(--wb-pill-tint, var(--wb-accent)) 36%, transparent); }
 .wb-pill.on .wb-pill-icon { color: inherit; }
 .wb-pill.danger { color: #D0342C; }
+.wb-pill.danger.prominent { background: #D0342C; color: #fff; box-shadow: none; }
 .wb-pill.prominent { background: var(--wb-accent); color: #fff; box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--wb-accent) 72%, transparent); }
 .wb-pill.selected { background: color-mix(in srgb, var(--wb-accent) 18%, transparent); color: var(--wb-text); box-shadow: inset 0 0 0 0.7px color-mix(in srgb, var(--wb-accent) 34%, transparent); }
 .wb-pill:disabled { opacity: 0.5; }

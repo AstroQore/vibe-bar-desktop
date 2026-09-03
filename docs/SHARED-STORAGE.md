@@ -40,12 +40,15 @@ cannot redirect the final write.
 
 ## What Desktop writes today
 
-Three things, each with its own written rule (AGENTS.md rule 1): the
+Four things, each with its own written rule (AGENTS.md rule 1): the
 shared `settings.json` through the locked, merge-only writer; the quota
 cache, one account per file in the native schema, atomically, after a
-successful read; and the Control Center allow-list repair, which is a
-system preference rather than a Vibe Bar store. The section below is
-about the stores that still have no such rule.
+successful read; the Control Center allow-list repair, which is a system
+preference rather than a Vibe Bar store; and whole-session deletion of a
+Codex or Claude Code session's own log files through the kit's fenced
+deleter, at the person's explicit request — which removes files under
+`~/.codex/` and `~/.claude/`, never a row of the shared index. The section
+below is about the stores that still have no such rule.
 
 ## Why Desktop does not write the other shared stores
 

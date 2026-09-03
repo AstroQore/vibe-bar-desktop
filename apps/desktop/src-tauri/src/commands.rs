@@ -587,6 +587,19 @@ pub fn frontend_log(message: String) {
     );
 }
 
+/// Delete whole sessions by reference — the one destructive command, called
+/// only from the Sessions page after the person confirmed, and fenced by
+/// the kit's deleter (provider roots, no symlinks, re-parsed id). The
+/// shared index is never written; a deleted session leaves listings
+/// because its file is gone.
+#[tauri::command]
+pub fn session_delete(
+    state: State<'_, AppState>,
+    session_refs: Vec<String>,
+) -> Vec<vibebar_desktop_core::sessions::SessionDeleteReport> {
+    state.sessions().delete_sessions(&session_refs)
+}
+
 #[tauri::command]
 pub fn session_transcript(
     state: State<'_, AppState>,

@@ -96,6 +96,7 @@ pub fn run() {
             commands::session_list,
             commands::session_search,
             commands::session_transcript,
+            commands::session_delete,
             commands::quota_cycles,
             commands::app_info,
             commands::skills_inventory,
