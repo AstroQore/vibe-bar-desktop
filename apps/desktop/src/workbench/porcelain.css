@@ -110,3 +110,11 @@
 .wb-table td.num, .wb-table th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-rounded, -apple-system, system-ui, sans-serif; }
 /* The overlay title bar's strip above the page header; it drags the window. */
 .wb-drag-strip { height: 36px; flex: none; -webkit-app-region: drag; }
+
+/* Glass: on a vibrant window the porcelain fills thin out so the material
+   reads through the sidebar and the page, while cards keep a hairline and a
+   whisper of fill to stay legible. */
+html.vibrant .wb { --wb-window: rgba(249, 250, 252, 0.26); --wb-sidebar: rgba(255, 255, 255, 0.14); --wb-toolbar: rgba(255, 255, 255, 0.4); --wb-card: rgba(255, 255, 255, 0.38); --wb-overlay: rgba(252, 252, 254, 0.94); background: transparent; }
+html.vibrant .wb.dark { --wb-window: rgba(23, 24, 30, 0.34); --wb-sidebar: rgba(255, 255, 255, 0.03); --wb-toolbar: rgba(255, 255, 255, 0.05); --wb-card: rgba(255, 255, 255, 0.05); --wb-overlay: rgba(36, 37, 44, 0.96); background: transparent; }
+html.vibrant .wb-card { backdrop-filter: saturate(1.2) blur(10px); -webkit-backdrop-filter: saturate(1.2) blur(10px); }
+html.vibrant .wb-toolbar, html.vibrant .us-menu-panel, html.vibrant .sk-menu, html.vibrant .sk-modal { backdrop-filter: saturate(1.3) blur(14px); -webkit-backdrop-filter: saturate(1.3) blur(14px); }

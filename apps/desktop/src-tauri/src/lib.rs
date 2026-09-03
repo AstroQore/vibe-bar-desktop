@@ -97,7 +97,17 @@ pub fn run() {
             commands::app_info,
             commands::skills_inventory,
         ])
+        // Every window's page learns whether it sits on a vibrant material,
+        // so the sheets can lower their fills and let the desktop through.
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished && cfg!(target_os = "macos") {
+                let _ = webview.eval("document.documentElement.classList.add('vibrant')");
+            }
+        })
         .setup(move |app| {
+            if let Some(window) = app.get_webview_window("main") {
+                apply_glass(&window, GlassSurface::Window);
+            }
             let state = AppState::new();
             // A forecast needs history and a fresh install has none. On a Mac
             // with the native app, adopt its observations once so the first
@@ -254,4 +264,30 @@ fn spawn_refresh_loop(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+/// The material under a window: the glass design language, with the
+/// system's own materials. A no-op off macOS, where the windows stay opaque.
+#[derive(Clone, Copy)]
+pub enum GlassSurface {
+    /// The main window: the sidebar material under the whole surface.
+    Window,
+    /// A floating panel: the popover material, rounded like one.
+    Panel,
+}
+
+pub fn apply_glass<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, surface: GlassSurface) {
+    #[cfg(target_os = "macos")]
+    {
+        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+        let (material, radius) = match surface {
+            GlassSurface::Window => (NSVisualEffectMaterial::Sidebar, None),
+            GlassSurface::Panel => (NSVisualEffectMaterial::Popover, Some(14.0)),
+        };
+        let _ = apply_vibrancy(window, material, None, radius);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, surface);
+    }
 }

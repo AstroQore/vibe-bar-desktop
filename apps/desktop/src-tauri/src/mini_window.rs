@@ -43,11 +43,13 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, root: DataRoot) -> tauri::Result<
         .inner_size(272.0, 190.0)
         .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
         .decorations(false)
+        .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
         .visible(false)
         .build()?;
+    crate::apply_glass(&window, crate::GlassSurface::Panel);
 
     let handle = app.clone();
     window.on_window_event(move |event| match event {
