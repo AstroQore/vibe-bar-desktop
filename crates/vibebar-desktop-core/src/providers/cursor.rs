@@ -40,12 +40,24 @@ pub async fn fetch(home: &Path, client: &Client) -> Result<AccountQuota, QuotaEr
         get(client, "/api/auth/me", &cookie),
         post_empty(client, "/api/dashboard/get-sand-usage-status", &cookie),
     );
+    // Identity is decoration: it names the account and, for a legacy plan,
+    // supplies the id the fallback needs. Losing it costs no lane.
     let user_info = user_info
         .ok()
         .and_then(|body| serde_json::from_slice::<UserInfo>(&body).ok());
-    let grok_bot = grok_bot
-        .ok()
-        .and_then(|body| serde_json::from_slice::<GrokBotUsage>(&body).ok());
+    // The Bot lane is not decoration. Publishing a snapshot without it would
+    // write the lane out of the shared cache, so anything other than "this
+    // account has no Bot dashboard" fails the read and leaves the last good
+    // observation in place.
+    let grok_bot = match grok_bot {
+        Ok(body) => Some(
+            serde_json::from_slice::<GrokBotUsage>(&body).map_err(|error| {
+                QuotaError::ParseFailure(format!("Cursor Grok Bot status not parseable: {error}"))
+            })?,
+        ),
+        Err(QuotaError::Unknown(ref message)) if message.contains("404") => None,
+        Err(error) => return Err(error),
+    };
 
     // The legacy request-plan fallback fires only when usage-summary has no
     // plan block at all — the same gate CodexBar and the native app use.
@@ -346,7 +358,11 @@ pub fn parse_summary(
 
     if let Some(bot) = grok_bot {
         if let Some(percent) = bot.usage_percent {
-            if bot.has_non_zero_included_limit != Some(false) {
+            // Both spellings of "no Bot allowance": the current flag, and the
+            // older payload's inverted one. Either means no lane to draw.
+            let has_allowance = bot.has_non_zero_included_limit != Some(false)
+                && bot.included_limit_zero != Some(true);
+            if has_allowance {
                 let period_start = parse_timestamp(bot.current_period_start.as_deref());
                 let reset_at = parse_timestamp(bot.next_reset_timestamp_utc.as_deref());
                 buckets.push(QuotaBucket::new(
@@ -543,13 +559,24 @@ mod tests {
         assert_eq!(weekly.group_title.as_deref(), Some("Grok Bot"));
         assert!((weekly.used_percent - 5.361195).abs() < 0.000_001);
         assert_eq!(weekly.raw_window_seconds, Some(604_800));
-        // A zero included limit means no Bot allowance to show.
-        let none = GrokBotUsage {
-            has_non_zero_included_limit: Some(false),
-            ..bot
-        };
-        let snap = parse_summary(&summary, None, Some(&none));
-        assert!(!snap.buckets.iter().any(|b| b.id == "grok_bot_weekly"));
+        // Either spelling of "no Bot allowance" means no lane to show.
+        for none in [
+            GrokBotUsage {
+                has_non_zero_included_limit: Some(false),
+                ..GrokBotUsage {
+                    usage_percent: bot.usage_percent,
+                    ..Default::default()
+                }
+            },
+            GrokBotUsage {
+                included_limit_zero: Some(true),
+                usage_percent: bot.usage_percent,
+                ..Default::default()
+            },
+        ] {
+            let snap = parse_summary(&summary, None, Some(&none));
+            assert!(!snap.buckets.iter().any(|b| b.id == "grok_bot_weekly"));
+        }
     }
 
     /// An unknown or missing plan is `None`, so the card suppresses its
