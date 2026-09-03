@@ -18,6 +18,7 @@ export function SessionRowView({
   deleteMode,
   checked,
   now,
+  dark,
   onSelect,
   onToggleCheck,
 }: {
@@ -26,10 +27,11 @@ export function SessionRowView({
   deleteMode: boolean;
   checked: boolean;
   now: number;
+  dark: boolean;
   onSelect: () => void;
   onToggleCheck: () => void;
 }) {
-  const tint = rowTint(row);
+  const tint = rowTint(row, dark);
   const title = rowTitle(row);
   const summary = rowSummary(row);
   return (
@@ -72,6 +74,7 @@ export function SessionList({
   deleteMode,
   checked,
   now,
+  dark,
   onSelect,
   onToggleCheck,
   empty,
@@ -85,6 +88,7 @@ export function SessionList({
   deleteMode: boolean;
   checked: Set<string>;
   now: number;
+  dark: boolean;
   onSelect: (row: SessionRow) => void;
   onToggleCheck: (row: SessionRow) => void;
   empty: { title: string; detail: string } | null;
@@ -100,6 +104,7 @@ export function SessionList({
       deleteMode={deleteMode}
       checked={checked.has(row.sessionRef)}
       now={now}
+      dark={dark}
       onSelect={() => onSelect(row)}
       onToggleCheck={() => onToggleCheck(row)}
     />

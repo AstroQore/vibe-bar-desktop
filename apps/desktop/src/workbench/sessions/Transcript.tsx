@@ -51,13 +51,17 @@ function ToolCall({ part, query }: { part: Extract<MessagePart, { kind: "tool" }
 }
 
 /** A tool's output: a code block that shows its first lines and folds the rest. */
-function ToolResult({ text, query }: { text: string; query: string }) {
+function ToolResult({ text, query, hit }: { text: string; query: string; hit: boolean }) {
   const [open, setOpen] = useState(false);
   const fold = foldedLines(text);
+  // A match the fold would hide is shown: the find bar said "1 of 1", and
+  // the reader must be able to see it without hunting for the fold.
+  const matchHidden = hit && query.trim().length > 0 && !fold.shown.toLowerCase().includes(query.trim().toLowerCase());
+  const showAll = open || matchHidden;
   return (
     <>
-      <code className="wb-code quiet"><Highlighted text={open ? text : fold.shown} query={query} /></code>
-      {fold.hidden > 0 ? (
+      <code className="wb-code quiet"><Highlighted text={showAll ? text : fold.shown} query={query} /></code>
+      {fold.hidden > 0 && !matchHidden ? (
         <button type="button" className="ss-card-more" onClick={() => setOpen((value) => !value)}>
           {open ? "Show less" : `Show ${fold.hidden.toLocaleString("en-US")} more lines`}
         </button>
@@ -81,7 +85,7 @@ function MessageCard({ message, index, query, hit, onCopy }: { message: Transcri
           {message.timestamp ? <span className="ss-card-time">{messageTime(message.timestamp)}</span> : null}
         </div>
         {isResult ? (
-          <ToolResult text={text} query={query} />
+          <ToolResult text={text} query={query} hit={hit} />
         ) : (
           parts.map((part, i) =>
             part.kind === "tool" ? <ToolCall key={i} part={part} query={query} /> : <div key={i} className="ss-card-text"><Highlighted text={part.text} query={query} /></div>,
@@ -108,6 +112,7 @@ export function Transcript({
   loading,
   error,
   terminal,
+  dark,
   onCopy,
   onOpen,
   onPage,
@@ -117,6 +122,7 @@ export function Transcript({
   loading: boolean;
   error: string | null;
   terminal: PreferredTerminal;
+  dark: boolean;
   onCopy: (text: string, note: string) => void;
   onOpen: (command: string) => void;
   onPage: (direction: -1 | 1) => void;
@@ -149,7 +155,7 @@ export function Transcript({
   }
   const total = page?.totalMessages ?? (page ? page.offset + messages.length + (page.nextCursor ? 1 : 0) : 0);
   const range = page ? { lower: page.offset, upper: page.offset + messages.length } : pageRange(0, 0);
-  const tint = rowTint(row);
+  const tint = rowTint(row, dark);
   const title = rowTitle(row);
   const entries = outline(messages);
   const canOpen = row.resumeCommand != null && terminal !== "copyOnly";

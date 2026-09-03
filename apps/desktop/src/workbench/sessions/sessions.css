@@ -2,12 +2,15 @@
    list (300–620) and transcript (≥420), cards with 13 pt corners. */
 .ss-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* One row: a field, then pills, the count at the far right. It never wraps. */
-.ss-toolbar { display: flex; flex-direction: column; margin: 12px 22px 12px; padding: 0 10px; min-height: 50px; justify-content: center; }
+.ss-toolbar { display: flex; flex-direction: column; margin: 12px 22px 12px; padding: 0 10px; min-height: 50px; justify-content: center; container-type: inline-size; }
 .ss-toolbar-row { display: flex; align-items: center; gap: 7px; flex-wrap: nowrap; min-width: 0; }
+/* Below the default window width the row may wrap rather than lose the
+   count and the rescan control off the edge. */
+@container (max-width: 880px) { .ss-toolbar { padding: 8px 10px; } .ss-toolbar-row { flex-wrap: wrap; row-gap: 6px; } }
 .ss-search { flex: 0 1 220px; min-width: 120px; }
 .ss-search .wb-iconbtn { width: 20px; height: 20px; }
 .ss-index { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--wb-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ss-index progress { width: 70px; height: 4px; }
+.ss-index progress { width: 40px; height: 4px; }
 .ss-folders { display: flex; flex-direction: column; gap: 10px; padding: 8px; width: 360px; }
 .ss-folders h4 { margin: 0; font-size: 12px; font-weight: 600; }
 .ss-folders label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--wb-secondary); }

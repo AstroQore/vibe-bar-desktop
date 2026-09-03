@@ -35,10 +35,12 @@ export function SessionsPage({
   refreshToken = 0,
   fixture,
   now: fixedNow,
+  dark = false,
 }: {
   refreshToken?: number;
   fixture?: { listing: SessionListing; transcript: TranscriptPage };
   now?: number;
+  dark?: boolean;
 }) {
   const [filters, setFilters] = useState<SessionFilterState>(DEFAULTS);
   const [listing, setListing] = useState<SessionListing | null>(fixture?.listing ?? null);
@@ -190,6 +192,7 @@ export function SessionsPage({
             deleteMode={deleteMode}
             checked={checked}
             now={now}
+            dark={dark}
             onSelect={select}
             onToggleCheck={(row) =>
               setChecked((current) => {
@@ -213,6 +216,7 @@ export function SessionsPage({
             loading={pageLoading}
             error={pageError}
             terminal={filters.terminal}
+            dark={dark}
             onCopy={(text, note) => void copy(text, note)}
             onOpen={(command) => void open(command)}
             onPage={(direction) => {

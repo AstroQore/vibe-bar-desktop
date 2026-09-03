@@ -306,8 +306,8 @@ export function rowSummary(row: Pick<SessionRow, "title" | "summary" | "excerpt"
 }
 
 /** The provider's hue for a row — the one table, the design language's rule. */
-export function rowTint(row: Pick<SessionRow, "provider" | "harness">): string {
-  return providerAccent(brandTool(row), false) ?? "var(--wb-accent)";
+export function rowTint(row: Pick<SessionRow, "provider" | "harness">, dark: boolean): string {
+  return providerAccent(brandTool(row), dark) ?? "var(--wb-accent)";
 }
 
 export interface ToolField {
