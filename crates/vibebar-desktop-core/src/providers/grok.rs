@@ -19,12 +19,20 @@ use reqwest::{Client, Url};
 use crate::error::QuotaError;
 use crate::model::{AccountQuota, QuotaBucket, QuotaOrigin, ToolType};
 
-const ACCOUNT_ID: &str = "cli-grok";
+/// The id the native `AccountStore` mints for the `grok login` route, so
+/// both clients file this account's quota, history and forecast under one
+/// name. The cookie route's `web-grok` belongs to a reader this build does
+/// not have.
+const ACCOUNT_ID: &str = "oauth-grok";
 const BILLING_URL: &str = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
 const SETTINGS_URL: &str = "https://cli-chat-proxy.grok.com/v1/settings";
 /// xAI's weekly credit window. Naming it keeps a forecast from rejecting a
 /// fresh cycle, whose guard wants time-until-reset within the window.
 const WEEKLY_WINDOW_SECONDS: i64 = 604_800;
+/// The tier badge is enrichment, so it gets a budget of its own well inside
+/// the adapter's: a stalled settings endpoint must not spend the whole ceiling
+/// and take a good billing read down with it.
+const SETTINGS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
 
 pub async fn fetch(home: &Path, client: &Client) -> Result<AccountQuota, QuotaError> {
     let credential = crate::credentials::grok::load(home)?;
@@ -36,10 +44,17 @@ pub async fn fetch(home: &Path, client: &Client) -> Result<AccountQuota, QuotaEr
     // outage or schema change must never fail the refresh.
     let (billing, settings) = tokio::join!(
         billing(client, &credential.access_token),
-        subscription_tier(client, &credential.access_token),
+        tokio::time::timeout(
+            SETTINGS_TIMEOUT,
+            subscription_tier(client, &credential.access_token)
+        ),
     );
     let snapshot = billing?;
-    let plan = settings.ok().flatten().or_else(|| credential.plan_label());
+    let plan = settings
+        .ok()
+        .and_then(Result::ok)
+        .flatten()
+        .or_else(|| credential.plan_label());
 
     Ok(AccountQuota {
         account_id: ACCOUNT_ID.to_string(),
@@ -97,7 +112,7 @@ async fn subscription_tier(client: &Client, token: &str) -> Result<Option<String
     let url = Url::parse(SETTINGS_URL).expect("the built-in Grok settings URL is valid");
     let response = client
         .get(url)
-        .timeout(super::REQUEST_TIMEOUT)
+        .timeout(SETTINGS_TIMEOUT)
         .header("Authorization", format!("Bearer {token}"))
         .header("Accept", "application/json")
         .header("User-Agent", "VibeBar")
