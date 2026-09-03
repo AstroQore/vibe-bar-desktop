@@ -38,7 +38,7 @@ this note says where the work stands and which lanes are open.
 | Skills | Install from a folder, adopt, toggle projections, uninstall with a snapshot, restore — through `SkillsService` and the native sync engine's rules. Repository installs, Discover and harness activation patches stay native |
 | Sessions | Shared index when compatible, otherwise bounded local discovery; full-text search, paged transcripts with find, resume command, and deletion through the kit's fenced deleter |
 | First run | The native setup assistant, step for step, marking completion in the shared settings |
-| MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot` |
+| MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot`. Quota, status, cost and pricing answer from what the last run recorded; the session tools read the shared index, or discover locally at request time when it is absent |
 | Writes | Five authorized write domains and nothing else — shared settings and the quota cache, the Control Center allow-list, whole-session deletion under a harness's own directory, and the skill library with its managed app directories; see [AGENTS.md](AGENTS.md) rule 1 |
 | Platforms | The core crate is tested on macOS, Linux and Windows on every pull request; the GUI has had its end-to-end pass on macOS only |
 

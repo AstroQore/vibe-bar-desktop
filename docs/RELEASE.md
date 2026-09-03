@@ -96,13 +96,11 @@ Pages build and no domain that can lapse.
 The app reads `updateChannel` from the shared `settings.json` — the same key
 the native client uses, so choosing Dev in one window applies to both.
 
-**Desktop has to be able to set it too, not only read it.** On a machine with
-no native client there is otherwise no way into the Dev channel at all: the key
-is not in `settings_writer::WRITABLE_KEYS` and Desktop's Settings presents
-three controls, none of them this one. So the updater work includes a channel
-control in Settings and `updateChannel` in the whitelist — which is the rule
-that list already states, that a key may be writable only when a control
-submits it.
+**Desktop sets it too, not only reads it.** On a machine with no native
+client there would otherwise be no way into the Dev channel at all. So
+`updateChannel` is in `settings_writer::WRITABLE_KEYS` and Settings renders
+the channel control that submits it — which is the rule that list already
+states, that a key may be writable only when a control submits it.
 
 Each file is the Tauri updater's shape:
 
@@ -324,8 +322,9 @@ back.
 - **A Windows signing certificate.** Until there is one, Windows installers
   meet SmartScreen. That is a purchase and a decision, not a build step.
 - **Delta updates.** Sparkle does not use them here either.
-- **A "check now" button.** Native's daily ask-first check is the behaviour to
-  match, and it needs the settings pane before it needs a button.
+- **Rolling out to a fraction of users.** Both feeds serve one head per
+  channel; staging a release to some subscribers first would need a second
+  document and a rule for who reads which.
 - **Rollback.** There is none, and the channel switch is not one — which is
   worth stating because it is the obvious thing to assume. The updater only
   offers versions *newer* than the installed one, so someone on a bad
