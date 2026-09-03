@@ -33,7 +33,7 @@ function ToolCall({ part, query }: { part: Extract<MessagePart, { kind: "tool" }
   return (
     <div className="ss-tool">
       <div className="ss-tool-head">
-        <span className="wb-toolname">{part.name}</span>
+        <span className="wb-toolname"><Highlighted text={part.name} query={query} /></span>
         {part.purpose ? <span className="ss-tool-purpose"><Highlighted text={part.purpose} query={query} /></span> : null}
       </div>
       {part.fields.length > 0 ? (
