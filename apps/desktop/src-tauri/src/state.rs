@@ -194,6 +194,22 @@ impl AppState {
             .swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// The Skills manager for this data root: the SSOT and app directories
+    /// under the home the sessions scanner uses, the registry and backups
+    /// under the shared Vibe Bar directory.
+    pub fn skills(&self) -> vibebar_desktop_core::skills::service::SkillsService {
+        let root = self.data_root();
+        let home = if root.is_demo() {
+            root.shared()
+                .parent()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| root.shared().to_path_buf())
+        } else {
+            vibebar_desktop_core::paths::home_directory()
+        };
+        vibebar_desktop_core::skills::service::SkillsService::new(home, root.shared().to_path_buf())
+    }
+
     pub fn data_root(&self) -> &DataRoot {
         &self.data_root
     }

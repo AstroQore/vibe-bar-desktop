@@ -247,6 +247,25 @@ export interface SkillInventoryRow {
   targets: string[];
   health: string;
   source: string;
+  /** The registry's id (`owner/repo:dir` or `local:dir`); `local:dir` for a folder the registry does not know. */
+  id: string;
+  /** Whether `~/.vibebar/skills.json` records this skill; an unrecorded SSOT folder can be adopted. */
+  registered: boolean;
+  /** What sits at each managed app's slot: `projected` (link), `copy` (ours, hash intact), `foreign`, `missing`. */
+  apps: Record<string, { state: "projected" | "copy" | "foreign" | "missing"; adopted: boolean }>;
+}
+
+export interface SkillBackup {
+  path: string;
+  directoryName: string;
+  skillName: string;
+  /** Seconds since 2001-01-01 UTC, as the registry records dates. */
+  createdAt: number;
+}
+
+export interface SkillUninstallResult {
+  backupPath: string;
+  removedByApp: Record<string, boolean>;
 }
 export interface SkillsInventoryView {
   skills: SkillInventoryRow[];
@@ -505,6 +524,23 @@ export const api = {
   hideMini: () => invoke<void>("hide_mini"),
   appInfo: () => invoke<AppInfo>("app_info"),
   skillsInventory: () => invoke<SkillsInventoryView>("skills_inventory"),
+  /** Project a recorded skill into an app, or take it out; `false` on removal means the entry was not ours. */
+  skillsSetProjection: (id: string, app: string, on: boolean) => invoke<boolean>("skills_set_projection", { id, app, on }),
+  /** Snapshot, unproject everywhere, remove from the SSOT, forget. Only after the person confirmed. */
+  skillsUninstall: (id: string) => invoke<SkillUninstallResult>("skills_uninstall", { id }),
+  skillsBackups: () => invoke<SkillBackup[]>("skills_backups"),
+  skillsRestoreBackup: (path: string) => invoke<unknown>("skills_restore_backup", { path }),
+  /** Install from a folder on disk under `name`, projected into `apps`. */
+  skillsInstallLocal: (path: string, name: string, apps: string[]) => invoke<unknown>("skills_install_local", { path, name, apps }),
+  /** Record a folder already in the SSOT, projecting into `apps` besides any links apps already have. */
+  skillsAdopt: (name: string, apps: string[]) => invoke<unknown>("skills_adopt", { name, apps }),
+  /** A folder the person picks, or null when they cancel; null outside Tauri. */
+  pickFolder: async (title: string): Promise<string | null> => {
+    if (!inTauri()) return null;
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ directory: true, multiple: false, title });
+    return typeof picked === "string" ? picked : null;
+  },
   /** Reveal a skill directory in the file manager; only paths inside the
    *  shared skill library are accepted. */
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),

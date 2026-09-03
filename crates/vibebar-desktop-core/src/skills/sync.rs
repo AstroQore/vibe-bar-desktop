@@ -1,0 +1,408 @@
+//! Projects a skill from the SSOT into an app's skills directory and takes
+//! it back out — the native `SkillSyncEngine`. Two invariants hold for
+//! every mutation: the name passed the validator and the resolved path
+//! sits under an allowed root; deletion never follows a symlink and never
+//! removes anything the user could have authored — a foreign directory,
+//! or a copy whose content drifted from the hash recorded when it was made.
+
+use std::path::{Path, PathBuf};
+
+use super::catalog::{self, AppTarget};
+use super::hasher;
+use super::registry::{Materialization, SyncMethod};
+use super::validator;
+use super::SkillError;
+
+/// lstat-level classification: everything here tells a symlink apart from
+/// the directory it points at, and never follows one while deleting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Missing,
+    Directory,
+    Symlink,
+    RegularFile,
+    Other,
+}
+
+pub fn kind(path: &Path) -> Kind {
+    match std::fs::symlink_metadata(path) {
+        Err(_) => Kind::Missing,
+        Ok(meta) if meta.file_type().is_symlink() => Kind::Symlink,
+        Ok(meta) if meta.is_dir() => Kind::Directory,
+        Ok(meta) if meta.is_file() => Kind::RegularFile,
+        Ok(_) => Kind::Other,
+    }
+}
+
+/// Create `path` and any missing ancestors up to (never above) `root`, one
+/// component at a time, so the creation is provably confined to the
+/// terminal path — AntiGravity's `~/.gemini/config/skills` is created
+/// without ever touching a sibling of `config/`.
+pub fn ensure_directory(path: &Path, root: &Path) -> Result<(), SkillError> {
+    let path = catalog::lexical_normalize(path);
+    let root = catalog::lexical_normalize(root);
+    if !path.starts_with(&root) {
+        return Err(SkillError::WriteOutsideAllowedRoots(
+            path.display().to_string(),
+        ));
+    }
+    let mut cursor = root.clone();
+    let relative = path
+        .strip_prefix(&root)
+        .map_err(|_| SkillError::WriteOutsideAllowedRoots(path.display().to_string()))?;
+    for component in relative.components() {
+        cursor.push(component);
+        match kind(&cursor) {
+            Kind::Directory => {}
+            Kind::Missing => std::fs::create_dir(&cursor)?,
+            _ => return Err(SkillError::DirectoryConflict(cursor.display().to_string())),
+        }
+    }
+    Ok(())
+}
+
+pub struct SyncEngine {
+    home: PathBuf,
+}
+
+impl SyncEngine {
+    pub fn new(home: impl Into<PathBuf>) -> Self {
+        Self { home: home.into() }
+    }
+
+    pub fn source_directory(&self, name: &str) -> PathBuf {
+        catalog::ssot_dir(&self.home).join(name)
+    }
+
+    pub fn destination(&self, name: &str, app: AppTarget) -> PathBuf {
+        catalog::skills_dir(app, &self.home).join(name)
+    }
+
+    /// Materialize `name` into `app` and report what was done. `recorded`
+    /// only matters when a real directory already sits at the destination:
+    /// it is replaceable when its hash still matches the copy Vibe Bar made
+    /// (recorded hash, or byte-identical to the current SSOT content).
+    /// Anything else is user data and is a conflict.
+    pub fn materialize(
+        &self,
+        name: &str,
+        app: AppTarget,
+        method: SyncMethod,
+        recorded: Option<&Materialization>,
+    ) -> Result<Materialization, SkillError> {
+        validator::validate(name)?;
+        let source = self.source_directory(name);
+        match kind(&source) {
+            Kind::Directory => {}
+            Kind::Missing => return Err(SkillError::SourceDirectoryMissing(name.to_string())),
+            _ => return Err(SkillError::SourceNotADirectory(name.to_string())),
+        }
+        if !source.join("SKILL.md").is_file() {
+            return Err(SkillError::MissingSkillMd(name.to_string()));
+        }
+        let app_directory = catalog::skills_dir(app, &self.home);
+        let destination = self.destination(name, app);
+        if !catalog::is_write_allowed(&destination, &self.home) {
+            return Err(SkillError::WriteOutsideAllowedRoots(
+                destination.display().to_string(),
+            ));
+        }
+        ensure_directory(&app_directory, &self.home)?;
+        let existing = kind(&destination);
+        match method {
+            SyncMethod::Auto => match existing {
+                Kind::Missing => self
+                    .link(&source, &destination)
+                    .or_else(|_| self.copy(&source, &destination)),
+                Kind::Symlink => {
+                    std::fs::remove_file(&destination)?;
+                    self.link(&source, &destination)
+                }
+                Kind::Directory => {
+                    if !self.is_vibebar_copy(&destination, &source, recorded)? {
+                        return Err(SkillError::DirectoryConflict(name.to_string()));
+                    }
+                    self.copy(&source, &destination)
+                }
+                _ => Err(SkillError::DirectoryConflict(name.to_string())),
+            },
+            SyncMethod::Symlink => {
+                match existing {
+                    Kind::Missing => {}
+                    Kind::Symlink => std::fs::remove_file(&destination)?,
+                    Kind::Directory => {
+                        if !self.is_vibebar_copy(&destination, &source, recorded)? {
+                            return Err(SkillError::DirectoryConflict(name.to_string()));
+                        }
+                        remove_tree_without_following_links(&destination)?;
+                    }
+                    _ => return Err(SkillError::DirectoryConflict(name.to_string())),
+                }
+                self.link(&source, &destination)
+            }
+            SyncMethod::Copy => {
+                match existing {
+                    Kind::Missing => {}
+                    Kind::Symlink => std::fs::remove_file(&destination)?,
+                    Kind::Directory => {
+                        if !self.is_vibebar_copy(&destination, &source, recorded)? {
+                            return Err(SkillError::DirectoryConflict(name.to_string()));
+                        }
+                    }
+                    _ => return Err(SkillError::DirectoryConflict(name.to_string())),
+                }
+                self.copy(&source, &destination)
+            }
+        }
+    }
+
+    /// Remove `name` from `app`; `false` means the entry was left alone on
+    /// purpose — a foreign directory, a link pointing outside the SSOT, or
+    /// a copy the user has since edited.
+    pub fn unmaterialize(
+        &self,
+        name: &str,
+        app: AppTarget,
+        recorded: Option<&Materialization>,
+    ) -> Result<bool, SkillError> {
+        validator::validate(name)?;
+        let destination = self.destination(name, app);
+        if !catalog::is_write_allowed(&destination, &self.home) {
+            return Err(SkillError::WriteOutsideAllowedRoots(
+                destination.display().to_string(),
+            ));
+        }
+        let source = catalog::lexical_normalize(&self.source_directory(name));
+        match kind(&destination) {
+            Kind::Missing => Ok(true),
+            Kind::Symlink => {
+                let Some(resolved) = lexical_symlink_target(&destination) else {
+                    return Ok(false);
+                };
+                if resolved != source {
+                    return Ok(false);
+                }
+                std::fs::remove_file(&destination)?;
+                Ok(true)
+            }
+            Kind::Directory => {
+                let Ok(current) = hasher::hash(&destination) else {
+                    return Ok(false);
+                };
+                let recorded_hash = recorded.and_then(|r| r.content_hash_at_copy.as_deref());
+                let matches_recorded = recorded_hash == Some(current.as_str());
+                let matches_source = self.source_directory(name).is_dir()
+                    && hasher::hash(&self.source_directory(name)).ok().as_deref()
+                        == Some(current.as_str());
+                if !(matches_recorded || matches_source) {
+                    return Ok(false);
+                }
+                remove_tree_without_following_links(&destination)?;
+                Ok(true)
+            }
+            Kind::RegularFile | Kind::Other => Ok(false),
+        }
+    }
+
+    /// An existing symlink into the SSOT is a materialization Vibe Bar can
+    /// adopt as-is; a real directory is foreign until the user says otherwise.
+    pub fn adoption_state(&self, name: &str, app: AppTarget) -> Option<Materialization> {
+        if !validator::is_valid(name) {
+            return None;
+        }
+        let destination = self.destination(name, app);
+        if kind(&destination) != Kind::Symlink {
+            return None;
+        }
+        let resolved = lexical_symlink_target(&destination)?;
+        (resolved == catalog::lexical_normalize(&self.source_directory(name)))
+            .then(Materialization::adopted_symlink)
+    }
+
+    fn link(&self, source: &Path, destination: &Path) -> Result<Materialization, SkillError> {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(catalog::lexical_normalize(source), destination)?;
+        #[cfg(not(unix))]
+        std::os::windows::fs::symlink_dir(catalog::lexical_normalize(source), destination)?;
+        Ok(Materialization::symlink())
+    }
+
+    /// Recursive copy that swaps `destination` in as a unit: the tree is
+    /// built in a hidden sibling first and only then renamed into place, so
+    /// an interrupted copy never leaves a half-written skill where an agent
+    /// CLI would read it. `destination` must be missing or a real directory.
+    fn copy(&self, source: &Path, destination: &Path) -> Result<Materialization, SkillError> {
+        let parent = destination
+            .parent()
+            .ok_or_else(|| SkillError::Io("destination has no parent".into()))?;
+        let name = destination
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let staging = parent.join(format!(".{name}.vibebar-{}", std::process::id()));
+        if kind(&staging) != Kind::Missing {
+            remove_tree_without_following_links(&staging)?;
+        }
+        copy_tree(source, &staging)?;
+        if kind(destination) == Kind::Directory {
+            let old = parent.join(format!(".{name}.vibebar-old-{}", std::process::id()));
+            std::fs::rename(destination, &old)?;
+            std::fs::rename(&staging, destination)?;
+            let _ = remove_tree_without_following_links(&old);
+        } else {
+            std::fs::rename(&staging, destination)?;
+        }
+        let hash = hasher::hash(destination)?;
+        Ok(Materialization::copy(hash))
+    }
+
+    fn is_vibebar_copy(
+        &self,
+        destination: &Path,
+        source: &Path,
+        recorded: Option<&Materialization>,
+    ) -> Result<bool, SkillError> {
+        let current = hasher::hash(destination)?;
+        if recorded.and_then(|r| r.content_hash_at_copy.as_deref()) == Some(current.as_str()) {
+            return Ok(true);
+        }
+        Ok(hasher::hash(source)? == current)
+    }
+}
+
+/// A symlink's recorded target resolved lexically — relative targets
+/// against the link's own directory, `..` collapsed — without resolving
+/// intermediate links or requiring the target to exist.
+pub fn lexical_symlink_target(link: &Path) -> Option<PathBuf> {
+    let target = std::fs::read_link(link).ok()?;
+    let absolute = if target.is_absolute() {
+        target
+    } else {
+        link.parent()?.join(target)
+    };
+    Some(catalog::lexical_normalize(&absolute))
+}
+
+fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::create_dir(destination)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = destination.join(entry.file_name());
+        let meta = std::fs::symlink_metadata(&from)?;
+        if meta.file_type().is_symlink() {
+            let target = std::fs::read_link(&from)?;
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(target, &to)?;
+            #[cfg(not(unix))]
+            std::os::windows::fs::symlink_file(target, &to)?;
+        } else if meta.is_dir() {
+            copy_tree(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Remove a tree without ever following a symlink: a link inside is
+/// unlinked, never descended; each entry's type comes from the listing.
+pub fn remove_tree_without_following_links(dir: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() && !file_type.is_symlink() {
+            remove_tree_without_following_links(&entry.path())?;
+        } else {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    std::fs::remove_dir(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn home_with_skill(name: &str) -> (tempfile::TempDir, SyncEngine) {
+        let dir = tempfile::tempdir().unwrap();
+        let ssot = catalog::ssot_dir(dir.path()).join(name);
+        std::fs::create_dir_all(&ssot).unwrap();
+        std::fs::write(ssot.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        let engine = SyncEngine::new(dir.path());
+        (dir, engine)
+    }
+
+    #[test]
+    fn auto_links_and_unmaterialize_removes_only_our_link() {
+        let (dir, engine) = home_with_skill("docx");
+        let m = engine
+            .materialize("docx", AppTarget::Codex, SyncMethod::Auto, None)
+            .unwrap();
+        assert_eq!(m.method, SyncMethod::Symlink);
+        let dest = engine.destination("docx", AppTarget::Codex);
+        assert_eq!(kind(&dest), Kind::Symlink);
+        // A foreign link is left alone.
+        let foreign = engine.destination("other", AppTarget::Codex);
+        std::os::unix::fs::symlink(dir.path().join("elsewhere"), &foreign).unwrap();
+        assert!(!engine
+            .unmaterialize("other", AppTarget::Codex, None)
+            .unwrap());
+        assert_eq!(kind(&foreign), Kind::Symlink);
+        assert!(engine
+            .unmaterialize("docx", AppTarget::Codex, None)
+            .unwrap());
+        assert_eq!(kind(&dest), Kind::Missing);
+    }
+
+    #[test]
+    fn a_copy_is_replaceable_only_while_its_hash_matches() {
+        let (_dir, engine) = home_with_skill("docx");
+        let m = engine
+            .materialize("docx", AppTarget::Claude, SyncMethod::Copy, None)
+            .unwrap();
+        assert_eq!(m.method, SyncMethod::Copy);
+        let dest = engine.destination("docx", AppTarget::Claude);
+        assert_eq!(kind(&dest), Kind::Directory);
+        // Untouched: replaceable and removable.
+        assert!(engine
+            .materialize("docx", AppTarget::Claude, SyncMethod::Copy, Some(&m))
+            .is_ok());
+        // Edited by the user: a conflict, and never removed.
+        std::fs::write(dest.join("SKILL.md"), "edited").unwrap();
+        assert_eq!(
+            engine.materialize("docx", AppTarget::Claude, SyncMethod::Copy, Some(&m)),
+            Err(SkillError::DirectoryConflict("docx".into()))
+        );
+        assert!(!engine
+            .unmaterialize("docx", AppTarget::Claude, Some(&m))
+            .unwrap());
+        assert!(dest.join("SKILL.md").exists());
+    }
+
+    #[test]
+    fn a_foreign_directory_is_a_conflict_and_a_missing_skill_md_refuses() {
+        let (dir, engine) = home_with_skill("docx");
+        let foreign = engine.destination("docx", AppTarget::Gemini);
+        std::fs::create_dir_all(&foreign).unwrap();
+        std::fs::write(foreign.join("SKILL.md"), "theirs").unwrap();
+        assert_eq!(
+            engine.materialize("docx", AppTarget::Gemini, SyncMethod::Auto, None),
+            Err(SkillError::DirectoryConflict("docx".into()))
+        );
+        std::fs::remove_file(catalog::ssot_dir(dir.path()).join("docx/SKILL.md")).unwrap();
+        assert_eq!(
+            engine.materialize("docx", AppTarget::Grok, SyncMethod::Auto, None),
+            Err(SkillError::MissingSkillMd("docx".into()))
+        );
+    }
+
+    #[test]
+    fn ensure_directory_walks_one_component_at_a_time_inside_the_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = catalog::skills_dir(AppTarget::Antigravity, dir.path());
+        ensure_directory(&target, dir.path()).unwrap();
+        assert!(target.is_dir());
+        assert!(ensure_directory(Path::new("/tmp/elsewhere"), dir.path()).is_err());
+    }
+}

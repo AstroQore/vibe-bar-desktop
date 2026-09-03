@@ -40,6 +40,7 @@ pub fn run() {
     let setup_tray_available = Arc::clone(&tray_available);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         // A second launch focuses the running window instead of starting a
         // rival tray icon and refresh loop against the same data root.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -101,6 +102,12 @@ pub fn run() {
             commands::app_info,
             commands::complete_onboarding,
             commands::skills_inventory,
+            commands::skills_set_projection,
+            commands::skills_uninstall,
+            commands::skills_backups,
+            commands::skills_restore_backup,
+            commands::skills_install_local,
+            commands::skills_adopt,
         ])
         // Every window's page learns whether it sits on a vibrant material,
         // so the sheets can lower their fills and let the desktop through.

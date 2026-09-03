@@ -111,6 +111,16 @@ export async function fixtureInvoke<T>(command: string, args?: Record<string, un
     }
     case "app_info":
       return answer(FIXTURE_INFO);
+    case "skills_set_projection":
+      return true as T;
+    case "skills_uninstall":
+      return { backupPath: "/Users/example/.vibebar/skill_backups/20260903_101500_preview", removedByApp: {} } as T;
+    case "skills_backups":
+      return [] as T;
+    case "skills_restore_backup":
+    case "skills_install_local":
+    case "skills_adopt":
+      return undefined as T;
     case "skills_inventory":
       return answer(FIXTURE_SKILLS);
     case "pricing_effective":

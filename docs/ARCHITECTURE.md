@@ -276,6 +276,25 @@ curve rather than sketching one.
 
 ### Skills
 
+The page writes now, through `skills::service::SkillsService` — the
+native `SkillsService` / `SkillSyncEngine` in Rust, rule for rule (see
+AGENTS.md rule 1). A circle is a projection toggle: clicking projects the
+skill into that app (a symlink into `~/.agents/skills`, or a copy with its
+SHA-256 recorded where a link cannot be made) or takes it out; a slot that
+holds something else — a foreign folder, a link elsewhere, a copy the user
+edited — is shown hatched and never touched. Install from Folder copies a
+folder with a `SKILL.md` into the SSOT (built in a hidden sibling, renamed
+into place) and projects it everywhere; Import Existing records folders
+already in the SSOT, adopting links apps already have; Uninstall asks
+twice, snapshots the folder under `~/.vibebar/skill_backups/`, unprojects,
+removes, forgets; Backups lists the snapshots and restores one when its
+name is free again. The registry `~/.vibebar/skills.json` is the native
+schema, re-read before each write and written whole, atomically. The
+inventory lays the registry over the scan: each row carries its id,
+source and per-app slot state. Repository installs, update checks,
+Discover and native activation patches remain the native app's.
+
+
 The page is the native `SkillsManagerPage`: the toolbar card with the
 filter field and the five actions, the per-harness count capsules with
 the wiring explainer, and one row per skill — name, source badge, health
