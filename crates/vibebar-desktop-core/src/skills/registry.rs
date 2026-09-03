@@ -231,19 +231,30 @@ pub fn read(vibebar_dir: &Path) -> Result<Registry, SkillError> {
     if schema_version != SCHEMA_VERSION {
         return Err(SkillError::UnsupportedRegistrySchema(schema_version));
     }
-    let skills = object
-        .get("skills")
-        .and_then(|v| v.as_array())
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| serde_json::from_value::<Skill>(entry.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-    let discover_repos = object
-        .get("discoverRepos")
-        .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok());
+    // A document that has no `skills` array at all is not an empty registry,
+    // it is a document this build does not understand: reading it as empty
+    // would let the next write erase whatever it actually held. Individual
+    // entries stay lenient — that part of the shape is the native app's.
+    let skills = match object.get("skills") {
+        Some(serde_json::Value::Array(entries)) => entries
+            .iter()
+            .filter_map(|entry| serde_json::from_value::<Skill>(entry.clone()).ok())
+            .collect(),
+        other => {
+            return Err(SkillError::MalformedRegistry(match other {
+                Some(_) => "\"skills\" is not an array".into(),
+                None => "no \"skills\" array".into(),
+            }))
+        }
+    };
+    let discover_repos = match object.get("discoverRepos") {
+        None => None,
+        Some(value) => Some(
+            serde_json::from_value::<Vec<String>>(value.clone()).map_err(|_| {
+                SkillError::MalformedRegistry("\"discoverRepos\" is not a list of strings".into())
+            })?,
+        ),
+    };
     Ok(Registry {
         schema_version,
         skills,
@@ -337,6 +348,25 @@ mod tests {
             read(dir.path()),
             Err(SkillError::UnsupportedRegistrySchema(2))
         ));
+        // A collection this build cannot read is unavailable, not empty.
+        for malformed in [
+            r#"{"schemaVersion":1}"#,
+            r#"{"schemaVersion":1,"skills":{}}"#,
+            r#"{"schemaVersion":1,"skills":[],"discoverRepos":"AstroQore/skills"}"#,
+        ] {
+            std::fs::write(registry_file(dir.path()), malformed).unwrap();
+            assert!(
+                matches!(read(dir.path()), Err(SkillError::MalformedRegistry(_))),
+                "{malformed}"
+            );
+        }
+        // A malformed entry inside a well-formed array stays lenient.
+        std::fs::write(
+            registry_file(dir.path()),
+            r#"{"schemaVersion":1,"skills":[{"nope":true}]}"#,
+        )
+        .unwrap();
+        assert!(read(dir.path()).unwrap().skills.is_empty());
         // A version field that is not a number is as unknown as a newer one.
         for malformed in [
             r#"{"schemaVersion":"2","skills":[]}"#,

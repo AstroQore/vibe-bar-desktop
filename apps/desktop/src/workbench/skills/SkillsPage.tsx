@@ -191,13 +191,20 @@ function SkillRow({
           const slot = row.apps?.[app.id];
           const foreign = slot?.state === "foreign";
           const projected = slot?.state === "projected" || slot?.state === "copy";
-          const title = foreign
-            ? `${app.displayName}: something else sits at this slot; Vibe Bar leaves it alone`
-            : !row.registered
-              ? `${app.displayName}: record this folder to project it`
-              : projected
-                ? `${app.displayName}: projected — click to take it out`
-                : `${app.displayName}: click to project`;
+          // A harness that reads ~/.agents/skills itself sees every skill
+          // whatever this slot holds, and turning native activation on or off
+          // is the native app's job. Showing a switch here would offer an
+          // "off" that cannot take the skill away.
+          const shared = app.discoversSharedRoot;
+          const title = shared
+            ? `${app.displayName}: reads the shared skills root directly, so every skill is already available; its own activation switch lives in the native app`
+            : foreign
+              ? `${app.displayName}: something else sits at this slot; Vibe Bar leaves it alone`
+              : !row.registered
+                ? `${app.displayName}: record this folder to project it`
+                : projected
+                  ? `${app.displayName}: projected — click to take it out`
+                  : `${app.displayName}: click to project`;
           return (
             <button
               type="button"
@@ -206,8 +213,8 @@ function SkillRow({
               style={{ "--tint": accentFor(app.id, dark) } as React.CSSProperties}
               title={title}
               aria-label={`${app.displayName}: ${state}`}
-              aria-pressed={projected}
-              disabled={busy || foreign || !row.registered}
+              aria-pressed={shared ? undefined : projected}
+              disabled={shared || busy || foreign || !row.registered}
               onClick={() => onToggle(row, app, !projected)}
             >
               <ToolBrandIcon tool={app.id} size={13} opacity={isOn(state) ? 1 : 0.7} />

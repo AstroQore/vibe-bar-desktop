@@ -52,6 +52,11 @@
 /* Circles are toggles now: a foreign slot is shown but not touchable. */
 .wb .sk-circle { cursor: default; background: color-mix(in srgb, var(--tint) 6%, transparent); }
 .sk-circle:disabled { opacity: 0.55; }
+/* A slot that is on stays legible while it cannot be clicked: the
+   shared-root harnesses read the library directly, so their circles are
+   status rather than a switch. */
+.sk-circle.on:disabled { opacity: 1; }
+.sk-circle:disabled { cursor: default; }
 .sk-circle.foreign { box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--wb-text) 30%, transparent); background: repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--wb-text) 8%, transparent) 3px 5px); }
 .sk-menu button.danger.armed { background: #D0342C; color: #fff; }
 .sk-backups { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; }

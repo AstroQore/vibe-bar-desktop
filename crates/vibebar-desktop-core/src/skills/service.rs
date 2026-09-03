@@ -134,7 +134,17 @@ impl SkillsService {
         if !source.join("SKILL.md").is_file() {
             return Err(SkillError::MissingSkillMd(name.to_string()));
         }
+        // A skill the third-party installer put here came from a repository,
+        // and the lock file is the only place that says which. Adopting it as
+        // `local:<dir>` would tell the native app it is a hand-made folder.
         let mut skill = self.make_local_skill(name)?;
+        let provenance = super::lock::LockFile::read(&self.home).provenance(name);
+        skill.id = provenance.id;
+        skill.repo_branch = provenance.branch;
+        if let Some(installed_at) = provenance.installed_at {
+            skill.installed_at = installed_at;
+        }
+        skill.updated_at = provenance.updated_at;
         for app in AppTarget::ALL {
             if let Some(adopted) = self.engine.adoption_state(name, app) {
                 skill.apps.insert(app.raw().to_string(), adopted);
@@ -218,6 +228,10 @@ impl SkillsService {
     /// Put a snapshot back and record it again; projections are restored
     /// where the snapshot recorded them.
     pub fn restore_backup(&self, backup: &Path) -> Result<Skill, SkillError> {
+        // The registry has to be one this build may write before a single
+        // file moves; otherwise a refused write would leave an unrecorded
+        // skill projected into the apps.
+        self.registry()?;
         let mut skill = self.backups.restore(backup)?;
         let apps: Vec<AppTarget> = skill.projected_apps();
         skill.apps.clear();
@@ -233,7 +247,10 @@ impl SkillsService {
                 Err(error) => return Err(error),
             }
         }
-        self.upsert(skill.clone())?;
+        if let Err(error) = self.upsert(skill.clone()) {
+            self.roll_back_install(&skill);
+            return Err(error);
+        }
         Ok(skill)
     }
 
@@ -497,6 +514,63 @@ mod tests {
         ));
         assert_eq!(
             sync::kind(&catalog::ssot_dir(dir.path()).join("docx")),
+            Kind::Missing
+        );
+    }
+
+    #[test]
+    fn adoption_keeps_the_repository_the_lock_file_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill = catalog::ssot_dir(dir.path()).join("docx");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        std::fs::write(
+            dir.path().join(super::super::lock::RELATIVE_PATH),
+            r#"{"version":1,"skills":{"docx":{"source":"AstroQore/skills","sourceType":"github",
+                 "branch":"main","installedAt":"2026-08-01T00:00:00Z"}}}"#,
+        )
+        .unwrap();
+        let vibebar = dir.path().join(".vibebar");
+        std::fs::create_dir_all(&vibebar).unwrap();
+        let service = SkillsService::new(dir.path().to_path_buf(), vibebar);
+        let adopted = service.adopt_existing("docx", &[]).unwrap();
+        assert_eq!(adopted.id.raw(), "AstroQore/skills:docx");
+        assert_eq!(adopted.repo_branch.as_deref(), Some("main"));
+        assert_eq!(adopted.installed_at, 807_235_200.0);
+        // And the registry keeps it, so the native app still sees a repo skill.
+        let stored = service.skill(&adopted.id).unwrap().unwrap();
+        assert_eq!(stored.id.raw(), "AstroQore/skills:docx");
+    }
+
+    #[test]
+    fn a_registry_this_build_cannot_write_stops_a_restore_before_it_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("incoming/docx");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        let vibebar = dir.path().join(".vibebar");
+        std::fs::create_dir_all(&vibebar).unwrap();
+        let service = SkillsService::new(dir.path().to_path_buf(), vibebar.clone());
+        let skill = service
+            .install_local(&source, "docx", &[AppTarget::Codex])
+            .unwrap();
+        let backup = service.uninstall(&skill.id).unwrap().backup_path;
+        std::fs::write(
+            vibebar.join("skills.json"),
+            r#"{"schemaVersion":1,"skills":"not an array"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            service.restore_backup(Path::new(&backup)),
+            Err(SkillError::MalformedRegistry(_))
+        ));
+        // Nothing was put back: the store said unavailable, and it meant it.
+        assert_eq!(
+            sync::kind(&catalog::ssot_dir(dir.path()).join("docx")),
+            Kind::Missing
+        );
+        assert_eq!(
+            sync::kind(&catalog::skills_dir(AppTarget::Codex, dir.path()).join("docx")),
             Kind::Missing
         );
     }

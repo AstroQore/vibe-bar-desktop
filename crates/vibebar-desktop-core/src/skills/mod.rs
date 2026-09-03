@@ -16,6 +16,7 @@ pub mod backups;
 pub mod catalog;
 pub mod hasher;
 pub mod inventory;
+pub mod lock;
 pub mod registry;
 pub mod service;
 pub mod sync;
@@ -48,6 +49,8 @@ pub enum SkillError {
     BackupCorrupted(String),
     #[error("skills.json is schema {0}; this build understands schema 1 and will not rewrite it")]
     UnsupportedRegistrySchema(u32),
+    #[error("skills.json is not readable as a registry: {0}")]
+    MalformedRegistry(String),
     #[error("{0}")]
     Io(String),
 }

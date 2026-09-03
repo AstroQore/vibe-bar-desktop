@@ -344,9 +344,18 @@ fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Remove a tree without ever following a symlink: a link inside is
-/// unlinked, never descended; each entry's type comes from the listing.
-pub fn remove_tree_without_following_links(dir: &Path) -> std::io::Result<()> {
+/// Remove `path` — a directory tree, a link, or a file — without ever
+/// following a symlink. The terminal entry is classified first, so a staging
+/// path that has become a link to somewhere else is unlinked rather than
+/// walked into; inside a real tree a link is unlinked, never descended, and
+/// each entry's type comes from the listing.
+pub fn remove_tree_without_following_links(path: &Path) -> std::io::Result<()> {
+    let dir = match kind(path) {
+        Kind::Directory => path,
+        Kind::Missing => return Ok(()),
+        Kind::Symlink => return remove_link(path),
+        _ => return std::fs::remove_file(path),
+    };
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
@@ -534,5 +543,25 @@ mod tests {
             engine.preflight("docx", AppTarget::Codex),
             Err(SkillError::DirectoryConflict(_))
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_staging_path_that_is_a_link_is_unlinked_not_walked_into() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("precious.txt"), "keep me").unwrap();
+        let staging = dir.path().join("staging");
+        std::os::unix::fs::symlink(&outside, &staging).unwrap();
+        remove_tree_without_following_links(&staging).unwrap();
+        assert_eq!(kind(&staging), Kind::Missing);
+        assert!(outside.join("precious.txt").is_file());
+        // A missing path is nothing to do; a file is removed as itself.
+        remove_tree_without_following_links(&dir.path().join("absent")).unwrap();
+        let file = dir.path().join("file");
+        std::fs::write(&file, "x").unwrap();
+        remove_tree_without_following_links(&file).unwrap();
+        assert_eq!(kind(&file), Kind::Missing);
     }
 }
