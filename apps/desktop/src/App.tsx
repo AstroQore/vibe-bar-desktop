@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { AppInfo, CostView, PresentationSettings, QuotaView } from "./api";
-import { api, formatRelative } from "./api";
+import { api, fixtureNow, formatRelative } from "./api";
 import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { ResetsPage } from "./workbench/resets/ResetsPage";
 import { SessionsPage } from "./workbench/sessions/SessionsPage";
@@ -24,6 +24,7 @@ function initialPage(): WorkbenchPageId {
 export function App() {
   const [tab, setTab] = useState<WorkbenchPageId>(initialPage());
   const [dark, toggleDark] = useAppearance();
+  const now = fixtureNow();
   const [view, setView] = useState<QuotaView | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [presentation, setPresentation] = useState<PresentationSettings | null>(null);
@@ -38,7 +39,7 @@ export function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
   /** The setup assistant: open on a fresh install (the shared gate says so)
    *  or when Settings asks for it. */
-  const [assistant, setAssistant] = useState(false);
+  const [assistant, setAssistant] = useState(() => new URLSearchParams(window.location.search).get("assistant") === "1");
 
 
   useEffect(() => {
@@ -122,9 +123,9 @@ export function App() {
   }, []);
 
   const pages = {
-    usageStats: <UsageStatsPage refreshToken={refreshToken} />,
-    sessionManager: <SessionsPage refreshToken={refreshToken} dark={dark} />,
-    resets: view ? <ResetsPage view={view} settings={presentation} /> : <p className="wb-empty" style={{ padding: 22 }}>Loading quota…</p>,
+    usageStats: <UsageStatsPage refreshToken={refreshToken} now={now} />,
+    sessionManager: <SessionsPage refreshToken={refreshToken} dark={dark} now={now} />,
+    resets: view ? <ResetsPage view={view} settings={presentation} now={now} /> : <p className="wb-empty" style={{ padding: 22 }}>Loading quota…</p>,
     skillsManager: <SkillsPage refreshToken={refreshToken} dark={dark} />,
     settings: (
       <SettingsPage
@@ -145,9 +146,9 @@ export function App() {
     ),
   } as const;
   const status =
-    tab === "usageStats" ? (cost && cost.scannedAt > 0 ? `scanned ${formatRelative(cost.scannedAt)}` : "local ledger")
+    tab === "usageStats" ? (cost && cost.scannedAt > 0 ? `scanned ${formatRelative(cost.scannedAt, now)}` : "local ledger")
     : tab === "sessionManager" ? "local index"
-    : tab === "resets" ? `updated ${formatRelative(view?.lastUpdated)}`
+    : tab === "resets" ? `updated ${formatRelative(view?.lastUpdated, now)}`
     : tab === "settings" ? "Shared with the native app"
     : null;
   return (

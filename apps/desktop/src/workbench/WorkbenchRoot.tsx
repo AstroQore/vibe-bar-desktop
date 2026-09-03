@@ -99,7 +99,12 @@ export function WorkbenchRoot({ page, onSelect, pages, status, onRefresh, refres
 
 /** The system scheme until the user overrides it from the header. */
 export function useAppearance(): [boolean, () => void] {
-  const [override, setOverride] = useState<boolean | null>(null);
+  // `?appearance=dark|light` pins the appearance — for screenshots and demos,
+  // where the system setting is not the point.
+  const [override, setOverride] = useState<boolean | null>(() => {
+    const wanted = new URLSearchParams(window.location.search).get("appearance");
+    return wanted === "dark" ? true : wanted === "light" ? false : null;
+  });
   const [system, setSystem] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");

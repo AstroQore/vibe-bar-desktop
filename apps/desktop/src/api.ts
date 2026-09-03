@@ -1,7 +1,13 @@
 import { QUOTA_BAR } from "./tokens";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
-import { fixtureInvoke, inTauri } from "./fixtures/invoke";
+import { FIXTURE_NOW_SECONDS, fixtureInvoke, inTauri } from "./fixtures/invoke";
+
+/** Outside Tauri the fixtures are the data, and their clock is the clock:
+ *  relative times and reset countdowns then read as the fixtures intend. */
+export function fixtureNow(): number | undefined {
+  return inTauri() ? undefined : FIXTURE_NOW_SECONDS;
+}
 
 /** `invoke`, or the fixture answers when the page runs outside Tauri. */
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -652,9 +658,9 @@ export function forecastMarks(
   };
 }
 
-export function formatRelative(unixSeconds?: number): string {
+export function formatRelative(unixSeconds?: number, now?: number): string {
   if (!unixSeconds) return "never";
-  const deltaSeconds = Math.round(Date.now() / 1000 - unixSeconds);
+  const deltaSeconds = Math.round((now ?? Date.now() / 1000) - unixSeconds);
   if (deltaSeconds < 60) return "just now";
   if (deltaSeconds < 3600) return `${Math.floor(deltaSeconds / 60)}m ago`;
   if (deltaSeconds < 86400) return `${Math.floor(deltaSeconds / 3600)}h ago`;

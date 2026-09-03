@@ -106,8 +106,28 @@ function PopoverPreview() {
   const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
   return (
     <div id="popover-preview" style={{ display: "inline-block", borderRadius: 14, background: dark ? "#1e1e20" : "#f7f7f9", margin: "24px 0 8px" }}>
-      <PopoverRoot data={popoverData} actions={popoverActions} now={FIXTURE_NOW} dark={dark} />
+      <PopoverRoot data={popoverData} actions={popoverActions} now={FIXTURE_NOW} dark={dark} initialPage={(new URLSearchParams(location.search).get("page") as never) ?? "overview"} />
     </div>
+  );
+}
+/** One surface alone on a flat backdrop, for `scripts/capture-screenshots.mjs`:
+ *  `?surface=popover` or `?surface=mini&layout=<entry>`; the appearance comes
+ *  from the emulated `prefers-color-scheme`. */
+function CaptureAlone({ children }: { children: React.ReactNode }) {
+  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  return (
+    <div id="capture" style={{ display: "inline-block", padding: 24, background: dark ? "#1c1c1e" : "#e9e9ee" }}>
+      {children}
+    </div>
+  );
+}
+function MiniAlone({ entry }: { entry: string }) {
+  return (
+    <CaptureAlone>
+      <div style={{ ...panel, padding: entry === "regular" || entry === "compact" ? 8 : 0 }}>
+        <MiniQuotaBody companies={companies} layout={entry.split(":")[0]} density={entry.split(":")[1]} />
+      </div>
+    </CaptureAlone>
   );
 }
 
@@ -153,7 +173,15 @@ function SettingsPreview() {
   );
 }
 const surface = new URLSearchParams(location.search).get("surface");
+const layoutParam = new URLSearchParams(location.search).get("layout") ?? "regular";
 createRoot(document.getElementById("root")!).render(
+  surface === "popover" ? (
+    <CaptureAlone>
+      <PopoverPreview />
+    </CaptureAlone>
+  ) : surface === "mini" ? (
+    <MiniAlone entry={layoutParam} />
+  ) : (
   <>
     {surface === "usage" ? <UsagePreview /> : surface === "sessions" ? <SessionsPreview /> : surface === "resets" ? <ResetsPreview /> : surface === "skills" ? <SkillsPreview /> : surface === "settings" ? <SettingsPreview /> : <PopoverPreview />}
   <div style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -182,5 +210,6 @@ createRoot(document.getElementById("root")!).render(
       </div>
     ))}
   </div>
-  </>,
+  </>
+  ),
 );
