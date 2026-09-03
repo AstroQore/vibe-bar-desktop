@@ -31,14 +31,14 @@ this note says where the work stands and which lanes are open.
 | Tray and lifecycle | Single instance, close-to-tray, explicit Quit, ready-gated first show with a watchdog, later tray startup, resume handling, launch at login |
 | Updates | A daily check against the channel's feed, offered from the tray and installed on request |
 | Mini | All seven native layouts, tray toggle, private geometry and visibility |
-| Popover | A page per company with quota, forecast, reset history and status, plus Misc providers and Machines |
+| Popover | A page per company with that company's quota cards and their forecasts, plus Misc providers and Machines. Reset history and service status live on the Overview, not on the company pages |
 | Status | Public OpenAI, Claude, Google AI and Cursor status; Desktop's own last-good snapshot stays private |
 | Usage and cost | Bounded local Codex, Claude and Gemini CLI scan into a priced aggregate that stays Desktop-private; honours the shared Cost Data privacy switch |
 | Resets | Refill horizon, cycle cards with forecasts, the reset calendar and a run-out risk list |
 | Skills | Install from a folder, adopt, toggle projections, uninstall with a snapshot, restore — through `SkillsService` and the native sync engine's rules. Repository installs, Discover and harness activation patches stay native |
-| Sessions | Shared index when compatible, otherwise bounded local discovery; full-text search, paged transcripts with find, resume command, and deletion through the kit's fenced deleter |
+| Sessions | Shared index when compatible: full-text search over transcript bodies. Without it, bounded local discovery matching title, session id and project directory only — a body search needs the index, which another client writes. Paged transcripts with find, resume command, and deletion through the kit's fenced deleter |
 | First run | The native setup assistant, step for step, marking completion in the shared settings |
-| MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot`. Quota, status, cost and pricing answer from what the last run recorded; the session tools read the shared index, or discover locally at request time when it is absent |
+| MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot`. Quota, status and cost answer from what the last run recorded; `pricing.effective` returns this build's compiled table, which needs no prior run and is as current as the binary; the session tools read the shared index, or discover locally at request time when it is absent |
 | Writes | Six authorized write domains and nothing else — shared settings and the quota cache, the Control Center allow-list, whole-session deletion under a harness's own directory, the skill library with its managed app directories, and the OS login-item registration behind launch at login. Installing an update is the seventh and the loudest: at the person's explicit yes, the updater replaces the application itself. See [AGENTS.md](AGENTS.md) rule 1 |
 | Platforms | The core crate is tested on macOS, Linux and Windows on every pull request; the GUI has had its end-to-end pass on macOS only |
 

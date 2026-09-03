@@ -131,9 +131,11 @@ handle rather than reopening a checked pathname.
   harness's own directory; the skill library under `~/.agents/skills` with the
   managed app directories; and the OS login-item registration behind launch at
   login. Installing an accepted update replaces the application itself, which
-  is a seventh and needs saying out loud. Each goes through one documented
-  writer with the native app's rules; everything else those roots hold is
-  read here. See
+  is a seventh and needs saying out loud. The first five go through one
+  documented writer each, carrying the native app's rules; the last two do
+  not and cannot — they hand off to the platform, `tauri-plugin-autostart`
+  and the updater, at a person's explicit yes. Everything else those roots
+  hold is read here. See
   [SHARED-STORAGE.md](SHARED-STORAGE.md) and [AGENTS.md](../AGENTS.md) rule 1.
 - **No dependency on the native app.** Its presence is detected only to offer
   a link, and never changes what Desktop can do.
