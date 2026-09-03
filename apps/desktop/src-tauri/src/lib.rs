@@ -152,7 +152,7 @@ pub fn run() {
                 store.first_run_state(),
             );
             app.manage(state);
-            apply_startup_action(app.handle(), &store, action);
+            apply_startup_action(app.handle(), action);
             spawn_refresh_loop(app.handle().clone());
             spawn_load_watchdog(app.handle().clone());
             spawn_settings_watch(app.handle().clone());
@@ -193,11 +193,7 @@ pub fn persist_mini<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     mini_window::persist(app);
 }
 
-fn apply_startup_action<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    store: &ClientStore,
-    action: StartupAction,
-) {
+fn apply_startup_action<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: StartupAction) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
