@@ -61,7 +61,8 @@ invisible against the fill it sits on: all found there, none by a unit test.
 | Finding credentials the CLIs and Cursor.app wrote | `credentials/` |
 | One provider's endpoint and wire shape | `providers/<name>.rs` |
 | Merging live and cached into what the UI shows | `refresh.rs` |
-| Presentation preferences | `shared/settings.rs` reads them; `shared/settings_writer.rs` is the only thing here that writes a shared store |
+| Presentation preferences | `shared/settings.rs` reads them, `shared/settings_writer.rs` writes them |
+| Writing a shared store | `shared/settings_writer.rs`, `shared/quota_cache.rs`, `skills/service.rs`, and the session kit's deleter — the writers named in [AGENTS.md](../AGENTS.md) rule 1, and nothing else |
 | Public OpenAI-wide/Claude/Google AI/Cursor service status | `status.rs` → in-memory cache → status IPC |
 | Local Codex/Claude usage and priced portion | `cost.rs` → in-memory cache → cost IPC |
 | Indexed vs scanned sessions | `sessions.rs` |
@@ -100,7 +101,7 @@ Reads that failed and demo mode never publish.
 
 ## Two sources, one list, honestly labeled
 
-Desktop fetches ten providers and reads twenty-five. A number it fetched and
+Desktop fetches thirteen providers and reads the rest from the shared cache. A number it fetched and
 a number the native app left in the cache are different claims about
 freshness, so `QuotaOrigin` travels with every account and the UI marks cached
 ones `shared data`. The alternative — showing them identically — would make

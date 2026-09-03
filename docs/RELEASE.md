@@ -196,8 +196,8 @@ the bundler saying which ones it wrote.
   not numeric, so `0.1.0-dev.1` cannot be packaged as an MSI at all — it
   fails the build rather than producing something. NSIS drops the pre-release
   from `VIProductVersion` and carries on, and the Windows updater artifact is
-  the NSIS zip either way, so MSI would only add an installer no update path
-  uses. Each target names its bundles explicitly for this reason; the default
+  the `-setup.exe` itself — that is the URL the manifest carries — so MSI
+  would only add an installer no update path uses. Each target names its bundles explicitly for this reason; the default
   is every format the platform supports.
 - **Windows code signing.** Unsigned installers meet SmartScreen. A
   certificate is a cost and a decision; without one the first-run experience
