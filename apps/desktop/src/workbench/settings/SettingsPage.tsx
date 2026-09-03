@@ -60,7 +60,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Seg({ options, value, onChange, readonly }: { options: ReadonlyArray<{ id: string; title: string }>; value: string; onChange?: (id: string) => void; readonly?: boolean }) {
   return (
-    <span className={`st-seg${readonly ? " readonly" : ""}`} role="radiogroup" title={readonly ? READ_ONLY_NOTE : undefined}>
+    <span className={`wb-seg${readonly ? " readonly" : ""}`} role="radiogroup" title={readonly ? READ_ONLY_NOTE : undefined}>
       {options.map((option) => (
         <button type="button" key={option.id} role="radio" aria-checked={value === option.id} className={value === option.id ? "on" : ""} disabled={readonly || !onChange} onClick={() => onChange?.(option.id)}>
           {option.title}
@@ -109,7 +109,7 @@ function UpdateCheck({ fixture }: { fixture: boolean }) {
         <span className="st-label">{state.update.version} is available</span>
         <button
           type="button"
-          className="st-btn prominent"
+          className="wb-pill prominent"
           onClick={() => {
             const update = state.update;
             setState({ at: "installing" });
@@ -126,7 +126,7 @@ function UpdateCheck({ fixture }: { fixture: boolean }) {
     <div className="st-line">
       <button
         type="button"
-        className="st-btn"
+        className="wb-pill"
         disabled={state.at !== "idle" || fixture}
         onClick={() => {
           setState({ at: "checking" });
@@ -303,7 +303,7 @@ export function SettingsPage({
               </div>
               <p className="st-note">Registers this app as a login item; the menu bar icon is back before the first refresh.</p>
               <div className="st-line">
-                <button type="button" className="st-btn" disabled title="The setup assistant arrives with a later Desktop release.">
+                <button type="button" className="wb-pill" disabled title="The setup assistant arrives with a later Desktop release.">
                   Show setup assistant
                 </button>
               </div>
@@ -315,7 +315,7 @@ export function SettingsPage({
               </div>
               <div className="st-line">
                 <span className="st-label">Refresh every</span>
-                <select className="st-select" value={String(settings.refreshIntervalSeconds)} onChange={(e) => void onSave({ refreshIntervalSeconds: Number(e.target.value) })}>
+                <select className="wb-select" value={String(settings.refreshIntervalSeconds)} onChange={(e) => void onSave({ refreshIntervalSeconds: Number(e.target.value) })}>
                   {(REFRESH_OPTIONS.includes(settings.refreshIntervalSeconds as never) ? [...REFRESH_OPTIONS] : [...REFRESH_OPTIONS, settings.refreshIntervalSeconds].sort((a, b) => a - b)).map((seconds) => (
                     <option key={seconds} value={String(seconds)}>
                       {formatInterval(seconds)}
@@ -363,7 +363,7 @@ export function SettingsPage({
             <Section title="Cost Data">
               <div className="st-line">
                 <span className="st-label">Keep history</span>
-                <select className="st-select" value={String(Number(costData.retentionDays ?? 0))} onChange={(e) => void save({ costData: { ...costData, retentionDays: Number(e.target.value) } })}>
+                <select className="wb-select" value={String(Number(costData.retentionDays ?? 0))} onChange={(e) => void save({ costData: { ...costData, retentionDays: Number(e.target.value) } })}>
                   {RETENTION_OPTIONS.map((option) => (
                     <option key={option.days} value={String(option.days)}>{option.title}</option>
                   ))}
@@ -375,10 +375,10 @@ export function SettingsPage({
               </div>
               <p className="st-note">Privacy mode keeps cost data off disk and clears local cost history, snapshots, and scan cache; this client drops its restart snapshot and re-reads at once.</p>
               <div className="st-line">
-                <button type="button" className="st-btn" disabled={busy === "rescan" || fixture} onClick={() => void run("rescan", onRescanCost)}>
+                <button type="button" className="wb-pill" disabled={busy === "rescan" || fixture} onClick={() => void run("rescan", onRescanCost)}>
                   <Refresh size={12} /> {busy === "rescan" ? "Rescanning…" : "Rescan cost logs"}
                 </button>
-                <button type="button" className="st-btn" disabled title="Clearing the shared cost store is the native app's job; this client only keeps its own restart snapshot.">
+                <button type="button" className="wb-pill" disabled title="Clearing the shared cost store is the native app's job; this client only keeps its own restart snapshot.">
                   Clear cost data
                 </button>
               </div>
@@ -496,7 +496,7 @@ export function SettingsPage({
                           <div className="st-field" key={field.id}>
                             <i />
                             <span className="st-field-title">{fieldTitle(field.id)}</span>
-                            <select className="st-select st-field-style" value={fieldStyles[field.id] ?? "logoAndPercent"} onChange={(e) => void saveItem({ fieldStyles: { ...fieldStyles, [field.id]: e.target.value } })} aria-label={`Style for ${fieldTitle(field.id)}`}>
+                            <select className="wb-select st-field-style" value={fieldStyles[field.id] ?? "logoAndPercent"} onChange={(e) => void saveItem({ fieldStyles: { ...fieldStyles, [field.id]: e.target.value } })} aria-label={`Style for ${fieldTitle(field.id)}`}>
                               {FIELD_STYLES.map((style) => (
                                 <option key={style.id} value={style.id}>{style.title}</option>
                               ))}
@@ -577,12 +577,12 @@ export function SettingsPage({
             {report ? <p className="st-note">{report.message}{report.checkedAt > 0 ? ` · Checked ${new Date(report.checkedAt * 1000).toLocaleTimeString()}` : ""}</p> : null}
             {healthNote ? <p className="st-note">{healthNote}</p> : null}
             <div className="st-line">
-              <button type="button" className="st-btn" disabled={fixture || busy === "health"} onClick={() => void run("health", async () => setHealth(await api.menuBarCheckNow()))}>
+              <button type="button" className="wb-pill" disabled={fixture || busy === "health"} onClick={() => void run("health", async () => setHealth(await api.menuBarCheckNow()))}>
                 <Refresh size={12} /> Check Now
               </button>
               <button
                 type="button"
-                className="st-btn"
+                className="wb-pill"
                 disabled={fixture || busy === "repair"}
                 title="Removes stale cross-app references to this app from Control Center's allow-list, restarts Control Center, and re-registers the status item."
                 onClick={() =>
@@ -600,7 +600,7 @@ export function SettingsPage({
               </button>
               <button
                 type="button"
-                className="st-btn"
+                className="wb-pill"
                 disabled={!report?.repairCommand}
                 onClick={() => {
                   if (report?.repairCommand) void navigator.clipboard.writeText(report.repairCommand).then(() => setHealthNote("Repair command copied.")).catch(() => setHealthNote("Could not reach the clipboard."));
@@ -612,7 +612,7 @@ export function SettingsPage({
             <p className="st-note">On macOS 26, a hidden app can retain this app in its Control Center menuItemLocations and apply its own isAllowed=false state to it. Repair removes only that stale cross-app reference; it never changes another app's show/hide setting.</p>
             {report?.needsFullDiskAccess ? (
               <div className="st-line">
-                <button type="button" className="st-btn" onClick={() => void api.openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").catch((error: unknown) => setHealthNote(String(error)))}>
+                <button type="button" className="wb-pill" onClick={() => void api.openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").catch((error: unknown) => setHealthNote(String(error)))}>
                   Open Full Disk Access settings
                 </button>
               </div>
@@ -626,7 +626,7 @@ export function SettingsPage({
             <div className="st-line"><span className="st-label">Layout</span><Seg options={MINI_LAYOUTS} value={String(miniWindow.displayMode ?? settings.miniDisplayMode)} onChange={(id) => void save({ miniWindow: { ...miniWindow, displayMode: id } })} /></div>
             <div className="st-line"><span className="st-label">Strip density</span><Seg options={STRIP_DENSITIES} value={String(miniWindows[0]?.stripDensity ?? settings.miniStripDensity)} onChange={(id) => void save({ miniWindow: { ...miniWindow, windows: miniWindows.length > 0 ? miniWindows.map((w, i) => (i === 0 ? { ...w, stripDensity: id } : w)) : [{ stripDensity: id }] } })} /></div>
             <div className="st-line">
-              <button type="button" className="st-btn" onClick={() => void api.toggleMini().catch(() => undefined)} disabled={fixture}>Open / Close</button>
+              <button type="button" className="wb-pill" onClick={() => void api.toggleMini().catch(() => undefined)} disabled={fixture}>Open / Close</button>
             </div>
             <p className="st-note">Layout and density are shared with the native app; window geometry and per-window fields still live there.</p>
           </Section>
@@ -687,9 +687,9 @@ export function SettingsPage({
             <Section title={providerSection.title}>
               <div className="st-line"><span className="st-label">Usage source</span><Seg options={[{ id: "cli", title: "CLI / OAuth (this client)" }]} value="cli" readonly /></div>
               <div className="st-line">
-                <button type="button" className="st-btn" disabled title="Browser cookie import is the native app's.">Import from browser</button>
-                <button type="button" className="st-btn" disabled title="WebView login is the native app's.">Open WebView login</button>
-                <button type="button" className="st-btn" disabled title="This client keeps no cookies.">Delete cookies</button>
+                <button type="button" className="wb-pill" disabled title="Browser cookie import is the native app's.">Import from browser</button>
+                <button type="button" className="wb-pill" disabled title="WebView login is the native app's.">Open WebView login</button>
+                <button type="button" className="wb-pill" disabled title="This client keeps no cookies.">Delete cookies</button>
               </div>
               <div className="st-line">
                 <span className="st-label">Plan label</span>
@@ -734,7 +734,7 @@ export function SettingsPage({
                 })}
               </div>
               <div className="st-line">
-                <button type="button" className="st-btn" disabled={busy === "connections" || fixture} onClick={() => void run("connections", onCheckConnections)}>
+                <button type="button" className="wb-pill" disabled={busy === "connections" || fixture} onClick={() => void run("connections", onCheckConnections)}>
                   <Refresh size={12} /> {busy === "connections" ? "Checking…" : `Check ${providerSection.title} connections`}
                 </button>
               </div>
@@ -806,7 +806,7 @@ export function SettingsPage({
               <b>Another Vibe Bar replaced your change</b>
               {replacedSummary(replacedKeys)}
             </div>
-            <button type="button" className="st-btn" onClick={onDismissReplaced}>Dismiss</button>
+            <button type="button" className="wb-pill" onClick={onDismissReplaced}>Dismiss</button>
           </div>
         ) : null}
         {saveError ? <div className="st-banner" role="alert"><div><b>Could not save</b>{saveError}</div></div> : null}
