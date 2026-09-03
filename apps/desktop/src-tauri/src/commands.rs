@@ -715,10 +715,16 @@ fn skill_id(raw: &str) -> Result<vibebar_desktop_core::skills::registry::SkillId
     vibebar_desktop_core::skills::registry::SkillId::parse(raw).ok_or_else(|| format!("not a skill id: {raw}"))
 }
 
+/// The apps a command may create a projection in. The catalog still knows
+/// Hermes and OpenCode so an old registry decodes and can be cleaned up, but
+/// nothing here may put a new skill in one.
 fn app_targets(raws: &[String]) -> Result<Vec<vibebar_desktop_core::skills::catalog::AppTarget>, String> {
+    use vibebar_desktop_core::skills::catalog::AppTarget;
     raws.iter()
         .map(|raw| {
-            vibebar_desktop_core::skills::catalog::AppTarget::from_raw(raw).ok_or_else(|| format!("not a managed app: {raw}"))
+            AppTarget::from_raw(raw)
+                .filter(|app| AppTarget::MANAGED.contains(app))
+                .ok_or_else(|| format!("not a managed app: {raw}"))
         })
         .collect()
 }

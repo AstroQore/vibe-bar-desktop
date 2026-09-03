@@ -80,7 +80,14 @@ pub fn ensure_directory(path: &Path, root: &Path) -> Result<(), SkillError> {
         match kind(&cursor) {
             Kind::Directory => {}
             Kind::Missing => std::fs::create_dir(&cursor)?,
-            _ => return Err(SkillError::DirectoryConflict(cursor.display().to_string())),
+            // Something that is not a directory sits where one has to be.
+            // That is the app's root being unusable, not this skill's slot
+            // being taken, and callers tell the two apart.
+            _ => {
+                return Err(SkillError::AppDirectoryUnusable(
+                    cursor.display().to_string(),
+                ))
+            }
         }
     }
     Ok(())
@@ -333,6 +340,14 @@ fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
             let target = std::fs::read_link(&from)?;
             #[cfg(unix)]
             std::os::unix::fs::symlink(target, &to)?;
+            // Recreating a link needs a privilege Windows does not grant by
+            // default, and a copy that quietly drops one is a backup that
+            // cannot be restored. Say so instead.
+            #[cfg(not(unix))]
+            return Err(std::io::Error::other(format!(
+                "{} contains a symbolic link this platform cannot copy",
+                from.display()
+            )));
             #[cfg(not(unix))]
             std::os::windows::fs::symlink_file(target, &to)?;
         } else if meta.is_dir() {

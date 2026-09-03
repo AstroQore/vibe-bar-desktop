@@ -243,8 +243,13 @@ impl SkillsService {
                 Ok(materialization) => {
                     skill.apps.insert(app.raw().to_string(), materialization);
                 }
+                // A slot something else already occupies is not a failure of
+                // the restore; anything else is, and leaves nothing behind.
                 Err(SkillError::DirectoryConflict(_)) => {}
-                Err(error) => return Err(error),
+                Err(error) => {
+                    self.roll_back_install(&skill);
+                    return Err(error);
+                }
             }
         }
         if let Err(error) = self.upsert(skill.clone()) {
@@ -328,6 +333,14 @@ fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
             let target = std::fs::read_link(&from)?;
             #[cfg(unix)]
             std::os::unix::fs::symlink(target, &to)?;
+            // Recreating a link needs a privilege Windows does not grant by
+            // default, and a copy that quietly drops one is a backup that
+            // cannot be restored. Say so instead.
+            #[cfg(not(unix))]
+            return Err(std::io::Error::other(format!(
+                "{} contains a symbolic link this platform cannot copy",
+                from.display()
+            )));
         } else if meta.is_dir() {
             copy_tree(&from, &to)?;
         } else {
@@ -573,5 +586,38 @@ mod tests {
             sync::kind(&catalog::skills_dir(AppTarget::Codex, dir.path()).join("docx")),
             Kind::Missing
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_restore_that_cannot_finish_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("incoming/docx");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        let vibebar = dir.path().join(".vibebar");
+        std::fs::create_dir_all(&vibebar).unwrap();
+        let service = SkillsService::new(dir.path().to_path_buf(), vibebar);
+        let skill = service
+            .install_local(&source, "docx", &[AppTarget::Codex, AppTarget::Claude])
+            .unwrap();
+        let backup = service.uninstall(&skill.id).unwrap().backup_path;
+        // Claude's skills root becomes a file, so creating its directory —
+        // and therefore that projection — fails for a reason that is not a
+        // slot conflict.
+        let claude_root = catalog::skills_dir(AppTarget::Claude, dir.path());
+        let _ = std::fs::remove_dir_all(&claude_root);
+        std::fs::create_dir_all(claude_root.parent().unwrap()).unwrap();
+        std::fs::write(&claude_root, "not a directory").unwrap();
+        assert!(service.restore_backup(Path::new(&backup)).is_err());
+        assert_eq!(
+            sync::kind(&catalog::ssot_dir(dir.path()).join("docx")),
+            Kind::Missing
+        );
+        assert_eq!(
+            sync::kind(&catalog::skills_dir(AppTarget::Codex, dir.path()).join("docx")),
+            Kind::Missing
+        );
+        assert!(service.registry().unwrap().skills.is_empty());
     }
 }

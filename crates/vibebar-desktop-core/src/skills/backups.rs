@@ -247,6 +247,14 @@ fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
             let target = std::fs::read_link(&from)?;
             #[cfg(unix)]
             std::os::unix::fs::symlink(target, &to)?;
+            // Recreating a link needs a privilege Windows does not grant by
+            // default, and a copy that quietly drops one is a backup that
+            // cannot be restored. Say so instead.
+            #[cfg(not(unix))]
+            return Err(std::io::Error::other(format!(
+                "{} contains a symbolic link this platform cannot copy",
+                from.display()
+            )));
         } else if meta.is_dir() {
             copy_tree(&from, &to)?;
         } else {

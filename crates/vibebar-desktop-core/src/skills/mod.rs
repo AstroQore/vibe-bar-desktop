@@ -33,6 +33,8 @@ pub enum SkillError {
     MissingSkillMd(String),
     #[error("{0} already exists and is not something Vibe Bar wrote")]
     DirectoryConflict(String),
+    #[error("{0} is in the way of a skills directory")]
+    AppDirectoryUnusable(String),
     #[error("{0} is not installed")]
     NotInstalled(String),
     #[error("refusing to write outside the skills roots: {0}")]
