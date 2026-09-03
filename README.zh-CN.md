@@ -317,7 +317,7 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | 带预设的布局编辑器 | ● | ○ | |
 | **Mini 窗** |
 | 多个独立窗口 | ● | ○ | 一个 mini 窗，七种布局 |
-| 半透明表面 | ● Liquid Glass | ◐ | macOS 上主窗、popover 和 mini 窗都用了真实的 `NSVisualEffect` 材质（sidebar 与 popover），有意用平台自己的东西而不是复刻 Liquid Glass。Windows 和 Linux 目前画成不透明 |
+| 半透明表面 | ● Liquid Glass | ◐ | popover 和 mini 窗在所有平台上都是透明的；macOS 上它们和主窗还用了真实的 `NSVisualEffect` 材质（sidebar 与 popover），有意用平台自己的东西而不是复刻 Liquid Glass。其他平台是透明但背后没有模糊，这是平台缺口而非设计 |
 | **Workbench** |
 | 重置历史对比 | ● | ○ | 原生版的跨配额卡片：按公司 → SubProvider → bucket 分组、两级行标签，Cycles / Time 轴切换存在共享的 `resetHistoryCompareAxis` 里，4 / 8 / 12 / All 选择器的默认值跟随卡片宽度，柱子画的是每次重置时剩下的量 |
 | Skills：安装、导入、发现、备份 | ● | ◐ | 从文件夹安装、导入、投影、卸载和备份都在；仓库安装、发现和 harness 激活补丁暂留原生版 |

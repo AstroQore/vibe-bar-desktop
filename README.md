@@ -373,7 +373,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Layout editor with presets | ● | ○ | |
 | **Mini window** |
 | Multiple independent windows | ● | ○ | One mini window, seven layouts |
-| Translucent surface | ● Liquid Glass | ◐ | On macOS the main window, popover and mini window carry real `NSVisualEffect` materials — sidebar and popover, deliberately the platform's own rather than a copy of Liquid Glass. Windows and Linux draw them opaque for now |
+| Translucent surface | ● Liquid Glass | ◐ | The popover and mini window are transparent everywhere; on macOS they and the main window also carry real `NSVisualEffect` materials — sidebar and popover, deliberately the platform's own rather than a copy of Liquid Glass. Elsewhere they are transparent without a blur behind them, which is a platform gap rather than a design |
 | **Workbench** |
 | Reset-history comparison | ● | ○ | Native's cross-quota card: rows grouped company → SubProvider → bucket with two-level labels, a Cycles / Time axis toggle stored in the shared `resetHistoryCompareAxis`, a 4 / 8 / 12 / All picker whose default follows the card's width, and a bar drawing what was left at each reset |
 | Skills: install, import, discover, backups | ● | ◐ | Install from a folder, import, projections, uninstall and backups are here; repository install, discover and the harness activation patches stay native for now |
