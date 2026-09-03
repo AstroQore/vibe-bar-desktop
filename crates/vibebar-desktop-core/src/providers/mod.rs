@@ -88,6 +88,14 @@ pub(crate) fn read_env(keys: &[&str]) -> HashMap<String, String> {
         .collect()
 }
 
+/// One environment variable as a path, ignoring an empty or relative value —
+/// a relative application-data root is not one this can safely join onto.
+pub(crate) fn read_env_path(key: &str) -> Option<std::path::PathBuf> {
+    let value = env::var(key).ok()?;
+    let path = std::path::PathBuf::from(value.trim());
+    (path.is_absolute()).then_some(path)
+}
+
 /// Map a transport failure onto the shared error taxonomy.
 pub(crate) fn classify_transport(error: &reqwest::Error) -> QuotaError {
     if error.is_timeout() {

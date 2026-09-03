@@ -60,11 +60,19 @@ pub async fn fetch(home: &Path, client: &Client) -> Result<AccountQuota, QuotaEr
             .as_ref()
             .and_then(|u| u.sub.clone().or_else(|| u.id.clone()));
         if let Some(user_id) = user_id {
-            request_usage = fetch_request_usage(client, &user_id, &cookie).await.ok();
+            // This is the only source of a plan-less account's numbers, so its
+            // failure is the read's failure. Swallowing it would publish 0%
+            // over the last good observation, in both caches.
+            request_usage = Some(fetch_request_usage(client, &user_id, &cookie).await?);
         }
     }
 
     let snapshot = parse_summary(&summary, request_usage.as_ref(), grok_bot.as_ref());
+    if snapshot.buckets.is_empty() {
+        return Err(QuotaError::ParseFailure(
+            "Cursor usage-summary carried no usage".into(),
+        ));
+    }
     Ok(AccountQuota {
         account_id: ACCOUNT_ID.to_string(),
         tool: ToolType::Cursor,
@@ -269,6 +277,8 @@ pub fn parse_summary(
             _ => None,
         }
     };
+    // Every fallback in order; `None` at the end means the response carried no
+    // usage at all, which is not a zero — it is nothing to report.
     let total_pct = plan
         .and_then(|p| p.total_percent_used)
         .map(clamp_percent)
@@ -287,8 +297,7 @@ pub fn parse_summary(
             let max = entry.max_request_usage.filter(|max| *max > 0)?;
             let used = entry.num_requests_total.or(entry.num_requests).unwrap_or(0);
             Some(clamp_percent(used as f64 / max as f64 * 100.0))
-        })
-        .unwrap_or(0.0);
+        });
 
     let cycle_start = parse_timestamp(summary.billing_cycle_start.as_deref());
     let cycle_end = parse_timestamp(summary.billing_cycle_end.as_deref());
@@ -321,12 +330,14 @@ pub fn parse_summary(
     }
     // Older plan shapes expose one aggregate or request quota rather than
     // the two modern pools; that usage stays visible under Cursor Models.
-    if buckets.is_empty() {
+    // A response with no usage anywhere produces no bucket at all rather than
+    // a confident zero.
+    if let (true, Some(total)) = (buckets.is_empty(), total_pct) {
         buckets.push(QuotaBucket::new(
             "models",
             "Monthly",
             "Cursor",
-            total_pct,
+            total,
             cycle_end,
             cycle_window,
             Some("Cursor Models".into()),
@@ -543,6 +554,24 @@ mod tests {
 
     /// An unknown or missing plan is `None`, so the card suppresses its
     /// badge instead of showing "Nil".
+    /// A summary with no usage anywhere is nothing to report, not 0%: the
+    /// adapter turns the empty bucket list into a parse failure rather than
+    /// letting a fabricated zero replace the last good observation.
+    #[test]
+    fn a_summary_with_no_usage_produces_no_bucket() {
+        assert!(snapshot(r#"{ "individualUsage": {} }"#).buckets.is_empty());
+        assert!(snapshot(r#"{ "membershipType": "pro" }"#)
+            .buckets
+            .is_empty());
+        // A legacy entry with no maximum is no evidence either.
+        let summary = decode_summary(br#"{ "individualUsage": {} }"#).unwrap();
+        let requests: RequestUsage =
+            serde_json::from_str(r#"{"gpt-4": {"numRequestsTotal": 350}}"#).unwrap();
+        assert!(parse_summary(&summary, Some(&requests), None)
+            .buckets
+            .is_empty());
+    }
+
     #[test]
     fn an_unknown_membership_has_no_plan_name() {
         assert_eq!(snapshot(r#"{ "individualUsage": {} }"#).plan, None);

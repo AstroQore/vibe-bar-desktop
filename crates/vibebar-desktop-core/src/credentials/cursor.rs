@@ -76,23 +76,62 @@ impl CursorSession {
     }
 }
 
-/// Where Cursor.app keeps its global state on each platform.
-pub fn state_db_path(home: &Path) -> PathBuf {
-    let relative = if cfg!(target_os = "macos") {
-        "Library/Application Support/Cursor/User/globalStorage/state.vscdb"
+/// Where Cursor.app keeps its global state, most specific first.
+///
+/// Electron puts it under the platform's application-data directory, which
+/// a roaming profile or `XDG_CONFIG_HOME` can move; the home-relative path is
+/// where that directory usually is, and stays as the fallback so a machine
+/// without the variable still resolves.
+pub fn state_db_candidates(home: &Path) -> Vec<PathBuf> {
+    const SUFFIX: &str = "Cursor/User/globalStorage/state.vscdb";
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if cfg!(target_os = "macos") {
+        roots.push(home.join("Library/Application Support"));
     } else if cfg!(windows) {
-        "AppData/Roaming/Cursor/User/globalStorage/state.vscdb"
+        if let Some(appdata) = crate::providers::read_env_path("APPDATA") {
+            roots.push(appdata);
+        }
+        roots.push(home.join("AppData/Roaming"));
     } else {
-        ".config/Cursor/User/globalStorage/state.vscdb"
-    };
-    home.join(relative)
+        if let Some(config) = crate::providers::read_env_path("XDG_CONFIG_HOME") {
+            roots.push(config);
+        }
+        roots.push(home.join(".config"));
+    }
+    let mut out: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        let candidate = root.join(SUFFIX);
+        if !out.contains(&candidate) {
+            out.push(candidate);
+        }
+    }
+    out
+}
+
+/// The path this build would read, for diagnostics and tests.
+pub fn state_db_path(home: &Path) -> PathBuf {
+    state_db_candidates(home)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| home.join("Cursor/User/globalStorage/state.vscdb"))
 }
 
 /// Load the app's current session. Missing app or row is
 /// [`QuotaError::NoCredential`]; a present but expired or malformed token is
 /// [`QuotaError::NeedsLogin`] — the person opens Cursor and signs in.
 pub fn load(home: &Path) -> Result<CursorSession, QuotaError> {
-    load_from(&state_db_path(home), crate::providers::now_unix())
+    let now = crate::providers::now_unix();
+    let mut result = Err(QuotaError::NoCredential);
+    for candidate in state_db_candidates(home) {
+        result = load_from(&candidate, now);
+        // The first state store that exists is the answer, whatever it says:
+        // falling through on NeedsLogin would report an older profile's
+        // session as the current one.
+        if !matches!(result, Err(QuotaError::NoCredential)) {
+            return result;
+        }
+    }
+    result
 }
 
 pub fn load_from(path: &Path, now_unix: f64) -> Result<CursorSession, QuotaError> {
@@ -277,8 +316,22 @@ mod tests {
 
     #[test]
     fn the_state_path_follows_the_platform() {
-        let path = state_db_path(Path::new("/Users/example"));
-        assert!(path.ends_with("Cursor/User/globalStorage/state.vscdb"));
-        assert!(path.starts_with("/Users/example"));
+        let candidates = state_db_candidates(Path::new("/Users/example"));
+        assert!(!candidates.is_empty());
+        for candidate in &candidates {
+            assert!(candidate.ends_with("Cursor/User/globalStorage/state.vscdb"));
+        }
+        // The home-relative location is always among them, so a machine with
+        // no override still resolves.
+        let relative = if cfg!(target_os = "macos") {
+            "Library/Application Support"
+        } else if cfg!(windows) {
+            "AppData/Roaming"
+        } else {
+            ".config"
+        };
+        assert!(candidates
+            .iter()
+            .any(|c| c.starts_with(Path::new("/Users/example").join(relative))));
     }
 }
