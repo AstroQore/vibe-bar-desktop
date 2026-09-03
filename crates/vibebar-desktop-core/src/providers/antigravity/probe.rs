@@ -50,6 +50,10 @@ impl LocalClient {
             // per install. This client only ever addresses 127.0.0.1, and
             // no_proxy keeps the token off any proxy the environment names.
             .danger_accept_invalid_certs(true)
+            // A redirect would take the token, and the relaxed certificate
+            // check, somewhere that is not this machine. There is nowhere for
+            // a loopback RPC to legitimately redirect to.
+            .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .timeout(TIMEOUT)
             .build()
