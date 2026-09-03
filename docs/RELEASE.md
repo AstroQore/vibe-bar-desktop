@@ -1,10 +1,11 @@
-# Releases and in-app updates — the plan
+# Releases and in-app updates
 
-**Nothing here is implemented yet.** Desktop has `ci.yml` and nothing else: no
-release workflow, no tags, no updater configuration, and no signing key. This
-is the design to build, written down first because the pieces constrain each
-other and half of them are one-way doors once a version has shipped to
-someone.
+**This is built and running.** `release.yml` builds and signs from a tag,
+`publish-update-feed.yml` rebuilds the feed from what is published, and both
+channels have shipped versions — the Dev channel is on `0.1.0-dev.4` at the
+time of writing. This document is both the design and the runbook: the pieces
+constrain each other, and half of them are one-way doors once a version has
+shipped to someone, so the reasoning is kept alongside the steps.
 
 The native client's pipeline is the reference. Where this differs, it is
 because Sparkle and the Tauri updater differ, and the difference is called out.
@@ -15,7 +16,7 @@ Read from the repository rather than from memory:
 
 | | |
 | --- | --- |
-| Version SSOT | `Resources/Info.plist` — `CFBundleShortVersionString` (1.5.0) and `CFBundleVersion` (58) |
+| Version SSOT | `Resources/Info.plist` — `CFBundleShortVersionString` and `CFBundleVersion`, 1.6.2 and 64 as this was last checked |
 | Tags | `v<version>` for Main, `v<version>-dev.<CFBundleVersion>` for Dev |
 | Gate | `scripts/release_app.sh` refuses a tag that disagrees with the plist, and refuses a bundle carrying an `app-sandbox` entitlement |
 | Feed | one `appcast.xml` on the `updates` branch holding **both** channel heads |
@@ -32,18 +33,19 @@ Two of these are load-bearing and easy to get wrong:
 - **A Dev subscriber sees both channels.** The channel tag filters what a
   client is *allowed* to see; the build number decides what it *takes*. That is
   why Dev users get a Main release the moment its build number is higher —
-  today Main is 1.5.0 (58) while Dev is 1.4.1 (57).
+  when this was last checked Main was 1.6.1 while Dev was 1.6.2-dev.63.
 
 ## Version SSOT: one file, not three
 
-Desktop carries `0.1.0` in `apps/desktop/src-tauri/tauri.conf.json`,
-`apps/desktop/package.json`, and the workspace `Cargo.toml`. Three copies of
-one fact, and nothing checks that they agree.
+Desktop carries its version in `apps/desktop/src-tauri/tauri.conf.json`,
+`apps/desktop/package.json`, and the workspace `Cargo.toml`, and `Cargo.lock`
+records it a fourth time. Four copies of one fact.
 
 `tauri.conf.json` is the one that matters: it is what Tauri bakes into the
 bundle and into the updater artifacts, so it is the truth. The other two are
-checked against it in CI and the release script refuses to build when they
-disagree. Not generated — a generated `Cargo.toml` version is a worse trade
+checked against it by `scripts/check_versions.sh`, which CI runs on every pull
+request and `release.yml` runs before the build, and which fails when any of
+them — the lockfile included — disagrees. Not generated — a generated `Cargo.toml` version is a worse trade
 than a check that fails loudly.
 
 ## Channels and version numbers

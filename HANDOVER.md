@@ -27,7 +27,7 @@ this note says where the work stands and which lanes are open.
 | Quota: the rest | Shared-cache read only, labelled as shared data. The browser-cookie providers wait on a cookie reader |
 | Forecast | Per-bucket run-out and surplus from recorded observations, with a verdict that says when there is not enough evidence yet |
 | Presentation | Shared display mode, provider visibility and order, plan labels, menu-bar fields, native app icons |
-| Settings | The twelve keys Desktop's own Settings presents are written back to the shared `settings.json` through the documented contract; a change the native app later makes is noticed and shown |
+| Settings | The keys Desktop's own Settings presents — the whitelist is `shared::settings_writer::WRITABLE_KEYS`, and it is the safety boundary, so read it rather than a count written down here — are written back to the shared `settings.json` through the documented contract; a change the native app later makes is noticed and shown |
 | Tray and lifecycle | Single instance, close-to-tray, explicit Quit, ready-gated first show with a watchdog, later tray startup, resume handling, launch at login |
 | Updates | A daily check against the channel's feed, offered from the tray and installed on request |
 | Mini | All seven native layouts, tray toggle, private geometry and visibility |
@@ -39,7 +39,7 @@ this note says where the work stands and which lanes are open.
 | Sessions | Shared index when compatible, otherwise bounded local discovery; full-text search, paged transcripts with find, resume command, and deletion through the kit's fenced deleter |
 | First run | The native setup assistant, step for step, marking completion in the shared settings |
 | MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot` |
-| Writes | Five documented writers into the shared root and nothing else; see [AGENTS.md](AGENTS.md) rule 1 |
+| Writes | Five authorized write domains and nothing else — shared settings and the quota cache, the Control Center allow-list, whole-session deletion under a harness's own directory, and the skill library with its managed app directories; see [AGENTS.md](AGENTS.md) rule 1 |
 | Platforms | The core crate is tested on macOS, Linux and Windows on every pull request; the GUI has had its end-to-end pass on macOS only |
 
 Desktop does not depend on the native process, native binaries, or the native
@@ -136,9 +136,11 @@ the SQLite `session_index.sqlite3-shm` mtime.
 
 ## 5. Invariants that must not be weakened
 
-1. Write into the shared root only through the five documented writers, on
-   the terms [AGENTS.md](AGENTS.md) rule 1 sets out. Everything else Desktop
-   writes goes under `<data root>/client/desktop/`.
+1. Write outside `<data root>/client/desktop/` only in the five authorized
+   domains, each through its documented writer, on the terms
+   [AGENTS.md](AGENTS.md) rule 1 sets out. Those domains are not all under
+   the Vibe Bar root: one is a macOS preference, one removes a harness's own
+   logs, one is the skill library and the app directories it projects into.
 2. Never repair, migrate, prune, rebuild, or downgrade another client's shared
    store. Unknown or unreadable versions degrade to unavailable with a reason.
 3. Keep quota hierarchy and usage-harness grouping as separate naming axes.

@@ -33,9 +33,12 @@ one sitting.
 
 ## Releasing
 
-Not yet possible: there is no release workflow, no tag, and no signing key.
-[RELEASE.md](RELEASE.md) is the design, including the three things that cannot
-be changed once a version has reached someone.
+`release.yml` builds and signs from a tag — `vX.Y.Z` on the Main channel,
+`vX.Y.Z-dev.N` on Dev — into a draft release, and the updater feed lives on
+the `updates` branch, one document per channel. The app checks once a day and
+offers the update from the tray. [RELEASE.md](RELEASE.md) has the pipeline,
+the gates, and the three things that cannot be changed once a version has
+reached someone.
 
 ## Looking at the mini layouts
 
@@ -122,11 +125,13 @@ handle rather than reopening a checked pathname.
 
 ## What is deliberately absent
 
-- **Five writers into the shared root, and nothing else.** Settings, the quota
-  cache, the Control Center repair, whole-session deletion and the skill
-  library, each through one documented writer with the native app's rules.
-  Every other shared store is read here. See
-  [SHARED-STORAGE.md](SHARED-STORAGE.md).
+- **Five authorized write domains, and nothing else.** Shared settings and the
+  quota cache under `~/.vibebar`; the Control Center allow-list, which is a
+  macOS preference; whole-session deletion, which removes logs under a
+  harness's own directory; and the skill library under `~/.agents/skills` with
+  the managed app directories. Each goes through one documented writer with
+  the native app's rules; everything else those roots hold is read here. See
+  [SHARED-STORAGE.md](SHARED-STORAGE.md) and [AGENTS.md](../AGENTS.md) rule 1.
 - **No dependency on the native app.** Its presence is detected only to offer
   a link, and never changes what Desktop can do.
 - **No credential writing or OAuth refresh.** Three processes share
