@@ -83,21 +83,33 @@ impl CursorSession {
 /// where that directory usually is, and stays as the fallback so a machine
 /// without the variable still resolves.
 pub fn state_db_candidates(home: &Path) -> Vec<PathBuf> {
-    const SUFFIX: &str = "Cursor/User/globalStorage/state.vscdb";
-    let mut roots: Vec<PathBuf> = Vec::new();
+    candidates_with_override(home, application_data_override())
+}
+
+/// The environment's application-data root, if it names one. macOS has no
+/// such variable, so it never has an override.
+fn application_data_override() -> Option<PathBuf> {
     if cfg!(target_os = "macos") {
-        roots.push(home.join("Library/Application Support"));
+        None
     } else if cfg!(windows) {
-        if let Some(appdata) = crate::providers::read_env_path("APPDATA") {
-            roots.push(appdata);
-        }
-        roots.push(home.join("AppData/Roaming"));
+        crate::providers::read_env_path("APPDATA")
     } else {
-        if let Some(config) = crate::providers::read_env_path("XDG_CONFIG_HOME") {
-            roots.push(config);
-        }
-        roots.push(home.join(".config"));
+        crate::providers::read_env_path("XDG_CONFIG_HOME")
     }
+}
+
+/// Split from [`state_db_candidates`] so the ordering can be tested without
+/// changing process-global environment a parallel test could be reading.
+fn candidates_with_override(home: &Path, overridden: Option<PathBuf>) -> Vec<PathBuf> {
+    const SUFFIX: &str = "Cursor/User/globalStorage/state.vscdb";
+    let mut roots: Vec<PathBuf> = overridden.into_iter().collect();
+    roots.push(home.join(if cfg!(target_os = "macos") {
+        "Library/Application Support"
+    } else if cfg!(windows) {
+        "AppData/Roaming"
+    } else {
+        ".config"
+    }));
     let mut out: Vec<PathBuf> = Vec::new();
     for root in roots {
         let candidate = root.join(SUFFIX);
@@ -106,6 +118,23 @@ pub fn state_db_candidates(home: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+/// The first candidate that exists, whatever it holds. Split out for the same
+/// reason as above.
+fn load_from_candidates(
+    candidates: &[PathBuf],
+    now_unix: f64,
+) -> Result<CursorSession, QuotaError> {
+    for candidate in candidates {
+        // The first state store that *exists* is the answer. Falling through
+        // because it holds no session would report an older profile's — a
+        // different Cursor account — as the current one.
+        if candidate.is_file() {
+            return load_from(candidate, now_unix);
+        }
+    }
+    Err(QuotaError::NoCredential)
 }
 
 /// The path this build would read, for diagnostics and tests.
@@ -120,16 +149,7 @@ pub fn state_db_path(home: &Path) -> PathBuf {
 /// [`QuotaError::NoCredential`]; a present but expired or malformed token is
 /// [`QuotaError::NeedsLogin`] — the person opens Cursor and signs in.
 pub fn load(home: &Path) -> Result<CursorSession, QuotaError> {
-    let now = crate::providers::now_unix();
-    for candidate in state_db_candidates(home) {
-        // The first state store that *exists* is the answer, whatever it
-        // says. Falling through because it holds no session would report an
-        // older profile's — a different Cursor account — as the current one.
-        if candidate.is_file() {
-            return load_from(&candidate, now);
-        }
-    }
-    Err(QuotaError::NoCredential)
+    load_from_candidates(&state_db_candidates(home), crate::providers::now_unix())
 }
 
 pub fn load_from(path: &Path, now_unix: f64) -> Result<CursorSession, QuotaError> {
@@ -312,43 +332,46 @@ mod tests {
         assert!(matches!(load_from(&path, 0.0), Err(QuotaError::NeedsLogin)));
     }
 
-    #[cfg(unix)]
     #[test]
     fn an_existing_store_with_no_session_stops_the_search() {
-        // Point the override at a signed-out store and leave a signed-in one
-        // at the home-relative path: the override must still be the answer.
+        // A signed-out store under the override, a signed-in one at the
+        // home-relative path: the override must still be the answer.
         let dir = tempfile::tempdir().unwrap();
-        let key = if cfg!(target_os = "macos") {
-            None
-        } else if cfg!(windows) {
-            Some("APPDATA")
-        } else {
-            Some("XDG_CONFIG_HOME")
-        };
-        let Some(key) = key else { return };
         let override_root = dir.path().join("override");
         let signed_out = override_root.join("Cursor/User/globalStorage");
         std::fs::create_dir_all(&signed_out).unwrap();
         state_db(&signed_out, &[("unrelated", "x")]);
-        let home_root = dir.path().join("home");
-        let signed_in = home_root.join(".config/Cursor/User/globalStorage");
+        let home = dir.path().join("home");
+        let signed_in = home.join("state");
         std::fs::create_dir_all(&signed_in).unwrap();
-        state_db(
+        let fallback = state_db(
             &signed_in,
             &[(
                 "cursorAuth/accessToken",
                 &synthetic_token("auth0|other_profile", None, 4_000_000_000.0),
             )],
         );
-        // SAFETY: single-threaded test, restored immediately after.
-        let previous = std::env::var_os(key);
-        unsafe { std::env::set_var(key, &override_root) };
-        let result = load(&home_root);
-        match previous {
-            Some(value) => unsafe { std::env::set_var(key, value) },
-            None => unsafe { std::env::remove_var(key) },
-        }
-        assert!(matches!(result, Err(QuotaError::NoCredential)));
+        let candidates = vec![signed_out.join("state.vscdb"), fallback];
+        assert!(matches!(
+            load_from_candidates(&candidates, 0.0),
+            Err(QuotaError::NoCredential)
+        ));
+        // With the override absent, the fallback answers.
+        assert!(load_from_candidates(&candidates[1..], 0.0).is_ok());
+    }
+
+    #[test]
+    fn an_override_is_searched_before_the_home_relative_path() {
+        let candidates =
+            candidates_with_override(Path::new("/home/example"), Some("/data/roaming".into()));
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].starts_with("/data/roaming"));
+        assert!(candidates[1].starts_with("/home/example"));
+        // No override, one candidate; a duplicate override, still one.
+        assert_eq!(
+            candidates_with_override(Path::new("/home/example"), None).len(),
+            1
+        );
     }
 
     #[test]

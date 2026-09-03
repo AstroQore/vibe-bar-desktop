@@ -50,24 +50,22 @@ pub async fn fetch(home: &Path, client: &Client) -> Result<AccountQuota, QuotaEr
     // account has no Bot dashboard" fails the read and leaves the last good
     // observation in place.
     let grok_bot = match grok_bot {
-        Ok(body) => Some(
-            serde_json::from_slice::<GrokBotUsage>(&body).map_err(|error| {
+        Ok(Fetched::Body(body)) => Some(serde_json::from_slice::<GrokBotUsage>(&body).map_err(
+            |error| {
                 QuotaError::ParseFailure(format!("Cursor Grok Bot status not parseable: {error}"))
-            })?,
-        ),
-        Err(QuotaError::Unknown(ref message)) if message.contains("404") => None,
+            },
+        )?),
+        Ok(Fetched::NotFound) => None,
         Err(error) => return Err(error),
     };
 
-    // The legacy request-plan fallback fires only when usage-summary has no
-    // plan block at all — the same gate CodexBar and the native app use.
+    // The legacy request-plan fallback fires only when the summary yields no
+    // primary lane at all. An Enterprise or team payload reporting through
+    // `overall` or `pooled` is already a usable reading, and asking the
+    // legacy endpoint for it would risk failing a refresh that had its
+    // answer.
     let mut request_usage = None;
-    if summary
-        .individual_usage
-        .as_ref()
-        .and_then(|u| u.plan.as_ref())
-        .is_none()
-    {
+    if !parse_summary(&summary, None, None).has_primary_lane() {
         let user_id = user_info
             .as_ref()
             .and_then(|u| u.sub.clone().or_else(|| u.id.clone()));
@@ -116,7 +114,7 @@ async fn get(client: &Client, path: &str, cookie: &str) -> Result<Vec<u8>, Quota
     body(path, response).await
 }
 
-async fn post_empty(client: &Client, path: &str, cookie: &str) -> Result<Vec<u8>, QuotaError> {
+async fn post_empty(client: &Client, path: &str, cookie: &str) -> Result<Fetched, QuotaError> {
     let response = client
         .post(url(path))
         .timeout(super::REQUEST_TIMEOUT)
@@ -129,13 +127,30 @@ async fn post_empty(client: &Client, path: &str, cookie: &str) -> Result<Vec<u8>
         .send()
         .await
         .map_err(|error| super::classify_transport(&error))?;
-    body(path, response).await
+    fetched(path, response).await
+}
+
+/// A response body, or the reason there is none. `NotFound` is separated out
+/// because for one endpoint it is an answer rather than a failure.
+enum Fetched {
+    Body(Vec<u8>),
+    NotFound,
 }
 
 async fn body(path: &str, response: reqwest::Response) -> Result<Vec<u8>, QuotaError> {
+    match fetched(path, response).await? {
+        Fetched::Body(body) => Ok(body),
+        Fetched::NotFound => Err(QuotaError::Network(format!(
+            "Cursor {path} returned HTTP 404"
+        ))),
+    }
+}
+
+async fn fetched(path: &str, response: reqwest::Response) -> Result<Fetched, QuotaError> {
     match response.status().as_u16() {
         200 => {}
         401 | 403 => return Err(QuotaError::NeedsLogin),
+        404 => return Ok(Fetched::NotFound),
         429 => return Err(QuotaError::RateLimited),
         status => {
             return Err(QuotaError::Network(format!(
@@ -143,11 +158,13 @@ async fn body(path: &str, response: reqwest::Response) -> Result<Vec<u8>, QuotaE
             )))
         }
     }
-    Ok(response
-        .bytes()
-        .await
-        .map_err(|error| super::classify_transport(&error))?
-        .to_vec())
+    Ok(Fetched::Body(
+        response
+            .bytes()
+            .await
+            .map_err(|error| super::classify_transport(&error))?
+            .to_vec(),
+    ))
 }
 
 async fn fetch_request_usage(
@@ -165,7 +182,10 @@ async fn fetch_request_usage(
         .header("User-Agent", USER_AGENT)
         .send()
         .await
-        .map_err(|error| super::classify_transport(&error))?;
+        // This URL carries the account id in its query, and a transport error
+        // stringifies the URL it failed on. The error is shown in the UI, so
+        // the id is stripped before it becomes text.
+        .map_err(|error| super::classify_transport(&error.without_url()))?;
     let bytes = body("/api/usage", response).await?;
     serde_json::from_slice(&bytes)
         .map_err(|_| QuotaError::ParseFailure("Cursor /api/usage not parseable".into()))
