@@ -62,10 +62,14 @@ pub fn load(home: &Path) -> Result<GrokCredential, QuotaError> {
     }
     let bytes = std::fs::read(&path)
         .map_err(|error| QuotaError::ParseFailure(format!("could not read auth.json: {error}")))?;
-    parse(&bytes)
+    parse_at(&bytes, crate::providers::now_unix())
 }
 
 pub fn parse(bytes: &[u8]) -> Result<GrokCredential, QuotaError> {
+    parse_at(bytes, crate::providers::now_unix())
+}
+
+pub fn parse_at(bytes: &[u8], now_unix: f64) -> Result<GrokCredential, QuotaError> {
     let root: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|error| QuotaError::ParseFailure(format!("auth.json is not JSON: {error}")))?;
     let object = root
@@ -91,14 +95,32 @@ pub fn parse(bytes: &[u8]) -> Result<GrokCredential, QuotaError> {
             legacy = Some((scope, entry));
         }
     }
-    let (scope, entry) = oidc.or(legacy).ok_or(QuotaError::NoCredential)?;
+    // The OIDC scope is preferred, but not when it has expired and the legacy
+    // session has not: an expired preference is no credential at all.
+    let candidates: Vec<(&String, &serde_json::Map<String, serde_json::Value>)> =
+        oidc.into_iter().chain(legacy).collect();
+    let mut first: Option<GrokCredential> = None;
+    for (scope, entry) in candidates {
+        let credential = decode_entry(scope, entry).ok_or(QuotaError::NoCredential)?;
+        if !credential.is_expired(now_unix) {
+            return Ok(credential);
+        }
+        first.get_or_insert(credential);
+    }
+    // Everything on file has expired. Report the preferred one, so the error
+    // names the credential the person would renew.
+    first.ok_or(QuotaError::NoCredential)
+}
 
+fn decode_entry(
+    scope: &str,
+    entry: &serde_json::Map<String, serde_json::Value>,
+) -> Option<GrokCredential> {
     let text =
         |key: &str| -> Option<String> { crate::credentials::non_empty_string(entry.get(key)) };
-    let access_token = text("key").ok_or(QuotaError::NoCredential)?;
-    Ok(GrokCredential {
-        access_token,
-        scope: scope.clone(),
+    Some(GrokCredential {
+        access_token: text("key")?,
+        scope: scope.to_string(),
         auth_mode: text("auth_mode"),
         email: text("email"),
         subscription_tier: text("subscription_tier")
@@ -130,9 +152,12 @@ mod tests {
       "https://auth.x.ai::no-key": {"other": true}
     }"#;
 
+    /// Well before the fixture's expiry.
+    const BEFORE: f64 = 1_700_000_000.0;
+
     #[test]
     fn the_oidc_scope_wins_over_the_legacy_session() {
-        let credential = parse(AUTH.as_bytes()).unwrap();
+        let credential = parse_at(AUTH.as_bytes(), BEFORE).unwrap();
         assert_eq!(credential.access_token, "oidc-token");
         assert_eq!(credential.scope, "https://auth.x.ai::client-abc");
         assert_eq!(credential.email.as_deref(), Some("person@example.com"));
@@ -144,9 +169,11 @@ mod tests {
 
     #[test]
     fn a_session_only_file_still_works() {
-        let credential =
-            parse(br#"{"https://accounts.x.ai/sign-in": {"key": "t", "auth_mode": "session"}}"#)
-                .unwrap();
+        let credential = parse_at(
+            br#"{"https://accounts.x.ai/sign-in": {"key": "t", "auth_mode": "session"}}"#,
+            BEFORE,
+        )
+        .unwrap();
         assert_eq!(credential.access_token, "t");
         assert_eq!(credential.plan_label().as_deref(), Some("Session"));
         // No expiry in the file means nothing to expire against.
@@ -162,13 +189,19 @@ mod tests {
             r#"{"https://auth.x.ai::c": "not an object"}"#,
         ] {
             assert!(
-                matches!(parse(raw.as_bytes()), Err(QuotaError::NoCredential)),
+                matches!(
+                    parse_at(raw.as_bytes(), BEFORE),
+                    Err(QuotaError::NoCredential)
+                ),
                 "{raw}"
             );
         }
-        assert!(matches!(parse(b"[]"), Err(QuotaError::ParseFailure(_))));
         assert!(matches!(
-            parse(b"not json"),
+            parse_at(b"[]", BEFORE),
+            Err(QuotaError::ParseFailure(_))
+        ));
+        assert!(matches!(
+            parse_at(b"not json", BEFORE),
             Err(QuotaError::ParseFailure(_))
         ));
     }
@@ -178,5 +211,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(matches!(load(dir.path()), Err(QuotaError::NoCredential)));
         assert!(auth_file(Path::new("/Users/example")).ends_with(".grok/auth.json"));
+    }
+
+    #[test]
+    fn an_expired_oidc_entry_does_not_shadow_a_usable_session() {
+        // The fixture's OIDC entry expires 2026-09-01; the legacy one never
+        // does. After that date the session is the credential.
+        let after = 1_788_220_801.0;
+        let credential = parse_at(AUTH.as_bytes(), after).unwrap();
+        assert_eq!(credential.access_token, "legacy-token");
+        assert_eq!(credential.plan_label().as_deref(), Some("Session"));
+        // With both expired, the preferred one is reported, so the error the
+        // caller raises names the credential worth renewing.
+        let both = r#"{
+          "https://accounts.x.ai/sign-in": {"key": "legacy", "expires_at": "2026-01-01T00:00:00Z"},
+          "https://auth.x.ai::c": {"key": "oidc", "expires_at": "2026-02-01T00:00:00Z"}
+        }"#;
+        let credential = parse_at(both.as_bytes(), after).unwrap();
+        assert_eq!(credential.access_token, "oidc");
+        assert!(credential.is_expired(after));
     }
 }
