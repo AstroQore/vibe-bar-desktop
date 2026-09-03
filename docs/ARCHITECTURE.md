@@ -317,6 +317,17 @@ stalls (a crashing virtual-audio daemon is enough), WebKit's GPU process
 blocks for fifteen seconds before any page can paint, and a reload
 inside that window only restarts the wait.
 
+## The scheduled update check
+
+The native app lets Sparkle check daily; Desktop does the same on its own
+clock. Ninety seconds after launch, unless the desktop namespace's launch
+state records a check within the last twenty hours, the updater asks the
+channel's feed, and then again every day. A find is held exactly as the
+Settings button's is — one id, one install — and announced on
+`vibebar://update-available`; the Settings page shows it and the tray menu
+gains "Update to X…". Nothing downloads until the person asks, and demo
+mode never checks.
+
 ## The menu bar health watchdog
 
 macOS 26 keeps a Control Center allow-list of menu bar apps. A hidden app

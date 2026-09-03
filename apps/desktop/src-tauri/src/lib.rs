@@ -91,6 +91,7 @@ pub fn run() {
             commands::hide_popover,
             commands::resize_mini,
             commands::check_for_update,
+            commands::pending_update,
             commands::install_update,
             commands::session_list,
             commands::session_search,
@@ -155,6 +156,7 @@ pub fn run() {
             apply_startup_action(app.handle(), action);
             spawn_refresh_loop(app.handle().clone());
             spawn_load_watchdog(app.handle().clone());
+            spawn_update_check_loop(app.handle().clone());
             spawn_settings_watch(app.handle().clone());
             app.manage(menu_bar_health::Watchdog::default());
             menu_bar_health::spawn(app.handle().clone());
@@ -323,4 +325,88 @@ fn spawn_load_watchdog(app: tauri::AppHandle) {
             tray::show_main_window(&app);
         }
     });
+}
+
+/// What a page and the tray learn when the scheduled check finds an update.
+pub const UPDATE_EVENT: &str = "vibebar://update-available";
+
+/// The scheduled update check, as the native app's Sparkle does daily: a
+/// first look shortly after launch — unless one ran within the last twenty
+/// hours, so relaunching all day does not hammer the feed — then every day.
+/// A find is held for the Settings page and the tray to offer; nothing is
+/// downloaded or installed until the person asks. Demo mode never checks.
+fn spawn_update_check_loop(app: tauri::AppHandle) {
+    const FIRST_LOOK: Duration = Duration::from_secs(90);
+    const DAILY: Duration = Duration::from_secs(24 * 60 * 60);
+    const RECENT: f64 = 20.0 * 60.0 * 60.0;
+    tauri::async_runtime::spawn(async move {
+        if app.state::<AppState>().data_root().is_demo() {
+            return;
+        }
+        tokio::time::sleep(FIRST_LOOK).await;
+        loop {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_secs_f64())
+                .unwrap_or(0.0);
+            let store = ClientStore::new(app.state::<AppState>().data_root().clone());
+            let recently = store
+                .last_update_check_at()
+                .is_some_and(|at| at <= now && now - at < RECENT);
+            if !recently {
+                let found = {
+                    let state = app.state::<AppState>();
+                    commands::perform_update_check(&app, &state).await
+                };
+                let _ = store.record_update_check(now);
+                match found {
+                    Ok(found) => {
+                        if let Some(update) = &found {
+                            eprintln!("[update] {} is available", update.version);
+                        }
+                        announce_update(&app, found.as_ref());
+                    }
+                    Err(error) => eprintln!("[update] scheduled check failed: {error}"),
+                }
+                tokio::time::sleep(DAILY).await;
+            } else {
+                // Sleep only until the last check is a day old, so a launch
+                // near the end of the window keeps the daily cadence rather
+                // than adding a whole day to it.
+                let due = store
+                    .last_update_check_at()
+                    .map(|at| (at + DAILY.as_secs_f64() - now).max(60.0))
+                    .unwrap_or(DAILY.as_secs_f64());
+                tokio::time::sleep(Duration::from_secs_f64(due.min(DAILY.as_secs_f64()))).await;
+            }
+        }
+    });
+}
+
+/// After any check — scheduled or from Settings — the tray menu shows or
+/// drops its "Update to X…" item and every open page hears the result,
+/// `null` included, so a page offering a withdrawn update stops offering it.
+pub(crate) fn announce_update(app: &tauri::AppHandle, found: Option<&commands::PendingUpdate>) {
+    tray::refresh_menu(app);
+    let _ = app.emit(UPDATE_EVENT, found);
+}
+
+/// Install the find with `id` and restart into it; the tray's "Update to
+/// X…" item, which names that id. A find a later check has replaced is not
+/// installed — the menu is rebuilt instead. A failure keeps the find so the
+/// next try can use it.
+pub(crate) async fn install_pending_update(app: &tauri::AppHandle, id: u64) {
+    let state = app.state::<AppState>();
+    let Some(update) = state.take_update(id) else {
+        eprintln!("[update] the menu's find was overtaken by a newer check; rebuilding the menu");
+        tray::refresh_menu(app);
+        return;
+    };
+    match update.download_and_install(|_, _| {}, || {}).await {
+        Ok(()) => app.restart(),
+        Err(error) => {
+            eprintln!("[update] install failed: {error}");
+            state.restore_update(id, update);
+        }
+    }
 }

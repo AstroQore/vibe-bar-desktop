@@ -213,6 +213,27 @@ pub async fn check_for_update(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<PendingUpdate>, String> {
+    let found = perform_update_check(&app, &state).await?;
+    crate::announce_update(&app, found.as_ref());
+    Ok(found)
+}
+
+/// What the last check found and is still holding, for a page that opens
+/// after the scheduled check ran.
+#[tauri::command]
+pub fn pending_update(state: State<'_, AppState>) -> Option<PendingUpdate> {
+    state.pending_update_summary()
+}
+
+/// One update check against the channel's feed. The scheduled daily check
+/// and the Settings button share it, so both hold their find the same way.
+pub(crate) async fn perform_update_check(
+    app: &AppHandle,
+    state: &AppState,
+) -> Result<Option<PendingUpdate>, String> {
+    // Held until the result is stored, so checks apply in the order they
+    // began and the endpoint each one used is the one current when it began.
+    let _one_at_a_time = state.update_check_lock().lock().await;
     let endpoint = update_endpoint(state.data_root())?
         .parse()
         .map_err(|_| "the update endpoint is not a URL".to_string())?;
@@ -240,7 +261,7 @@ pub async fn check_for_update(
 }
 
 /// What a check found: the version to show, and which check found it.
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingUpdate {
     pub version: String,

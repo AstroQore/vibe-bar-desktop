@@ -32,9 +32,17 @@ pub struct AppState {
     /// version the person was shown rather than whatever the feed serves by
     /// the time they click.
     pending_update: Pending<tauri_plugin_updater::Update>,
+    /// Checks run one at a time, in the order they started: a scheduled
+    /// check still in flight when the person switches channel and checks by
+    /// hand cannot finish afterwards and overwrite the newer result.
+    update_check: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
+    pub fn update_check_lock(&self) -> &tokio::sync::Mutex<()> {
+        &self.update_check
+    }
+
     pub fn hold_update(&self, update: tauri_plugin_updater::Update) -> u64 {
         self.pending_update.hold(update)
     }
@@ -49,6 +57,14 @@ impl AppState {
 
     pub fn drop_update(&self) {
         self.pending_update.clear();
+    }
+
+    /// The version and id of the update being held, if any — what a page
+    /// opening after the scheduled check needs to offer the install.
+    pub fn pending_update_summary(&self) -> Option<crate::commands::PendingUpdate> {
+        self.pending_update
+            .peek(|update| update.version.clone())
+            .map(|(id, version)| crate::commands::PendingUpdate { version, id })
     }
 
     pub fn new() -> Self {
@@ -73,6 +89,7 @@ impl AppState {
             page: std::sync::Mutex::new(PageState::default()),
             first_run_mark_on_show: std::sync::atomic::AtomicBool::new(false),
             pending_update: Pending::default(),
+            update_check: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -179,14 +196,24 @@ impl Default for AppState {
 /// belong to one check and the bytes to the other. Every hold gets an id, and
 /// acting on it means naming that id.
 struct Pending<T> {
-    slot: std::sync::Mutex<Option<(u64, T)>>,
+    slot: std::sync::Mutex<PendingSlot<T>>,
     next: std::sync::atomic::AtomicU64,
+}
+
+struct PendingSlot<T> {
+    held: Option<(u64, T)>,
+    /// Ids issued before a clear are stale: a clear says "nothing is on
+    /// offer", and a failed install of an older find must not undo that.
+    stale_below: u64,
 }
 
 impl<T> Default for Pending<T> {
     fn default() -> Self {
         Self {
-            slot: std::sync::Mutex::new(None),
+            slot: std::sync::Mutex::new(PendingSlot {
+                held: None,
+                stale_below: 1,
+            }),
             next: std::sync::atomic::AtomicU64::new(1),
         }
     }
@@ -196,7 +223,7 @@ impl<T> Pending<T> {
     fn hold(&self, value: T) -> u64 {
         let id = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if let Ok(mut slot) = self.slot.lock() {
-            *slot = Some((id, value));
+            slot.held = Some((id, value));
         }
         id
     }
@@ -205,32 +232,55 @@ impl<T> Pending<T> {
     /// it — that request's result is not this one's to install.
     fn take(&self, id: u64) -> Option<T> {
         let mut slot = self.slot.lock().ok()?;
-        match slot.as_ref() {
-            Some((held, _)) if *held == id => slot.take().map(|(_, value)| value),
+        match slot.held.as_ref() {
+            Some((held, _)) if *held == id => slot.held.take().map(|(_, value)| value),
             _ => None,
         }
     }
 
     /// Put it back after failing to use it, unless something newer arrived
-    /// meanwhile — the newer one is what the person is looking at.
+    /// meanwhile — a later hold, or a clear that said there is nothing.
     fn restore(&self, id: u64, value: T) {
         if let Ok(mut slot) = self.slot.lock() {
-            if slot.is_none() {
-                *slot = Some((id, value));
+            if slot.held.is_none() && id >= slot.stale_below {
+                slot.held = Some((id, value));
             }
         }
     }
 
+    /// Nothing is on offer; every id issued so far is stale.
     fn clear(&self) {
         if let Ok(mut slot) = self.slot.lock() {
-            *slot = None;
+            slot.held = None;
+            slot.stale_below = self.next.load(std::sync::atomic::Ordering::Relaxed);
         }
+    }
+
+    /// Look at what is held without taking it: the id, and whatever the
+    /// caller reads off the value.
+    fn peek<U>(&self, read: impl FnOnce(&T) -> U) -> Option<(u64, U)> {
+        let slot = self.slot.lock().ok()?;
+        slot.held.as_ref().map(|(id, value)| (*id, read(value)))
     }
 }
 
 #[cfg(test)]
 mod pending_tests {
     use super::Pending;
+
+    #[test]
+    fn a_clear_makes_an_older_find_unrestorable() {
+        let pending: Pending<&str> = Pending::default();
+        let id = pending.hold("1.0");
+        let taken = pending.take(id).unwrap();
+        pending.clear();
+        pending.restore(id, taken);
+        assert!(pending.peek(|v| *v).is_none());
+        let newer = pending.hold("1.1");
+        let taken = pending.take(newer).unwrap();
+        pending.restore(newer, taken);
+        assert_eq!(pending.peek(|v| *v), Some((newer, "1.1")));
+    }
 
     #[test]
     fn taking_needs_the_id_that_was_handed_out() {

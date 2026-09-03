@@ -119,6 +119,8 @@ export async function fixtureInvoke<T>(command: string, args?: Record<string, un
     case "set_autostart":
       autostart = Boolean(args?.enabled);
       return answer(autostart);
+    case "pending_update":
+      return null as T;
     case "check_for_update":
       return answer(null);
     case "hide_mini":
