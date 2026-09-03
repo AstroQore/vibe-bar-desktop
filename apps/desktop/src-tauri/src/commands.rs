@@ -231,6 +231,9 @@ pub(crate) async fn perform_update_check(
     app: &AppHandle,
     state: &AppState,
 ) -> Result<Option<PendingUpdate>, String> {
+    // Held until the result is stored, so checks apply in the order they
+    // began and the endpoint each one used is the one current when it began.
+    let _one_at_a_time = state.update_check_lock().lock().await;
     let endpoint = update_endpoint(state.data_root())?
         .parse()
         .map_err(|_| "the update endpoint is not a URL".to_string())?;

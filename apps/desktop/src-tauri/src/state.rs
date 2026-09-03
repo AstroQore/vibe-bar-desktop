@@ -32,9 +32,17 @@ pub struct AppState {
     /// version the person was shown rather than whatever the feed serves by
     /// the time they click.
     pending_update: Pending<tauri_plugin_updater::Update>,
+    /// Checks run one at a time, in the order they started: a scheduled
+    /// check still in flight when the person switches channel and checks by
+    /// hand cannot finish afterwards and overwrite the newer result.
+    update_check: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
+    pub fn update_check_lock(&self) -> &tokio::sync::Mutex<()> {
+        &self.update_check
+    }
+
     pub fn hold_update(&self, update: tauri_plugin_updater::Update) -> u64 {
         self.pending_update.hold(update)
     }
@@ -81,6 +89,7 @@ impl AppState {
             page: std::sync::Mutex::new(PageState::default()),
             first_run_mark_on_show: std::sync::atomic::AtomicBool::new(false),
             pending_update: Pending::default(),
+            update_check: tokio::sync::Mutex::new(()),
         }
     }
 
