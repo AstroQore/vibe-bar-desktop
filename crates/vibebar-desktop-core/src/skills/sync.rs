@@ -368,7 +368,7 @@ pub fn remove_tree_without_following_links(path: &Path) -> std::io::Result<()> {
         Kind::Directory => path,
         Kind::Missing => return Ok(()),
         Kind::Symlink => return remove_link(path),
-        _ => return std::fs::remove_file(path),
+        _ => return remove_regular_file(path),
     };
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
@@ -378,7 +378,7 @@ pub fn remove_tree_without_following_links(path: &Path) -> std::io::Result<()> {
         } else if file_type.is_symlink() {
             remove_link(&entry.path())?;
         } else {
-            std::fs::remove_file(entry.path())?;
+            remove_regular_file(&entry.path())?;
         }
     }
     std::fs::remove_dir(dir)
@@ -387,6 +387,29 @@ pub fn remove_tree_without_following_links(path: &Path) -> std::io::Result<()> {
 /// Unlink a symlink itself, never what it points at. Windows keeps directory
 /// links apart from file links and refuses `remove_file` on the former with
 /// "access denied", so the directory form is tried second there.
+/// Remove a regular file this app copied here. A copy carries the source's
+/// permissions, and Windows refuses to delete a read-only file, so the
+/// attribute is cleared and the delete retried — only after the first attempt
+/// fails, and never for a symlink, which is unlinked elsewhere.
+pub fn remove_regular_file(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let Ok(metadata) = std::fs::symlink_metadata(path) else {
+                return Err(error);
+            };
+            let mut permissions = metadata.permissions();
+            if !permissions.readonly() {
+                return Err(error);
+            }
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+            std::fs::set_permissions(path, permissions)?;
+            std::fs::remove_file(path)
+        }
+    }
+}
+
 pub fn remove_link(path: &Path) -> std::io::Result<()> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),

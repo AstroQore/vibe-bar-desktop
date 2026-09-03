@@ -107,12 +107,22 @@ impl SkillsService {
     /// SSOT copy, so nothing unrecorded is left behind. Best effort — the
     /// error that triggered it is the one the caller sees.
     fn roll_back_install(&self, skill: &Skill) {
+        self.roll_back_projections(skill, &[]);
+        let _ = self.remove_from_ssot(&skill.directory);
+    }
+
+    /// Take back the projections this call made, leaving alone any whose app
+    /// name is in `keep` — the ones that were already there. Best effort: the
+    /// error that triggered the rollback is the one the caller sees.
+    fn roll_back_projections(&self, skill: &Skill, keep: &[String]) {
         for app in skill.projected_apps() {
+            if keep.iter().any(|raw| raw == app.raw()) {
+                continue;
+            }
             let _ = self
                 .engine
                 .unmaterialize(&skill.directory, app, skill.materialization(app));
         }
-        let _ = self.remove_from_ssot(&skill.directory);
     }
 
     /// Adopt a folder that is already in the SSOT (put there by hand, by
@@ -137,6 +147,12 @@ impl SkillsService {
         // A skill the third-party installer put here came from a repository,
         // and the lock file is the only place that says which. Adopting it as
         // `local:<dir>` would tell the native app it is a hand-made folder.
+        // Same preflight as an install: the registry must be one this build
+        // may write, and every requested slot free, before anything is made.
+        self.registry()?;
+        for app in enable_for {
+            self.engine.preflight(name, *app)?;
+        }
         let mut skill = self.make_local_skill(name)?;
         let provenance = super::lock::LockFile::read(&self.home).provenance(name);
         skill.id = provenance.id;
@@ -150,16 +166,28 @@ impl SkillsService {
                 skill.apps.insert(app.raw().to_string(), adopted);
             }
         }
+        // Only what this call creates is rolled back: a projection the person
+        // already had was adopted above, not made here, and taking it away
+        // would be a change they did not ask for.
+        let adopted: Vec<String> = skill.apps.keys().cloned().collect();
         for app in enable_for {
             if skill.apps.contains_key(app.raw()) {
                 continue;
             }
-            let materialization = self
-                .engine
-                .materialize(name, *app, SyncMethod::Auto, None)?;
-            skill.apps.insert(app.raw().to_string(), materialization);
+            match self.engine.materialize(name, *app, SyncMethod::Auto, None) {
+                Ok(materialization) => {
+                    skill.apps.insert(app.raw().to_string(), materialization);
+                }
+                Err(error) => {
+                    self.roll_back_projections(&skill, &adopted);
+                    return Err(error);
+                }
+            }
         }
-        self.upsert(skill.clone())?;
+        if let Err(error) = self.upsert(skill.clone()) {
+            self.roll_back_projections(&skill, &adopted);
+            return Err(error);
+        }
         Ok(skill)
     }
 
@@ -597,6 +625,38 @@ mod tests {
             sync::kind(&catalog::skills_dir(AppTarget::Codex, dir.path()).join("docx")),
             Kind::Missing
         );
+        assert!(service.registry().unwrap().skills.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adoption_that_cannot_finish_leaves_only_what_was_already_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let ssot = catalog::ssot_dir(dir.path()).join("docx");
+        std::fs::create_dir_all(&ssot).unwrap();
+        std::fs::write(ssot.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        // Codex already links to it; Gemini's root is a file, so projecting
+        // there fails for a reason that is not a slot conflict.
+        let codex = catalog::skills_dir(AppTarget::Codex, dir.path());
+        std::fs::create_dir_all(&codex).unwrap();
+        std::os::unix::fs::symlink(&ssot, codex.join("docx")).unwrap();
+        let gemini = catalog::skills_dir(AppTarget::Gemini, dir.path());
+        std::fs::create_dir_all(gemini.parent().unwrap()).unwrap();
+        std::fs::write(&gemini, "not a directory").unwrap();
+        let vibebar = dir.path().join(".vibebar");
+        std::fs::create_dir_all(&vibebar).unwrap();
+        let service = SkillsService::new(dir.path().to_path_buf(), vibebar);
+        assert!(service
+            .adopt_existing("docx", &[AppTarget::Claude, AppTarget::Gemini])
+            .is_err());
+        // The link that was already there stays; the one this call made does
+        // not; the SSOT folder is untouched, since adoption never made it.
+        assert_eq!(sync::kind(&codex.join("docx")), Kind::Symlink);
+        assert_eq!(
+            sync::kind(&catalog::skills_dir(AppTarget::Claude, dir.path()).join("docx")),
+            Kind::Missing
+        );
+        assert_eq!(sync::kind(&ssot), Kind::Directory);
         assert!(service.registry().unwrap().skills.is_empty());
     }
 }
