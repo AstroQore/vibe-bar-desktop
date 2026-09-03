@@ -55,7 +55,7 @@
 .wb-sidebar { display: flex; flex-direction: column; width: 206px; flex: 0 0 206px; padding: 12px 10px; background: var(--wb-sidebar); }
 .wb-sidebar-top { display: flex; flex-direction: column; gap: 3px; }
 /* Room for the traffic lights: native's window has a transparent title bar. */
-.wb-sidebar-top { margin-top: 36px; }
+.wb-sidebar-top { padding-top: 36px; }
 .wb-sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 0; }
 .wb-sidebar-rule { height: 1px; background: var(--wb-hairline); margin: 0 0 8px; }
 .wb-version { font-size: 10px; color: var(--wb-tertiary); padding: 12px 8px 0; }
@@ -108,3 +108,5 @@
 .wb-table th { text-align: left; font-size: 10.5px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; color: var(--wb-tertiary); padding: 0 8px 6px; border-bottom: 0.7px solid var(--wb-hairline); }
 .wb-table td { padding: 7px 8px; border-bottom: 0.5px solid var(--wb-hairline); white-space: nowrap; }
 .wb-table td.num, .wb-table th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-rounded, -apple-system, system-ui, sans-serif; }
+/* The overlay title bar's strip above the page header; it drags the window. */
+.wb-drag-strip { height: 36px; flex: none; -webkit-app-region: drag; }

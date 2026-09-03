@@ -45,7 +45,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button {
+:where(button) {
   font: inherit;
   color: inherit;
   background: transparent;
@@ -54,10 +54,10 @@ button {
   padding: 4px 10px;
   cursor: pointer;
 }
-button:hover:not(:disabled) {
+:where(button:hover:not(:disabled)) {
   background: var(--bg-raised);
 }
-button:disabled {
+:where(button:disabled) {
   opacity: 0.5;
   cursor: default;
 }

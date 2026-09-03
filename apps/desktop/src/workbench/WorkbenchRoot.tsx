@@ -3,6 +3,7 @@
  * page header plus page. The window is 1180×820 and the sidebar lists the
  * four primary pages with Settings below a rule, the version under that.
  */
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState, type ReactNode } from "react";
 import { PAGES, PRIMARY_PAGES, type WorkbenchPageId } from "./pages";
 import { Bubbles, ChartLine, ClockArrow, Gear, Moon, Puzzle, Refresh, Sun } from "./icons";
@@ -43,12 +44,22 @@ function SidebarRow({ id, selected, onSelect }: { id: WorkbenchPageId; selected:
   );
 }
 
+/** The overlay title bar leaves a 36 pt strip above the content. It has to
+ *  move the window like a real title bar; the drag-region attribute covers
+ *  the strip itself and a press on it starts the drag explicitly too. */
+function beginWindowDrag(event: React.MouseEvent) {
+  if (event.button !== 0) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("button, a, input, select, textarea")) return;
+  void getCurrentWindow().startDragging().catch(() => undefined);
+}
+
 export function WorkbenchRoot({ page, onSelect, pages, status, onRefresh, refreshing, version, dark, onToggleDark }: WorkbenchProps) {
   const current = PAGES[page];
   return (
     <div className={`wb${dark ? " dark" : ""}`}>
       <aside className="wb-sidebar">
-        <div className="wb-sidebar-top">
+        <div className="wb-sidebar-top" data-tauri-drag-region onMouseDown={beginWindowDrag}>
           {PRIMARY_PAGES.map((id) => <SidebarRow key={id} id={id} selected={page === id} onSelect={() => onSelect(id)} />)}
         </div>
         <div className="wb-sidebar-bottom">
@@ -59,6 +70,7 @@ export function WorkbenchRoot({ page, onSelect, pages, status, onRefresh, refres
       </aside>
       <div className="wb-vrule" />
       <main className="wb-main">
+        <div className="wb-drag-strip" data-tauri-drag-region onMouseDown={beginWindowDrag} aria-hidden="true" />
         <header className="wb-header">
           <div className="wb-header-titles">
             <span className="wb-header-title">{current.title}</span>

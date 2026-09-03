@@ -65,6 +65,7 @@ pub fn run() {
             commands::quota_view,
             commands::presentation_settings,
             commands::save_shared_settings,
+            commands::shared_settings_raw,
             commands::status_snapshot,
             commands::refresh_status,
             commands::cost_view,

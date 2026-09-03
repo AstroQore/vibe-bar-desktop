@@ -12,8 +12,16 @@ import type { WorkbenchPageId } from "./workbench/pages";
 import "./workbench/porcelain.css";
 
 
+/** `?page=<id>` opens that page first — how the tray, `show_main_window`,
+ *  and a headless screenshot land on a page without a click. */
+function initialPage(): WorkbenchPageId {
+  const wanted = new URLSearchParams(window.location.search).get("page");
+  const known: WorkbenchPageId[] = ["usageStats", "sessionManager", "resets", "skillsManager", "settings"];
+  return known.includes(wanted as WorkbenchPageId) ? (wanted as WorkbenchPageId) : "usageStats";
+}
+
 export function App() {
-  const [tab, setTab] = useState<WorkbenchPageId>("usageStats");
+  const [tab, setTab] = useState<WorkbenchPageId>(initialPage());
   const [dark, toggleDark] = useAppearance();
   const [view, setView] = useState<QuotaView | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);

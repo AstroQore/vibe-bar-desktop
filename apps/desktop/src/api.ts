@@ -1,6 +1,17 @@
 import { QUOTA_BAR } from "./tokens";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
+import { fixtureInvoke, inTauri } from "./fixtures/invoke";
+
+/** `invoke`, or the fixture answers when the page runs outside Tauri. */
+function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return inTauri() ? tauriInvoke<T>(command, args) : fixtureInvoke<T>(command, args);
+}
+
+/** `listen`, or a no-op outside Tauri: nothing emits there. */
+function listen<T>(event: string, handler: EventCallback<T>): Promise<UnlistenFn> {
+  return inTauri() ? tauriListen<T>(event, handler) : Promise.resolve(() => undefined);
+}
 
 /** Kept in sync with `vibebar_desktop_core::model`. */
 export type ForecastVerdict =

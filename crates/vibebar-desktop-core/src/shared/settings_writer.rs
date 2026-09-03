@@ -31,8 +31,27 @@ use crate::error::CoreError;
 /// everything can write by mistake. Carried over from the earlier design
 /// record in `docs/contracts/settings-document-v1.md`. Growing it is a
 /// deliberate act: add the control first, then the key.
-pub const WRITABLE_KEYS: &[&str] =
-    &["displayMode", "menuBarColorBasis", "refreshIntervalSeconds", "updateChannel"];
+/// Every top-level key Desktop's own Settings presents a control for. Both
+/// clients write the file now; the merge puts back only the keys this
+/// process changed, at top-level granularity (see the contract), so a
+/// nested object such as `menuBarItems` is read, edited, and written whole.
+pub const WRITABLE_KEYS: &[&str] = &[
+    "displayMode",
+    "menuBarColorBasis",
+    "refreshIntervalSeconds",
+    "updateChannel",
+    "popoverDensity",
+    "menuBarItems",
+    "visibleCoreProviders",
+    "coreProviderOrder",
+    "visibleMiscProviders",
+    "miscProviderInstances",
+    "providerPlanLabels",
+    "costData",
+    "miniWindow",
+    "menuBarBlockAlertSuppressed",
+    "menuBarAutoRepairEnabled",
+];
 
 /// What another writer took over: settings this process changed which now
 /// hold someone else's value.
