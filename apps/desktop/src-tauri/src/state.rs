@@ -20,6 +20,14 @@ pub struct AppState {
     status: ServiceStatusEngine,
     cost: CostEngine,
     data_root: DataRoot,
+    /// Where the main page is in its life: mounted or not, a show waiting
+    /// on it, and which load generation is current — so a late report from
+    /// a page the watchdog already replaced cannot pass for the new one.
+    page: std::sync::Mutex<PageState>,
+    /// A first launch records its completion only once the main window has
+    /// actually been shown, so a crash during a slow load does not turn the
+    /// next launch into a tray-only one nobody has seen the window for.
+    first_run_mark_on_show: std::sync::atomic::AtomicBool,
     /// What the last update check found, kept so that installing puts on the
     /// version the person was shown rather than whatever the feed serves by
     /// the time they click.
@@ -62,6 +70,8 @@ impl AppState {
             status: ServiceStatusEngine::new(data_root.clone()),
             cost: CostEngine::new(data_root.clone(), scan_home),
             data_root,
+            page: std::sync::Mutex::new(PageState::default()),
+            first_run_mark_on_show: std::sync::atomic::AtomicBool::new(false),
             pending_update: Pending::default(),
         }
     }
@@ -88,6 +98,66 @@ impl AppState {
 
     pub fn cadence_changed(&self) -> std::sync::Arc<tokio::sync::Notify> {
         self.cadence_changed.clone()
+    }
+
+    /// The page of load `generation` mounted. Returns whether a show was
+    /// waiting — `None` when the report is from a superseded generation.
+    pub fn mark_page_ready(&self, generation: u32) -> Option<bool> {
+        let mut page = self.page.lock().ok()?;
+        if generation != page.generation {
+            return None;
+        }
+        page.ready = true;
+        Some(std::mem::take(&mut page.show_pending))
+    }
+
+    /// Park a show until the page is ready; `true` when it is ready already,
+    /// so the caller shows now. One lock covers the check and the park, so
+    /// `mark_page_ready` and this cannot both miss the show.
+    pub fn park_show_unless_ready(&self) -> bool {
+        let Ok(mut page) = self.page.lock() else {
+            return true;
+        };
+        if page.ready {
+            return true;
+        }
+        page.show_pending = true;
+        false
+    }
+
+    /// Start a new load generation if the page has not mounted: the number
+    /// the reloaded page must report back. `None` when the page mounted
+    /// meanwhile — then there is nothing to reload.
+    pub fn begin_reload_unless_ready(&self) -> Option<u32> {
+        let mut page = self.page.lock().ok()?;
+        if page.ready {
+            return None;
+        }
+        page.generation += 1;
+        Some(page.generation)
+    }
+
+    /// Stop waiting: treat the page as ready whatever it did, and say whether
+    /// a show was parked — the watchdog's last resort.
+    pub fn give_up_waiting(&self) -> bool {
+        let Ok(mut page) = self.page.lock() else {
+            return false;
+        };
+        if page.ready {
+            return false;
+        }
+        page.ready = true;
+        std::mem::take(&mut page.show_pending)
+    }
+
+    pub fn defer_first_run_mark(&self) {
+        self.first_run_mark_on_show
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn take_first_run_mark(&self) -> bool {
+        self.first_run_mark_on_show
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn data_root(&self) -> &DataRoot {
@@ -124,9 +194,7 @@ impl<T> Default for Pending<T> {
 
 impl<T> Pending<T> {
     fn hold(&self, value: T) -> u64 {
-        let id = self
-            .next
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if let Ok(mut slot) = self.slot.lock() {
             *slot = Some((id, value));
         }
@@ -203,4 +271,12 @@ mod pending_tests {
         pending.restore(old, value);
         assert_eq!(pending.take(new), Some("0.4.0"));
     }
+}
+
+/// See `AppState::page`.
+#[derive(Default)]
+struct PageState {
+    ready: bool,
+    show_pending: bool,
+    generation: u32,
 }

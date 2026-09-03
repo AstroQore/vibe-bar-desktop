@@ -1,18 +1,18 @@
 //! IPC surface for the web UI.
 
-use vibebar_desktop_core::sessions::SessionListingQuery;
-use vibebar_desktop_core::usage_stats::{UsageStatsQuery, UsageStatsView};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 use vibebar_desktop_core::cost::CostView;
 use vibebar_desktop_core::forecast::cycles::CycleSummary;
 use vibebar_desktop_core::refresh::QuotaView;
+use vibebar_desktop_core::sessions::SessionListingQuery;
 use vibebar_desktop_core::sessions::{SessionListing, TranscriptCursor};
 use vibebar_desktop_core::shared::settings::{PresentationSettings, SharedSettings};
 use vibebar_desktop_core::shared::settings_writer::WRITABLE_KEYS as SETTINGS_WRITABLE_KEYS;
 use vibebar_desktop_core::skills::SkillsInventoryView;
 use vibebar_desktop_core::status::ServiceStatusView;
+use vibebar_desktop_core::usage_stats::{UsageStatsQuery, UsageStatsView};
 
 use crate::native_app::{self, NativeAppPresence};
 use crate::state::AppState;
@@ -60,7 +60,9 @@ pub fn presentation_settings(state: State<'_, AppState>) -> PresentationSettings
 /// objects are edited whole (top-level merge granularity), so the page reads
 /// the current value, changes the field, and saves the object back.
 #[tauri::command]
-pub fn shared_settings_raw(state: State<'_, AppState>) -> serde_json::Map<String, serde_json::Value> {
+pub fn shared_settings_raw(
+    state: State<'_, AppState>,
+) -> serde_json::Map<String, serde_json::Value> {
     let path = state.data_root().settings_file();
     let document = vibebar_desktop_core::shared::settings_document::read(&path).unwrap_or_default();
     document
@@ -83,7 +85,9 @@ pub fn save_shared_settings(
     if !refused.is_empty() {
         // Not a permission failure to report to the user: Desktop's own UI is
         // the only caller, so this is a bug in it.
-        return Err(format!("not a setting Vibe Bar Desktop presents: {refused:?}"));
+        return Err(format!(
+            "not a setting Vibe Bar Desktop presents: {refused:?}"
+        ));
     }
     let applied = state
         .settings()
@@ -103,10 +107,18 @@ pub fn save_shared_settings(
     // The menu bar renders from these, and nothing else would redraw it until
     // the next quota refresh — which, if the cadence is what just changed, is
     // exactly the wait this save was meant to shorten.
-    if applied.written.iter().any(|key| key == "displayMode" || key == "menuBarColorBasis" || key == "menuBarItems") {
+    if applied
+        .written
+        .iter()
+        .any(|key| key == "displayMode" || key == "menuBarColorBasis" || key == "menuBarItems")
+    {
         crate::tray::update(&app, &state.engine().cached_view());
     }
-    if applied.written.iter().any(|key| key == "refreshIntervalSeconds") {
+    if applied
+        .written
+        .iter()
+        .any(|key| key == "refreshIntervalSeconds")
+    {
         state.cadence_changed().notify_one();
     }
     Ok(SharedSettings::load(state.data_root()).presentation())
@@ -279,9 +291,9 @@ pub fn show_main_window(app: AppHandle, page: String) {
     crate::popover::hide(&app);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("navigate", page);
-        let _ = window.show();
-        let _ = window.set_focus();
+        let _ = window.unminimize();
     }
+    crate::tray::show_main_window(&app);
 }
 
 /// The popover's page lost focus: native's transient popover closes.
@@ -357,7 +369,10 @@ pub fn open_in_terminal(command: String, terminal: String) -> Result<(), String>
 
 /// Where a reveal request points: a bare directory name lands under the
 /// library; anything with a separator must be an absolute path.
-pub(crate) fn skill_reveal_target(library: &std::path::Path, path: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn skill_reveal_target(
+    library: &std::path::Path,
+    path: &str,
+) -> Result<std::path::PathBuf, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
         return Err("Only a skill inside ~/.agents/skills can be revealed.".to_string());
@@ -379,7 +394,14 @@ pub(crate) fn skill_reveal_target(library: &std::path::Path, path: &str) -> Resu
 /// the `cd '<dir>' && ` the core generates for project sessions, where the
 /// directory is a single POSIX-quoted word.
 pub(crate) fn is_resume_command(command: &str) -> bool {
-    const CLIS: [&str; 6] = ["codex", "claude", "gemini", "grok", "cursor", "cursor-agent"];
+    const CLIS: [&str; 6] = [
+        "codex",
+        "claude",
+        "gemini",
+        "grok",
+        "cursor",
+        "cursor-agent",
+    ];
     let trimmed = command.trim();
     let rest = match strip_cd_prefix(trimmed) {
         Some(Some(rest)) => rest,
@@ -446,7 +468,9 @@ pub fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn autostart_enabled(app: AppHandle) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
-    app.autolaunch().is_enabled().map_err(|error| error.to_string())
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|error| error.to_string())
 }
 
 /// Register or unregister launch at login; returns what the system reports.
@@ -473,11 +497,16 @@ pub fn pricing_effective() -> Vec<vibebar_desktop_core::cost::EffectiveModelPric
 #[tauri::command]
 pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    const FULL_DISK_ACCESS: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
+    const FULL_DISK_ACCESS: &str =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
     let allowed = ["https://github.com/", "https://www.github.com/"];
     let clean = !url.chars().any(|c| c.is_whitespace() || c.is_control());
-    if !clean || !(url == FULL_DISK_ACCESS || allowed.iter().any(|prefix| url.starts_with(prefix))) {
-        return Err("Only https links to github.com and the Full Disk Access pane can be opened from here.".to_string());
+    if !clean || !(url == FULL_DISK_ACCESS || allowed.iter().any(|prefix| url.starts_with(prefix)))
+    {
+        return Err(
+            "Only https links to github.com and the Full Disk Access pane can be opened from here."
+                .to_string(),
+        );
     }
     app.opener()
         .open_url(&url, None::<&str>)
@@ -500,10 +529,41 @@ pub async fn menu_bar_check_now(app: AppHandle) -> crate::menu_bar_health::Healt
 
 /// Run the narrow allow-list repair and re-register the tray.
 #[tauri::command]
-pub async fn menu_bar_repair(app: AppHandle) -> Result<crate::menu_bar_health::HealthReport, String> {
+pub async fn menu_bar_repair(
+    app: AppHandle,
+) -> Result<crate::menu_bar_health::HealthReport, String> {
     tauri::async_runtime::spawn_blocking(move || crate::menu_bar_health::repair(&app))
         .await
         .map_err(|error| error.to_string())?
+}
+
+/// The page mounted. A show that was waiting happens now; a load watchdog
+/// that was armed stands down. `generation` is the `boot` query parameter
+/// the page was loaded with — zero on the first load — so a report from a
+/// page the watchdog has already replaced is not taken for the new one.
+#[tauri::command]
+pub fn frontend_ready(app: AppHandle, state: State<'_, AppState>, generation: u32) {
+    match state.mark_page_ready(generation) {
+        Some(was_waiting) => {
+            eprintln!(
+                "[ready] main page mounted (generation {generation}); show_pending={was_waiting}"
+            );
+            if was_waiting {
+                crate::tray::show_main_window(&app);
+            }
+        }
+        None => eprintln!("[ready] ignoring a report from superseded page generation {generation}"),
+    }
+}
+
+/// The page's uncaught errors, printed where a packaged app's output goes:
+/// the only console a release build has.
+#[tauri::command]
+pub fn frontend_log(message: String) {
+    eprintln!(
+        "[frontend] {}",
+        message.chars().take(2_000).collect::<String>()
+    );
 }
 
 #[tauri::command]
@@ -545,10 +605,7 @@ pub fn quota_cycles(
         &bucket_id,
         LOOKBACK_SECONDS,
     );
-    ResetHistory {
-        completed,
-        current,
-    }
+    ResetHistory { completed, current }
 }
 
 #[tauri::command]
@@ -589,24 +646,39 @@ mod resume_guard_tests {
     #[test]
     fn reveal_targets_resolve_bare_names_beneath_the_library() {
         let library = std::path::Path::new("/Users/example/.agents/skills");
-        assert_eq!(skill_reveal_target(library, "imagegen").unwrap(), library.join("imagegen"));
+        assert_eq!(
+            skill_reveal_target(library, "imagegen").unwrap(),
+            library.join("imagegen")
+        );
         assert_eq!(
             skill_reveal_target(library, "/Users/example/.agents/skills/docx").unwrap(),
             std::path::PathBuf::from("/Users/example/.agents/skills/docx")
         );
         assert!(skill_reveal_target(library, "..").is_err());
         assert!(skill_reveal_target(library, "").is_err());
-        assert!(skill_reveal_target(library, "../secrets").is_err(), "a relative path with separators is refused before canonicalizing");
+        assert!(
+            skill_reveal_target(library, "../secrets").is_err(),
+            "a relative path with separators is refused before canonicalizing"
+        );
     }
 
     #[test]
     fn accepts_plain_resume_lines_and_refuses_shell_operators() {
-        assert!(is_resume_command("codex resume 019a1b2c-3d4e-7f80-9abc-def012345678"));
+        assert!(is_resume_command(
+            "codex resume 019a1b2c-3d4e-7f80-9abc-def012345678"
+        ));
         assert!(is_resume_command("claude --resume 'abc-123'"));
         assert!(is_resume_command("/usr/local/bin/gemini --resume 7"));
-        assert!(is_resume_command("cd '/Users/example/Coding/app' && codex resume 019a1b2c"));
-        assert!(is_resume_command("cd '/Users/example/it'\\''s here' && claude --resume abc"));
-        assert!(!is_resume_command("cd /Users/example/app && codex resume x"), "an unquoted directory is not the generated shape");
+        assert!(is_resume_command(
+            "cd '/Users/example/Coding/app' && codex resume 019a1b2c"
+        ));
+        assert!(is_resume_command(
+            "cd '/Users/example/it'\\''s here' && claude --resume abc"
+        ));
+        assert!(
+            !is_resume_command("cd /Users/example/app && codex resume x"),
+            "an unquoted directory is not the generated shape"
+        );
         assert!(!is_resume_command("cd '/tmp' && rm -rf ~"));
         assert!(!is_resume_command("cd '/tmp'; codex resume x"));
         assert!(!is_resume_command("rm -rf ~"));

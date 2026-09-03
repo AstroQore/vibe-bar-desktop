@@ -29,22 +29,25 @@ struct PopoverState {
 }
 
 pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    app.manage(PopoverState { showing: AtomicBool::new(false) });
-    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?popover=1".into()))
-        .title("Vibe Bar")
-        .inner_size(INITIAL.0, INITIAL.1)
-        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .visible(false)
-        // Native's popover is drawn on the system's popover material; the
-        // page paints nothing behind its cards, and the window is transparent
-        // so the material shows through. Requires `macOSPrivateApi` for the
-        // webview to stop painting its own white.
-        .transparent(true)
-        .build()?;
+    app.manage(PopoverState {
+        showing: AtomicBool::new(false),
+    });
+    let window =
+        WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?popover=1".into()))
+            .title("Vibe Bar")
+            .inner_size(INITIAL.0, INITIAL.1)
+            .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .visible(false)
+            // Native's popover is drawn on the system's popover material; the
+            // page paints nothing behind its cards, and the window is transparent
+            // so the material shows through. Requires `macOSPrivateApi` for the
+            // webview to stop painting its own white.
+            .transparent(true)
+            .build()?;
     #[cfg(target_os = "macos")]
     {
         use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
@@ -94,7 +97,10 @@ pub fn show_at<R: Runtime>(app: &AppHandle<R>, anchor: Rect) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        handle.state::<PopoverState>().showing.store(false, Ordering::Release);
+        handle
+            .state::<PopoverState>()
+            .showing
+            .store(false, Ordering::Release);
     });
 }
 
@@ -125,7 +131,10 @@ pub fn show_centered<R: Runtime>(app: &AppHandle<R>) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        handle.state::<PopoverState>().showing.store(false, Ordering::Release);
+        handle
+            .state::<PopoverState>()
+            .showing
+            .store(false, Ordering::Release);
     });
 }
 
@@ -139,7 +148,10 @@ pub fn hide<R: Runtime>(app: &AppHandle<R>) {
 /// the window: a hidden popover still reports the display it was last shown
 /// on, and a click on a status item on another display would be clamped to
 /// that stale work area — and converted at its scale.
-fn monitor_under<R: Runtime>(window: &tauri::WebviewWindow<R>, anchor: &Rect) -> Option<tauri::Monitor> {
+fn monitor_under<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    anchor: &Rect,
+) -> Option<tauri::Monitor> {
     let monitors = window.available_monitors().ok()?;
     let hit = monitors.iter().find(|monitor| {
         let scale = monitor.scale_factor();
@@ -160,7 +172,10 @@ fn monitor_under<R: Runtime>(window: &tauri::WebviewWindow<R>, anchor: &Rect) ->
 /// every edge inside that monitor's work area.
 fn place<R: Runtime>(window: &tauri::WebviewWindow<R>, anchor: Rect) {
     let monitor = monitor_under(window, &anchor);
-    let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
+    let scale = monitor
+        .as_ref()
+        .map(|m| m.scale_factor())
+        .unwrap_or_else(|| window.scale_factor().unwrap_or(1.0));
     let anchor_pos = anchor.position.to_logical::<f64>(scale);
     let anchor_size = anchor.size.to_logical::<f64>(scale);
     let size = window
@@ -209,7 +224,9 @@ pub fn resize_to_content<R: Runtime>(app: &AppHandle<R>, width: f64, height: f64
     ));
     // Growing must not push the bottom edge off the screen: keep the top
     // anchored and pull the window up only if it no longer fits.
-    if let (Some(before), Ok(Some(monitor)), Ok(size)) = (before, window.current_monitor(), window.outer_size()) {
+    if let (Some(before), Ok(Some(monitor)), Ok(size)) =
+        (before, window.current_monitor(), window.outer_size())
+    {
         let area = monitor.work_area();
         let margin = (SCREEN_MARGIN * monitor.scale_factor()).round() as i32;
         let max_y = area.position.y + area.size.height as i32 - size.height as i32 - margin;

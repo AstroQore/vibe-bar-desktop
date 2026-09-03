@@ -73,12 +73,16 @@ fn now() -> f64 {
 fn script_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     let bundled = app
         .path()
-        .resolve("resources/fix_menu_bar_allowlist.py", tauri::path::BaseDirectory::Resource)
+        .resolve(
+            "resources/fix_menu_bar_allowlist.py",
+            tauri::path::BaseDirectory::Resource,
+        )
         .ok()
         .filter(|path| path.exists());
     bundled.or_else(|| {
         // `cargo run` / `tauri dev`: the script sits beside the crate.
-        let dev = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/fix_menu_bar_allowlist.py");
+        let dev = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fix_menu_bar_allowlist.py");
         dev.exists().then_some(dev)
     })
 }
@@ -86,15 +90,28 @@ fn script_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 fn settings_flags(app: &AppHandle) -> (bool, bool) {
     let state = app.state::<crate::state::AppState>();
     let settings = vibebar_desktop_core::shared::settings::SharedSettings::load(state.data_root());
-    let flag = |key: &str| settings.unknown.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
-    (!flag("menuBarBlockAlertSuppressed"), flag("menuBarAutoRepairEnabled"))
+    let flag = |key: &str| {
+        settings
+            .unknown
+            .get(key)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    };
+    (
+        !flag("menuBarBlockAlertSuppressed"),
+        flag("menuBarAutoRepairEnabled"),
+    )
 }
 
 /// What the audit could tell: one bounded run of the script without `--apply`.
 fn run_script(app: &AppHandle, apply: bool) -> Result<(bool, String), String> {
-    let script = script_path(app).ok_or_else(|| "The bundled repair script is missing.".to_string())?;
+    let script =
+        script_path(app).ok_or_else(|| "The bundled repair script is missing.".to_string())?;
     let mut command = std::process::Command::new("/usr/bin/python3");
-    command.arg(&script).arg("--bundle-id").arg(crate::tray::BUNDLE_ID);
+    command
+        .arg(&script)
+        .arg("--bundle-id")
+        .arg(crate::tray::BUNDLE_ID);
     if apply {
         command.arg("--apply");
     }
@@ -134,17 +151,27 @@ pub(crate) fn interpret(succeeded: bool, text: &str) -> Interpretation {
         });
         return Interpretation {
             state: HealthState::Blocked,
-            message: owner.map(|o| format!("Stale mapping: {o}")).unwrap_or_else(|| "Stale cross-app mapping found".into()),
+            message: owner
+                .map(|o| format!("Stale mapping: {o}"))
+                .unwrap_or_else(|| "Stale cross-app mapping found".into()),
             needs_full_disk_access: false,
         };
     }
     if succeeded {
-        return Interpretation { state: HealthState::Healthy, message: "Control Center allow-list is clean".into(), needs_full_disk_access: false };
+        return Interpretation {
+            state: HealthState::Healthy,
+            message: "Control Center allow-list is clean".into(),
+            needs_full_disk_access: false,
+        };
     }
     let denied = text.contains("Permission denied");
     Interpretation {
         state: HealthState::Unavailable,
-        message: if denied { "Full Disk Access is required to inspect the allow-list".into() } else { last_useful_line(text) },
+        message: if denied {
+            "Full Disk Access is required to inspect the allow-list".into()
+        } else {
+            last_useful_line(text)
+        },
         needs_full_disk_access: denied,
     }
 }
@@ -153,7 +180,13 @@ pub(crate) fn interpret(succeeded: bool, text: &str) -> Interpretation {
 pub fn audit(app: &AppHandle) -> HealthReport {
     let state = app.state::<crate::state::AppState>();
     let (alerts_enabled, auto_repair_enabled) = settings_flags(app);
-    let repair_command = script_path(app).map(|p| format!("python3 \"{}\" --bundle-id {} --apply", p.display(), crate::tray::BUNDLE_ID));
+    let repair_command = script_path(app).map(|p| {
+        format!(
+            "python3 \"{}\" --bundle-id {} --apply",
+            p.display(),
+            crate::tray::BUNDLE_ID
+        )
+    });
     let base = HealthReport {
         checked_at: now(),
         alerts_enabled,
@@ -162,16 +195,33 @@ pub fn audit(app: &AppHandle) -> HealthReport {
         ..Default::default()
     };
     let report = if state.data_root().is_demo() {
-        HealthReport { state: HealthState::Unavailable, message: "Demo mode does not inspect the live allow-list".into(), ..base }
+        HealthReport {
+            state: HealthState::Unavailable,
+            message: "Demo mode does not inspect the live allow-list".into(),
+            ..base
+        }
     } else if !cfg!(target_os = "macos") {
-        HealthReport { state: HealthState::Unavailable, message: "Menu bar allow-lists are a macOS 26 feature".into(), ..base }
+        HealthReport {
+            state: HealthState::Unavailable,
+            message: "Menu bar allow-lists are a macOS 26 feature".into(),
+            ..base
+        }
     } else {
         match run_script(app, false) {
             Ok((succeeded, text)) => {
                 let read = interpret(succeeded, &text);
-                HealthReport { state: read.state, message: read.message, needs_full_disk_access: read.needs_full_disk_access, ..base }
+                HealthReport {
+                    state: read.state,
+                    message: read.message,
+                    needs_full_disk_access: read.needs_full_disk_access,
+                    ..base
+                }
             }
-            Err(error) => HealthReport { state: HealthState::Unavailable, message: error, ..base },
+            Err(error) => HealthReport {
+                state: HealthState::Unavailable,
+                message: error,
+                ..base
+            },
         }
     };
     let watchdog = app.state::<Watchdog>();
@@ -217,7 +267,9 @@ pub fn spawn(app: AppHandle) {
         tokio::time::sleep(Duration::from_secs(20)).await;
         loop {
             let handle = app.clone();
-            let report = tauri::async_runtime::spawn_blocking(move || audit(&handle)).await.unwrap_or_default();
+            let report = tauri::async_runtime::spawn_blocking(move || audit(&handle))
+                .await
+                .unwrap_or_default();
             if report.state == HealthState::Blocked {
                 let confirmed = app
                     .state::<Watchdog>()
@@ -253,7 +305,10 @@ mod tests {
         assert_eq!(read.message, "Stale mapping: com.example.hidden");
         assert!(!read.needs_full_disk_access);
 
-        let clean = interpret(true, "No orphaned references to com.astroqore.VibeBarDesktop — allow-list is clean.\n");
+        let clean = interpret(
+            true,
+            "No orphaned references to com.astroqore.VibeBarDesktop — allow-list is clean.\n",
+        );
         assert_eq!(clean.state, HealthState::Healthy);
 
         let denied = interpret(false, "Permission denied reading Control Center's preferences.\nGrant Full Disk Access to this terminal, then run this again:\n");
@@ -262,7 +317,10 @@ mod tests {
 
         let missing = interpret(false, "not found: /Users/example/Library/Group Containers/x.plist\nNothing to repair — this macOS version may not use an allow-list.\n");
         assert_eq!(missing.state, HealthState::Unavailable);
-        assert_eq!(missing.message, "Nothing to repair — this macOS version may not use an allow-list.");
+        assert_eq!(
+            missing.message,
+            "Nothing to repair — this macOS version may not use an allow-list."
+        );
         assert!(!missing.needs_full_disk_access);
     }
 

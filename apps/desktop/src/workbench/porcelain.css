@@ -89,7 +89,7 @@
 .wb-pill.prominent { background: var(--wb-accent); color: #fff; box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--wb-accent) 72%, transparent); }
 .wb-pill.selected { background: color-mix(in srgb, var(--wb-accent) 18%, transparent); color: var(--wb-text); box-shadow: inset 0 0 0 0.7px color-mix(in srgb, var(--wb-accent) 34%, transparent); }
 .wb-pill:disabled { opacity: 0.5; }
-.wb-toolbar { border-radius: 14px; background: var(--wb-toolbar); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); }
+.wb-toolbar { overflow: visible; border-radius: 14px; background: var(--wb-toolbar); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); }
 .wb-field { display: flex; align-items: center; gap: 6px; border-radius: 10px; background: var(--wb-field); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); padding: 0 11px; height: 30px; color: var(--wb-secondary); }
 .wb-field input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--wb-text); font: inherit; outline: none; }
 .wb-field input::placeholder { color: var(--wb-tertiary); }
