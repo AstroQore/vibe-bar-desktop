@@ -76,8 +76,11 @@ pub fn parse_at(bytes: &[u8], now_unix: f64) -> Result<GrokCredential, QuotaErro
         .as_object()
         .ok_or_else(|| QuotaError::ParseFailure("auth.json root is not an object".into()))?;
 
-    let mut oidc = None;
-    let mut legacy = None;
+    // Every matching entry, not just the last one seen: a file can carry
+    // several OIDC scopes after the CLI changes client ids, and one of them
+    // being expired says nothing about the others.
+    let mut oidc = Vec::new();
+    let mut legacy = Vec::new();
     for (scope, value) in object {
         let Some(entry) = value.as_object() else {
             continue;
@@ -90,13 +93,14 @@ pub fn parse_at(bytes: &[u8], now_unix: f64) -> Result<GrokCredential, QuotaErro
             continue;
         }
         if scope.starts_with(OIDC_SCOPE_PREFIX) {
-            oidc = Some((scope, entry));
+            oidc.push((scope, entry));
         } else if scope == LEGACY_SESSION_SCOPE || scope.contains("/sign-in") {
-            legacy = Some((scope, entry));
+            legacy.push((scope, entry));
         }
     }
     // The OIDC scope is preferred, but not when it has expired and the legacy
     // session has not: an expired preference is no credential at all.
+    // OIDC scopes first, in map order, then the legacy sessions.
     let candidates: Vec<(&String, &serde_json::Map<String, serde_json::Value>)> =
         oidc.into_iter().chain(legacy).collect();
     let mut first: Option<GrokCredential> = None;
@@ -230,5 +234,18 @@ mod tests {
         let credential = parse_at(both.as_bytes(), after).unwrap();
         assert_eq!(credential.access_token, "oidc");
         assert!(credential.is_expired(after));
+    }
+
+    #[test]
+    fn a_second_oidc_scope_is_tried_when_the_first_has_expired() {
+        // Two OIDC scopes, as after a client-id change: the expired one must
+        // not decide for the usable one, whichever order the map yields.
+        let raw = r#"{
+          "https://auth.x.ai::old-client": {"key": "old", "expires_at": "2026-01-01T00:00:00Z"},
+          "https://auth.x.ai::new-client": {"key": "new", "expires_at": "2030-01-01T00:00:00Z"},
+          "https://accounts.x.ai/sign-in": {"key": "legacy"}
+        }"#;
+        let credential = parse_at(raw.as_bytes(), 1_788_220_801.0).unwrap();
+        assert_eq!(credential.access_token, "new");
     }
 }
