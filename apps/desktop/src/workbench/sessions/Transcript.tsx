@@ -51,19 +51,27 @@ function ToolCall({ part, query }: { part: Extract<MessagePart, { kind: "tool" }
 }
 
 /** A tool's output: a code block that shows its first lines and folds the rest. */
+/** A tool's output: a code block that shows its first lines and folds the
+ *  rest — and, for a single huge line (minified JSON, base64), the first
+ *  few thousand characters, so a result never becomes a wall. */
+const RESULT_CHAR_CAP = 3000;
 function ToolResult({ text, query, hit }: { text: string; query: string; hit: boolean }) {
   const [open, setOpen] = useState(false);
   const fold = foldedLines(text);
+  const shownLines = fold.shown.length > RESULT_CHAR_CAP ? fold.shown.slice(0, RESULT_CHAR_CAP) : fold.shown;
+  const hiddenChars = text.length - shownLines.length;
   // A match the fold would hide is shown: the find bar said "1 of 1", and
   // the reader must be able to see it without hunting for the fold.
-  const matchHidden = hit && query.trim().length > 0 && !fold.shown.toLowerCase().includes(query.trim().toLowerCase());
+  const matchHidden = hit && query.trim().length > 0 && !shownLines.toLowerCase().includes(query.trim().toLowerCase());
   const showAll = open || matchHidden;
+  const foldLabel =
+    fold.hidden > 0 ? `Show ${fold.hidden.toLocaleString("en-US")} more lines` : `Show more (${hiddenChars.toLocaleString("en-US")} chars)`;
   return (
     <>
-      <code className="wb-code quiet"><Highlighted text={showAll ? text : fold.shown} query={query} /></code>
-      {fold.hidden > 0 && !matchHidden ? (
+      <code className="wb-code quiet"><Highlighted text={showAll ? text : shownLines} query={query} /></code>
+      {hiddenChars > 0 && !matchHidden ? (
         <button type="button" className="ss-card-more" onClick={() => setOpen((value) => !value)}>
-          {open ? "Show less" : `Show ${fold.hidden.toLocaleString("en-US")} more lines`}
+          {open ? "Show less" : foldLabel}
         </button>
       ) : null}
     </>
