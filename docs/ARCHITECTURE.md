@@ -125,12 +125,13 @@ handle rather than reopening a checked pathname.
 
 ## What is deliberately absent
 
-- **Five authorized write domains, and nothing else.** Shared settings and the
+- **Six authorized write domains, and nothing else.** Shared settings and the
   quota cache under `~/.vibebar`; the Control Center allow-list, which is a
   macOS preference; whole-session deletion, which removes logs under a
-  harness's own directory; and the skill library under `~/.agents/skills` with
-  the managed app directories. Each goes through one documented writer with
-  the native app's rules; everything else those roots hold is read here. See
+  harness's own directory; the skill library under `~/.agents/skills` with the
+  managed app directories; and the OS login-item registration behind launch at
+  login. Each goes through one documented writer with the native app's rules;
+  everything else those roots hold is read here. See
   [SHARED-STORAGE.md](SHARED-STORAGE.md) and [AGENTS.md](../AGENTS.md) rule 1.
 - **No dependency on the native app.** Its presence is detected only to offer
   a link, and never changes what Desktop can do.

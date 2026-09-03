@@ -39,7 +39,7 @@ this note says where the work stands and which lanes are open.
 | Sessions | Shared index when compatible, otherwise bounded local discovery; full-text search, paged transcripts with find, resume command, and deletion through the kit's fenced deleter |
 | First run | The native setup assistant, step for step, marking completion in the shared settings |
 | MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot`. Quota, status, cost and pricing answer from what the last run recorded; the session tools read the shared index, or discover locally at request time when it is absent |
-| Writes | Five authorized write domains and nothing else — shared settings and the quota cache, the Control Center allow-list, whole-session deletion under a harness's own directory, and the skill library with its managed app directories; see [AGENTS.md](AGENTS.md) rule 1 |
+| Writes | Six authorized write domains and nothing else — shared settings and the quota cache, the Control Center allow-list, whole-session deletion under a harness's own directory, the skill library with its managed app directories, and the OS login-item registration behind launch at login; see [AGENTS.md](AGENTS.md) rule 1 |
 | Platforms | The core crate is tested on macOS, Linux and Windows on every pull request; the GUI has had its end-to-end pass on macOS only |
 
 Desktop does not depend on the native process, native binaries, or the native
@@ -136,11 +136,12 @@ the SQLite `session_index.sqlite3-shm` mtime.
 
 ## 5. Invariants that must not be weakened
 
-1. Write outside `<data root>/client/desktop/` only in the five authorized
+1. Write outside `<data root>/client/desktop/` only in the six authorized
    domains, each through its documented writer, on the terms
-   [AGENTS.md](AGENTS.md) rule 1 sets out. Those domains are not all under
-   the Vibe Bar root: one is a macOS preference, one removes a harness's own
-   logs, one is the skill library and the app directories it projects into.
+   [AGENTS.md](AGENTS.md) rule 1 sets out. Most are not under the Vibe Bar
+   root at all: one is a macOS preference, one removes a harness's own logs,
+   one is the skill library and the app directories it projects into, and one
+   is the OS login-item registration.
 2. Never repair, migrate, prune, rebuild, or downgrade another client's shared
    store. Unknown or unreadable versions degrade to unavailable with a reason.
 3. Keep quota hierarchy and usage-harness grouping as separate naming axes.
@@ -154,7 +155,11 @@ the SQLite `session_index.sqlite3-shm` mtime.
 8. Keep Desktop on `0.x` until the parity checklist actually passes.
 9. Keep the MCP surface read-only unless the user explicitly authorizes a
    particular local-data exposure or writer role. The stdio server never
-   refreshes a provider, scans usage, or writes anything.
+   refreshes a provider, scans usage, or writes configuration. It has exactly
+   one storage side effect, and it is the privacy switch doing its job:
+   constructing the cost engine with Cost Data privacy on deletes this
+   client's own saved snapshot, before it is read rather than after, because
+   the setting is a statement about holding that data at all.
 10. On a demo root, quota, sessions, cost, status, geometry, and all scans must
     stay inside that demo root. Both the app runtime and
     `examples/inspect.rs` comply.
