@@ -3,8 +3,9 @@
 //! **Boundary.** This client never asks the user for a provider password, and
 //! in this slice it never writes a credential either — it reads what the
 //! Codex and Claude CLIs left on disk (or in the macOS login keychain, where
-//! those CLIs put it) and uses it for exactly one thing: the provider's own
-//! usage endpoint.
+//! those CLIs put it), and the session Cursor.app keeps in its own state
+//! database, and uses each for exactly one thing: that provider's own usage
+//! endpoint.
 //!
 //! **Refresh is deliberately not implemented here.** Codex's `auth.json`
 //! rewrite is a three-way race between the Codex CLI, the native app, and
@@ -15,6 +16,7 @@
 
 pub mod claude;
 pub mod codex;
+pub mod cursor;
 pub mod keychain;
 
 use serde::Serialize;

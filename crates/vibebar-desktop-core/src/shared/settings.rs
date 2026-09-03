@@ -439,6 +439,10 @@ impl SharedSettings {
             "oauth-grok",
             "web-grok",
             "cursor",
+            // What the native `AccountStore` actually mints for Cursor: it
+            // kept its Misc-era id when it became a SpaceXAI card, because
+            // renaming would orphan every cache keyed on it.
+            "misc-cursor",
         ]
         .iter()
         .map(|s| s.to_string())
