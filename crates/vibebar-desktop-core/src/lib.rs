@@ -21,6 +21,7 @@ pub mod forecast;
 pub mod mcp;
 pub mod model;
 pub mod naming;
+pub mod onboarding;
 pub mod paths;
 pub mod providers;
 pub mod refresh;

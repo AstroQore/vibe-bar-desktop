@@ -1,0 +1,42 @@
+/* The setup assistant: the native OnboardingWindowController's 720×560
+   sheet — a 212 pt step list, a hairline, the step's pane — drawn over the
+   Workbench in the porcelain language. */
+.ob-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--wb-text) 22%, transparent); }
+.ob-window { display: flex; width: 720px; height: 560px; max-width: calc(100vw - 48px); max-height: calc(100vh - 48px); border-radius: 16px; overflow: hidden; background: var(--wb-overlay); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22), inset 0 0 0 0.5px var(--wb-hairline); }
+.ob-steps { flex: 0 0 212px; display: flex; flex-direction: column; gap: 2px; padding: 22px 12px 16px; background: var(--wb-sidebar); border-right: 0.5px solid var(--wb-hairline); }
+.ob-steps-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 8px 10px; }
+.ob-steps-title { font-size: 11px; font-weight: 600; color: var(--wb-secondary); }
+.ob-steps-version { font-size: 10px; font-weight: 500; color: var(--wb-tertiary); font-variant-numeric: tabular-nums; }
+.ob-step { display: flex; align-items: center; gap: 9px; min-height: 32px; padding: 0 8px; border-radius: 9px; font-size: 13px; font-weight: 500; color: color-mix(in srgb, var(--wb-text) 78%, transparent); text-align: left; }
+.ob-step:hover { background: var(--wb-hover); }
+.ob-step.selected { background: color-mix(in srgb, var(--wb-accent) 16%, transparent); color: var(--wb-text); font-weight: 600; }
+.ob-step-glyph { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 11px; background: var(--wb-hover); color: var(--wb-secondary); flex: none; }
+.ob-step.selected .ob-step-glyph { background: color-mix(in srgb, var(--wb-accent) 16%, transparent); color: var(--wb-accent); }
+.ob-step.completed:not(.selected) .ob-step-glyph { background: rgba(52, 199, 89, 0.14); color: #1f8a3a; }
+.ob-pane { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.ob-head { display: flex; flex-direction: column; gap: 4px; padding: 26px 28px 0; }
+.ob-title { font-size: 22px; font-weight: 700; letter-spacing: -0.35px; line-height: 26px; }
+.ob-subtitle { font-size: 11.5px; color: var(--wb-secondary); }
+.ob-content { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px 28px 12px; }
+.ob-footer { display: flex; align-items: center; gap: 8px; padding: 12px 28px 18px; border-top: 0.5px solid var(--wb-hairline); }
+.ob-card { gap: 10px; }
+.ob-text { margin: 0; font-size: 13px; line-height: 19px; }
+.ob-note { margin: 0; font-size: 11px; line-height: 15px; color: var(--wb-secondary); }
+.ob-note.ob-error { color: #D0342C; }
+.ob-rule { height: 0.5px; background: var(--wb-hairline); }
+.ob-feature { display: flex; align-items: flex-start; gap: 10px; }
+.ob-feature-dot { flex: none; width: 6px; height: 6px; margin-top: 6px; border-radius: 3px; background: var(--wb-accent); }
+.ob-feature-title { font-size: 13px; font-weight: 600; line-height: 16px; }
+.ob-feature-detail { font-size: 11px; line-height: 15px; color: var(--wb-secondary); }
+.ob-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ob-provider { gap: 10px; padding: 12px 14px; }
+.ob-provider-head { display: flex; align-items: center; gap: 9px; }
+.ob-provider-titles { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ob-provider-vendor { font-size: 13px; font-weight: 600; }
+.ob-provider-products { font-size: 10.5px; color: var(--wb-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ob-line { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.ob-label { flex: 1 1 auto; min-width: 0; font-size: 12.5px; }
+.ob-status { font-size: 11px; color: var(--wb-secondary); }
+.ob-summary { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 0 12px; font-size: 12.5px; line-height: 20px; }
+.ob-summary-title { color: var(--wb-secondary); }
+.ob-summary-value { font-weight: 500; }

@@ -128,6 +128,20 @@ impl SettingsWriter {
     /// never taken out of the object in the first place.
     ///
     /// Returns what was written, or an error if nothing could be.
+    /// Record that the setup assistant was completed (or skipped): the one
+    /// key written outside the Settings whitelist, by the assistant alone,
+    /// through the same lock and merge as every other write. The native app
+    /// reads the same flag, so a Mac that met either client's assistant is
+    /// not greeted twice.
+    pub fn record_onboarding_completion(&mut self) -> Result<Applied, CoreError> {
+        let mut changes = Object::new();
+        changes.insert(
+            "hasCompletedOnboarding".to_string(),
+            serde_json::Value::Bool(true),
+        );
+        self.apply_unfiltered(&changes)
+    }
+
     pub fn apply(&mut self, changes: &Object) -> Result<Applied, CoreError> {
         let owned = Self::owned();
         let refused: Vec<&String> = changes.keys().filter(|key| !owned.contains(*key)).collect();

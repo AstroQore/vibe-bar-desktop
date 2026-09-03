@@ -20,6 +20,9 @@ export interface WorkbenchProps {
   version?: string;
   /** Starts from the system scheme; the header button overrides it. */
   dark: boolean;
+  /** Something drawn over the whole window — the setup assistant — rendered
+   *  inside the porcelain scope so it has the tokens. */
+  overlay?: ReactNode;
   onToggleDark: () => void;
 }
 
@@ -54,7 +57,7 @@ function beginWindowDrag(event: React.MouseEvent) {
   void getCurrentWindow().startDragging().catch(() => undefined);
 }
 
-export function WorkbenchRoot({ page, onSelect, pages, status, onRefresh, refreshing, version, dark, onToggleDark }: WorkbenchProps) {
+export function WorkbenchRoot({ page, onSelect, pages, status, onRefresh, refreshing, version, dark, onToggleDark, overlay }: WorkbenchProps) {
   const current = PAGES[page];
   return (
     <div className={`wb${dark ? " dark" : ""}`}>
@@ -89,6 +92,7 @@ export function WorkbenchRoot({ page, onSelect, pages, status, onRefresh, refres
         </header>
         <section className="wb-page">{pages[page]}</section>
       </main>
+      {overlay}
     </div>
   );
 }

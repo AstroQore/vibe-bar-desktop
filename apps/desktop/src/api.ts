@@ -230,6 +230,8 @@ export interface AppInfo {
   dataRoot: string;
   isDemo: boolean;
   nativeApp: NativeAppPresence;
+  /** Whether the setup assistant should open: `show` on a fresh install, `skip` once completed. */
+  onboarding: "show" | "skip" | "markCompleted";
 }
 
 export interface SkillInventoryRow {

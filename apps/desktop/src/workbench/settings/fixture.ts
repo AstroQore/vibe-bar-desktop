@@ -6,6 +6,7 @@ export const FIXTURE_INFO: AppInfo = {
   dataRoot: "/Users/example/.vibebar",
   isDemo: true,
   nativeApp: { installed: true } as AppInfo["nativeApp"],
+  onboarding: "skip",
 };
 
 export const FIXTURE_PRICING: EffectiveModelPricingRow[] = [

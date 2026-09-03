@@ -25,6 +25,10 @@ pub struct AppInfo {
     pub data_root: String,
     pub is_demo: bool,
     pub native_app: NativeAppPresence,
+    /// Whether the setup assistant should open: the native gate's answer on
+    /// the shared settings and quota caches. `markCompleted` has already
+    /// been recorded by the time the UI sees it.
+    pub onboarding: vibebar_desktop_core::onboarding::Decision,
 }
 
 /// One bucket's reset cycles: the finished ones oldest first, then the one
@@ -650,8 +654,44 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         data_root: root.shared().display().to_string(),
         is_demo: root.is_demo(),
         native_app: native_app::detect(root),
+        onboarding: onboarding_decision(&state),
     }
 }
+
+/// The gate, and the one write it implies: an upgrade that never saw an
+/// assistant is marked completed so it is not greeted later either — the
+/// native app does the same on its side.
+fn onboarding_decision(state: &AppState) -> vibebar_desktop_core::onboarding::Decision {
+    use vibebar_desktop_core::onboarding::{decide_for, Decision};
+    let root = state.data_root();
+    if root.is_demo() {
+        return Decision::Skip;
+    }
+    let completed = vibebar_desktop_core::shared::settings_document::read(&root.settings_file())
+        .and_then(|document| document.get("hasCompletedOnboarding").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+    match decide_for(root, completed) {
+        Decision::MarkCompleted => {
+            let _ = record_onboarding_complete(state);
+            Decision::Skip
+        }
+        other => other,
+    }
+}
+
+fn record_onboarding_complete(state: &AppState) -> Result<(), String> {
+    let mut changes = serde_json::Map::new();
+    changes.insert("hasCompletedOnboarding".to_string(), serde_json::Value::Bool(true));
+    state
+        .settings()
+        .lock()
+        .map_err(|_| "settings writer unavailable".to_string())?
+        .apply(&changes)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+
 
 #[tauri::command]
 pub fn skills_inventory(state: State<'_, AppState>) -> SkillsInventoryView {

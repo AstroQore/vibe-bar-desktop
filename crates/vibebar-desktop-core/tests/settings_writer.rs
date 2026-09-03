@@ -312,10 +312,18 @@ fn reports_a_save_that_could_not_be_written() {
 #[test]
 fn the_whitelist_is_only_what_desktop_presents() {
     use vibebar_desktop_core::shared::settings_writer::WRITABLE_KEYS;
-    let controls = std::fs::read_to_string(
+    // Settings, and the setup assistant — the one other surface that writes.
+    let mut controls = std::fs::read_to_string(
         concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps/desktop/src/workbench/settings/SettingsPage.tsx"),
     )
     .expect("SettingsPage.tsx");
+    controls.push_str(
+        &std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../apps/desktop/src/workbench/onboarding/OnboardingAssistant.tsx"
+        ))
+        .expect("OnboardingAssistant.tsx"),
+    );
     for key in WRITABLE_KEYS {
         assert!(
             controls.contains(&format!("{key}:")),
