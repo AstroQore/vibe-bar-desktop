@@ -364,6 +364,8 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | **Menu bar / tray** |
 | Rich-text and two-row title | ● | — | Windows and Linux trays have no title at all, only an icon; the macOS tray shows one line |
 | Field editor with style scopes | ● | ○ | Fields and labels are read from the shared settings and edited on the Menu bar page without the style scopes |
+| Merged group windows | ● | ○ | Native can fold a group's 5-hour and weekly windows into one menu-bar entry — the group named once, the percentages sharing it, each keeping its own colour. The grouping rules live in `VibeBarCore`, so this is a contract to mirror rather than a look to imitate |
+| Menu-bar composer | ● | ○ | Native is moving to a freely arranged menu bar: pick a template, then place logos, free text and any available quota as elements, each with its own or a quota-derived colour, with the current fixed layouts kept as the default mode |
 | Control Center allow-list watchdog | ● | ◐ | Desktop runs the same repair script; the watchdog that notices the icon is gone is native-only |
 | **Main window** |
 | Provider detail pages | ● 4 | ◐ | Each company has its page with quota, forecast explanation, reset history and status; native's also carry that provider's cost cards and history charts |
@@ -371,17 +373,19 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Layout editor with presets | ● | ○ | |
 | **Mini window** |
 | Multiple independent windows | ● | ○ | One mini window, seven layouts |
-| Translucent surface | ● Liquid Glass | ○ | Planned as a platform blur, deliberately not a copy. The window is currently opaque and undecorated |
+| Translucent surface | ● Liquid Glass | ◐ | The popover and mini window are transparent everywhere; on macOS they and the main window also carry real `NSVisualEffect` materials — sidebar and popover, deliberately the platform's own rather than a copy of Liquid Glass. Elsewhere they are transparent without a blur behind them, which is a platform gap rather than a design |
 | **Workbench** |
+| Reset-history comparison | ● | ○ | Native's cross-quota card: rows grouped company → SubProvider → bucket with two-level labels, a Cycles / Time axis toggle stored in the shared `resetHistoryCompareAxis`, a 4 / 8 / 12 / All picker whose default follows the card's width, and a bar drawing what was left at each reset |
 | Skills: install, import, discover, backups | ● | ◐ | Install from a folder, import, projections, uninstall and backups are here; repository install, discover and the harness activation patches stay native for now |
 | Session hand-off to a terminal | ● | ◐ | Desktop copies the resume command; native opens Terminal with it |
 | **Cost and usage** |
 | Local usage scan | ● 7 harnesses | ◐ 3 | Codex, Claude Code, Gemini CLI. Counts harnesses with a local scanner: Cursor's usage comes from dashboard events and Grok Bot has no usage source at all, so neither is a local scan on either side |
 | Per-request ledger, multi-source pricing, history | ● | ○ | Desktop keeps a priced aggregate under `client/desktop/` and a static price table; no shared ledger or history is written |
 | **Settings** |
-| Writable | ● | ◐ 12 keys | The keys Desktop's own Settings presents, through the cross-client write contract; provider credentials and the layout editor are not among them |
+| Writable | ● | ◐ | The keys Desktop's own Settings presents, through the cross-client write contract — the whitelist in `shared::settings_writer::WRITABLE_KEYS` is the boundary. Provider credentials and the layout editor are not among them |
 | Provider credential panes | ● 25 | ○ | API-key adapters read the process environment; nothing is persisted |
 | **Platform** |
+| Localization | ◐ | ○ | Both clients will read one catalog, [`AstroQore/vibe-bar-i18n`](https://github.com/AstroQore/vibe-bar-i18n) — Swift package for native, npm package here, Simplified Chinese first. Neither client consumes it yet |
 | MCP tools | ● 12 | ◐ 6 | Read-only subset over stdio; the Unix socket is native's |
 | Remote probe sync | ● | ○ | The Machines page explains the model; no relay client yet |
 | App Sandbox | ○ by design | ○ for now | Neither ships sandboxed. Native **cannot**: reading browser cookies, probing AntiGravity and driving Terminal are all blocked inside it. Desktop has no reason yet, and would lose the same cookie reads |
@@ -464,6 +468,56 @@ Session reading and deletion come from
 Rust lane of `agent-session-kit` — the same kit the native app's Swift
 implementation uses, so both clients handle sessions by one set of rules.
 
+## Acknowledgements
+
+Desktop is a port: nearly every rule in it — the provider endpoints, the
+bucket shapes, the storage layout, the sync engine's fences — was read out of
+[Vibe Bar](https://github.com/AstroQore/vibe-bar)'s Swift source and
+reimplemented here so both clients behave the same way. Where that source
+credits someone, so does this one:
+
+- [CodexBar](https://github.com/steipete/CodexBar) is the technical reference
+  behind the menu-bar quota experience the native app built, and several
+  behaviours this client ports reach it through that: the Cursor endpoint set
+  and the gate on its legacy request-plan fallback, the shape of Grok's
+  billing response, and the idea of discovering AntiGravity from the language
+  server running on the machine.
+- [CC Switch](https://github.com/farion1231/cc-switch) informed the unified
+  skills workflow the Skills manager reconciles, and remains the
+  interoperability reference for existing cross-agent skill layouts.
+- [ccusage](https://github.com/ccusage/ccusage) informed the local
+  session-cost parsing and pricing semantics this client's scanner follows.
+- [LiteLLM](https://github.com/BerriAI/litellm),
+  [models.dev](https://github.com/anomalyco/models.dev) and
+  [Portkey Models](https://github.com/Portkey-AI/models) maintain the public
+  model-price catalogs the rates in this client's static table trace back to,
+  by way of the native app's merged catalog and the small Vibe Bar supplement
+  in [vibebar-model-pricing](https://github.com/AstroQore/vibebar-model-pricing).
+  Desktop does not refresh or merge those catalogs yet.
+
+Desktop is built on [Tauri 2](https://github.com/tauri-apps/tauri) and its
+single-instance, autostart, updater, dialog and opener plugins, with
+[window-vibrancy](https://github.com/tauri-apps/window-vibrancy) for the
+translucent surfaces, [rusqlite](https://github.com/rusqlite/rusqlite) and
+[reqwest](https://github.com/seanmonstar/reqwest) underneath, and
+[React](https://github.com/facebook/react) with
+[Vite](https://github.com/vitejs/vite) in front. Sessions come from
+[agent-session-kit](https://github.com/AstroQore/agent-session-kit), which is
+ours and shared with the native app. Every dependency and its version is in
+`Cargo.lock` and `apps/desktop/pnpm-lock.yaml`; each carries its own licence
+in its own repository.
+
+These projects are independent from Vibe Bar. Acknowledgement does not imply
+affiliation or endorsement.
+
 ## License
 
 AGPL-3.0-only, same as the native app.
+
+## Star History
+
+<p align="center">
+  <a href="https://star-history.com/#AstroQore/vibe-bar-desktop&Date">
+    <img src="https://api.star-history.com/svg?repos=AstroQore/vibe-bar-desktop&type=Date" alt="Star History Chart">
+  </a>
+</p>

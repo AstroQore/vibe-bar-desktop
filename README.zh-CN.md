@@ -308,6 +308,8 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | **菜单栏 / 托盘** |
 | 富文本和两行标题 | ● | —— | Windows 和 Linux 的托盘根本没有标题，只有图标；macOS 托盘显示一行 |
 | 带样式作用域的字段编辑器 | ● | ○ | 字段和标签读自共享设置，在 Menu bar 页编辑，没有样式作用域 |
+| 合并同组窗口 | ● | ○ | 原生版可以把一个组的 5 小时和周窗口折成菜单栏里的一条：组名只出现一次，百分比共用它，各自保留自己的颜色。分组规则在 `VibeBarCore` 里，所以这是一份要对齐的契约，不是照着样子画 |
+| 菜单栏拼装器 | ● | ○ | 原生版正在改成可自由排列的菜单栏：先选模板，再往里放 logo、任意文字和任意可用配额作为元素，每个元素可自定颜色或跟随某个配额的预测/实际色，同时保留现有固定布局作为默认模式 |
 | Control Center 允许列表看门狗 | ● | ◐ | Desktop 运行同一个修复脚本；发现图标消失的看门狗只在原生版 |
 | **主窗口** |
 | provider 详情页 | ● 4 | ◐ | 每家公司一页，有配额、预测解释、重置历史和状态；原生版还带该 provider 的花费卡和历史图 |
@@ -315,17 +317,19 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | 带预设的布局编辑器 | ● | ○ | |
 | **Mini 窗** |
 | 多个独立窗口 | ● | ○ | 一个 mini 窗，七种布局 |
-| 半透明表面 | ● Liquid Glass | ○ | 计划做成平台模糊，有意不做复刻。目前窗口不透明、无装饰 |
+| 半透明表面 | ● Liquid Glass | ◐ | popover 和 mini 窗在所有平台上都是透明的；macOS 上它们和主窗还用了真实的 `NSVisualEffect` 材质（sidebar 与 popover），有意用平台自己的东西而不是复刻 Liquid Glass。其他平台是透明但背后没有模糊，这是平台缺口而非设计 |
 | **Workbench** |
+| 重置历史对比 | ● | ○ | 原生版的跨配额卡片：按公司 → SubProvider → bucket 分组、两级行标签，Cycles / Time 轴切换存在共享的 `resetHistoryCompareAxis` 里，4 / 8 / 12 / All 选择器的默认值跟随卡片宽度，柱子画的是每次重置时剩下的量 |
 | Skills：安装、导入、发现、备份 | ● | ◐ | 从文件夹安装、导入、投影、卸载和备份都在；仓库安装、发现和 harness 激活补丁暂留原生版 |
 | 会话交接到终端 | ● | ◐ | Desktop 复制 resume 命令；原生版直接打开 Terminal 执行 |
 | **花费与用量** |
 | 本地用量扫描 | ● 7 个 harness | ◐ 3 | Codex、Claude Code、Gemini CLI。只计有本地扫描器的 harness：Cursor 的用量来自 dashboard 事件，Grok Bot 根本没有用量来源，所以两端都不算本地扫描 |
 | 逐请求账本、多源价格、历史 | ● | ○ | Desktop 在 `client/desktop/` 下保存一份定价后的聚合和一张静态价格表；不写共享账本或历史 |
 | **设置** |
-| 可写 | ● | ◐ 12 个键 | Desktop 自己的设置页展示的那些键，经跨客户端写入契约；provider 凭据和布局编辑器不在其中 |
+| 可写 | ● | ◐ | Desktop 自己的设置页展示的那些键，经跨客户端写入契约——白名单 `shared::settings_writer::WRITABLE_KEYS` 就是边界。provider 凭据和布局编辑器不在其中 |
 | provider 凭据面板 | ● 25 | ○ | API-key 适配器读进程环境变量；不持久化任何东西 |
 | **平台** |
+| 多语言 | ◐ | ○ | 两端将共读一份文案目录 [`AstroQore/vibe-bar-i18n`](https://github.com/AstroQore/vibe-bar-i18n)——原生版走 Swift 包，这里走 npm 包，首个语言是简体中文。目前两端都还没接入 |
 | MCP 工具 | ● 12 | ◐ 6 | stdio 上的只读子集；Unix socket 属于原生版 |
 | 远程探针同步 | ● | ○ | Machines 页解释了模型；还没有 relay 客户端 |
 | App Sandbox | ○ 有意为之 | ○ 暂时 | 两端都不带沙箱发布。原生版**不能**：读浏览器 cookie、探测 AntiGravity 和驱动 Terminal 在沙箱里都被拦。Desktop 目前没有理由，而且会失去同样的 cookie 读取 |
@@ -393,6 +397,47 @@ docs/                          架构、共享存储规则、设计语言、发�
 会话的读取和删除来自 [`agent-session-core`](https://github.com/AstroQore/agent-session-kit)，
 即 `agent-session-kit` 的 Rust 实现——与原生版 Swift 实现用的是同一个 kit，所以两个客户端按同一套规则处理会话。
 
+## 致谢
+
+Desktop 是一次移植：里面几乎每一条规则——provider 的端点、bucket 的形状、存储布局、
+同步引擎的围栏——都是从 [Vibe Bar](https://github.com/AstroQore/vibe-bar) 的 Swift
+源码里读出来、在这里重新实现的，为的是让两个客户端表现一致。那份源码致谢谁，这里也致谢谁：
+
+- [CodexBar](https://github.com/steipete/CodexBar) 是原生版菜单栏配额体验的技术参考，
+  本客户端移植的若干行为经由原生版追溯到它：Cursor 的端点组合与 legacy request-plan
+  回退的触发条件、Grok 计费响应的形状，以及「从本机运行的 language server 发现
+  AntiGravity」这个思路。
+- [CC Switch](https://github.com/farion1231/cc-switch) 启发了 Skills 管理器所协调的
+  统一 skill 工作流，也仍是现有跨 agent skill 布局的互操作参考。
+- [ccusage](https://github.com/ccusage/ccusage) 启发了本客户端扫描器所遵循的本地
+  会话成本解析与定价语义。
+- [LiteLLM](https://github.com/BerriAI/litellm)、
+  [models.dev](https://github.com/anomalyco/models.dev) 和
+  [Portkey Models](https://github.com/Portkey-AI/models) 维护着公开的模型价格目录，
+  本客户端静态价格表里的费率经由原生版合并后的目录与
+  [vibebar-model-pricing](https://github.com/AstroQore/vibebar-model-pricing)
+  这层小补充追溯到它们。Desktop 目前还不会刷新或合并这些目录。
+
+Desktop 构建在 [Tauri 2](https://github.com/tauri-apps/tauri) 及其 single-instance、
+autostart、updater、dialog、opener 插件之上，半透明表面用
+[window-vibrancy](https://github.com/tauri-apps/window-vibrancy)，底层是
+[rusqlite](https://github.com/rusqlite/rusqlite) 与
+[reqwest](https://github.com/seanmonstar/reqwest)，前端是
+[React](https://github.com/facebook/react) 加 [Vite](https://github.com/vitejs/vite)。
+会话来自 [agent-session-kit](https://github.com/AstroQore/agent-session-kit)，它是我们自己的，
+与原生版共用。每个依赖及其版本都记在 `Cargo.lock` 和 `apps/desktop/pnpm-lock.yaml` 里，
+各自的许可证在各自的仓库中。
+
+这些项目与 Vibe Bar 相互独立，致谢不代表任何关联或背书。
+
 ## 许可证
 
 AGPL-3.0-only，与原生版相同。
+
+## Star 历史
+
+<p align="center">
+  <a href="https://star-history.com/#AstroQore/vibe-bar-desktop&Date">
+    <img src="https://api.star-history.com/svg?repos=AstroQore/vibe-bar-desktop&type=Date" alt="Star 历史曲线">
+  </a>
+</p>
