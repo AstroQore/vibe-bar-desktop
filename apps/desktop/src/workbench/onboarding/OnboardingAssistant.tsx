@@ -77,6 +77,7 @@ export function OnboardingAssistant({
   const [autostartError, setAutostartError] = useState<string | null>(null);
   const [pricingRows, setPricingRows] = useState<number | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const index = STEPS.findIndex((s) => s.id === step);
   const current = STEPS[index];
 
@@ -118,12 +119,18 @@ export function OnboardingAssistant({
   };
   const finish = async () => {
     setFinishing(true);
+    setFinishError(null);
     try {
       // The shared flag both clients honour; the native gate reads it too.
-      await save({ hasCompletedOnboarding: true });
+      // The sheet closes only once it is written: a flag that could not be
+      // saved would bring the assistant back on the next launch.
+      await api.completeOnboarding();
+      onSettingsChanged();
+      onClose();
+    } catch (error) {
+      setFinishError(`Could not record that setup is done: ${String(error)}`);
     } finally {
       setFinishing(false);
-      onClose();
     }
   };
 
@@ -141,7 +148,7 @@ export function OnboardingAssistant({
               <Feature title="Subscription quotas" detail="Codex, Claude Code, Gemini, Grok and a shelf of API-key plans, each with its reset countdown." />
               <Feature title="Token cost" detail="Priced locally from the agents' own session logs against a merged model price catalog." />
               <Feature title="Sessions and skills" detail="Browse, search and tidy agent sessions and shared skills from the Workbench." />
-              <Feature title="Local MCP server" detail="Your agents can ask Vibe Bar for quota and cost over a Unix socket in your home directory." />
+              <Feature title="MCP for your agents" detail="Launched with --mcp-stdio, this client answers quota and cost questions over stdio; the Unix socket in your home directory belongs to the native app." />
             </Card>
             <p className="ob-note">This takes about two minutes. Every choice here can be changed later in Settings, and the assistant is one click away under Settings → System.</p>
           </>
@@ -282,6 +289,7 @@ export function OnboardingAssistant({
           </div>
           <div className="ob-content">{content}</div>
           <div className="ob-footer">
+            {finishError ? <span className="ob-note ob-error">{finishError}</span> : null}
             {index > 0 ? <button type="button" className="wb-pill" onClick={() => go(STEPS[index - 1].id)}>Back</button> : null}
             <span className="wb-spacer" />
             {step !== "done" ? <button type="button" className="wb-pill" disabled={finishing} onClick={() => void finish()}>Skip for now</button> : null}

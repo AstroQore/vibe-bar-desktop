@@ -123,6 +123,8 @@ export async function fixtureInvoke<T>(command: string, args?: Record<string, un
       return answer(autostart);
     case "pending_update":
       return null as T;
+    case "complete_onboarding":
+      return undefined as T;
     case "check_for_update":
       return answer(null);
     case "hide_mini":

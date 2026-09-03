@@ -149,7 +149,18 @@ impl SettingsWriter {
             refused.is_empty(),
             "settings Desktop does not present: {refused:?} — add the control first, then the key"
         );
+        self.apply_unfiltered(changes)
+    }
 
+    /// The write itself — lock, re-read, merge only these keys, keep every
+    /// unknown one — without the Settings whitelist at the door. Reached by
+    /// `apply` and by the one key with its own documented writer.
+    fn apply_unfiltered(&mut self, changes: &Object) -> Result<Applied, CoreError> {
+        // The keys this write may put back: the Settings whitelist plus the
+        // keys of this very change, which is how the one key outside the
+        // whitelist reaches the file without widening what Settings owns.
+        let owned: std::collections::HashSet<String> =
+            Self::owned().into_iter().chain(changes.keys().cloned()).collect();
         let directory = self.directory().to_path_buf();
         file_lock::with_lock("settings", &directory, || {
             // A file that exists but cannot be read is not a file to rebuild.

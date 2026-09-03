@@ -654,13 +654,19 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         data_root: root.shared().display().to_string(),
         is_demo: root.is_demo(),
         native_app: native_app::detect(root),
-        onboarding: onboarding_decision(&state),
+        onboarding: state.onboarding(),
     }
 }
 
-/// The gate, and the one write it implies: an upgrade that never saw an
-/// assistant is marked completed so it is not greeted later either — the
-/// native app does the same on its side.
+/// The gate, taken once at startup before any writer of this process runs,
+/// and the one write it implies: an upgrade that never saw an assistant is
+/// marked completed so it is not greeted later either — the native app
+/// does the same on its side.
+pub(crate) fn snapshot_onboarding(state: &AppState) {
+    let decision = onboarding_decision(state);
+    state.set_onboarding(decision);
+}
+
 fn onboarding_decision(state: &AppState) -> vibebar_desktop_core::onboarding::Decision {
     use vibebar_desktop_core::onboarding::{decide_for, Decision};
     let root = state.data_root();
@@ -680,15 +686,22 @@ fn onboarding_decision(state: &AppState) -> vibebar_desktop_core::onboarding::De
 }
 
 fn record_onboarding_complete(state: &AppState) -> Result<(), String> {
-    let mut changes = serde_json::Map::new();
-    changes.insert("hasCompletedOnboarding".to_string(), serde_json::Value::Bool(true));
     state
         .settings()
         .lock()
         .map_err(|_| "settings writer unavailable".to_string())?
-        .apply(&changes)
+        .record_onboarding_completion()
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+/// The assistant's Finish or Skip: the shared flag both clients honour,
+/// through the writer's one dedicated path for it. The assistant stays open
+/// when this fails, so a flag that could not be written is not mistaken for
+/// one that was.
+#[tauri::command]
+pub fn complete_onboarding(state: State<'_, AppState>) -> Result<(), String> {
+    record_onboarding_complete(&state)
 }
 
 
