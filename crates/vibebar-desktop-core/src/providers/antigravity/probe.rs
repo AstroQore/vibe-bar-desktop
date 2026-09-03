@@ -345,29 +345,63 @@ pub fn candidates(process: &ServerProcess, sockets: &[(Loopback, u16)]) -> Vec<E
 /// Run a read-only helper and return its stdout, bounded in time and size.
 async fn run(binary: &str, args: &[&str], timeout: &Duration) -> Result<String, String> {
     const MAX_OUTPUT: usize = 4 * 1024 * 1024;
+    const MAX_STDERR: usize = 4 * 1024;
     let mut child = tokio::process::Command::new(binary)
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
         .map_err(|error| error.to_string())?;
     let stdout = child.stdout.take().ok_or("stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("stderr unavailable")?;
     let collected = tokio::time::timeout(*timeout, async {
         use tokio::io::AsyncReadExt;
-        let mut reader = tokio::io::BufReader::new(stdout).take(MAX_OUTPUT as u64);
-        let mut buffer = Vec::new();
-        let read = reader.read_to_end(&mut buffer).await;
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let read = tokio::io::BufReader::new(stdout)
+            .take(MAX_OUTPUT as u64)
+            .read_to_end(&mut out)
+            .await;
+        let _ = tokio::io::BufReader::new(stderr)
+            .take(MAX_STDERR as u64)
+            .read_to_end(&mut err)
+            .await;
         let status = child.wait().await;
-        (read, status, buffer)
+        (read, status, out, err)
     })
     .await;
-    match collected {
-        Ok((Ok(_), _, buffer)) => Ok(String::from_utf8_lossy(&buffer).into_owned()),
-        Ok((Err(error), _, _)) => Err(error.to_string()),
-        Err(_) => Err("timed out".into()),
+    let (read, status, out, err) = match collected {
+        Ok(collected) => collected,
+        Err(_) => return Err("timed out".into()),
+    };
+    read.map_err(|error| error.to_string())?;
+    // A helper that ran but refused tells us nothing about whether a server
+    // is there. Treating its empty output as "no servers" would turn a
+    // blocked `lsof` into "wait a few seconds", which waiting cannot fix.
+    match status {
+        Ok(status) if status.success() => Ok(String::from_utf8_lossy(&out).into_owned()),
+        Ok(status) => Err(format!(
+            "exited with {}{}",
+            status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or("a signal".into()),
+            first_line(&err)
+                .map(|line| format!(": {line}"))
+                .unwrap_or_default()
+        )),
+        Err(error) => Err(error.to_string()),
     }
+}
+
+/// The first line of a helper's stderr, trimmed and bounded, for an error
+/// message. Nothing here is a path this app chose, so it is safe to show.
+fn first_line(stderr: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(stderr);
+    let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
+    Some(line.chars().take(200).collect())
 }
 
 #[cfg(test)]
