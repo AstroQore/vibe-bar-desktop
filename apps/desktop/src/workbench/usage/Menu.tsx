@@ -21,6 +21,9 @@ export function Menu({
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  // Anchor the panel to whichever edge of the button keeps it inside the
+  // window: right-anchored under a button near the left edge would hang off it.
+  const [anchor, setAnchor] = useState<"left" | "right">("right");
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -44,14 +47,18 @@ export function Menu({
         className={`us-menulabel${open ? " open" : ""}`}
         aria-label={ariaLabel}
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          const rect = root.current?.getBoundingClientRect();
+          if (rect) setAnchor(rect.left + width > window.innerWidth - 12 ? "right" : "left");
+          setOpen((value) => !value);
+        }}
       >
         <span className="us-menulabel-icon">{icon}</span>
         <span className={caps ? "us-menulabel-title" : "us-menulabel-detail"}>{title}</span>
         {detail ? <span className="us-menulabel-detail">{detail}</span> : null}
       </button>
       {open ? (
-        <div className="us-menu-panel" style={{ width }} role="menu">
+        <div className="us-menu-panel" style={{ width, ...(anchor === "left" ? { left: 0, right: "auto" } : { right: 0, left: "auto" }) }} role="menu">
           {children(() => setOpen(false))}
         </div>
       ) : null}

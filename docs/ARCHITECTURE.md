@@ -302,6 +302,21 @@ used here. Remote probes, the MCP socket, the menu bar health monitor,
 WebView login, and cookie import remain the native app's; each section
 says so rather than presenting a control that would do nothing.
 
+## Showing the main window
+
+The main window is created hidden and, at startup, shown only once the
+page has committed its first render: `main.tsx` mounts a `Ready` child
+whose effect invokes `frontend_ready`, and the shell honours a show that
+was parked meanwhile. A show the user asked for — the tray, a second
+launch — is immediate, on the vibrant sheet if the page is still coming,
+because a click deserves a visible answer. A load watchdog reloads the
+page once if nothing has mounted after thirty seconds and shows the
+window anyway twenty seconds later, so the tray's Open always does
+something. The timings are deliberate: on a Mac whose CoreAudio HAL
+stalls (a crashing virtual-audio daemon is enough), WebKit's GPU process
+blocks for fifteen seconds before any page can paint, and a reload
+inside that window only restarts the wait.
+
 ## The menu bar health watchdog
 
 macOS 26 keeps a Control Center allow-list of menu bar apps. A hidden app

@@ -20,6 +20,10 @@ pub struct AppState {
     status: ServiceStatusEngine,
     cost: CostEngine,
     data_root: DataRoot,
+    /// The main page has mounted and asked to be shown. Until then a show
+    /// request is parked, so the window never appears white.
+    page_ready: std::sync::atomic::AtomicBool,
+    show_pending: std::sync::atomic::AtomicBool,
     /// What the last update check found, kept so that installing puts on the
     /// version the person was shown rather than whatever the feed serves by
     /// the time they click.
@@ -62,6 +66,8 @@ impl AppState {
             status: ServiceStatusEngine::new(data_root.clone()),
             cost: CostEngine::new(data_root.clone(), scan_home),
             data_root,
+            page_ready: std::sync::atomic::AtomicBool::new(false),
+            show_pending: std::sync::atomic::AtomicBool::new(false),
             pending_update: Pending::default(),
         }
     }
@@ -88,6 +94,23 @@ impl AppState {
 
     pub fn cadence_changed(&self) -> std::sync::Arc<tokio::sync::Notify> {
         self.cadence_changed.clone()
+    }
+
+    pub fn page_ready(&self) -> bool {
+        self.page_ready.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Record that the page mounted; returns whether a show was waiting.
+    pub fn mark_page_ready(&self) -> bool {
+        self.page_ready
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.show_pending
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+    }
+
+    pub fn park_show(&self) {
+        self.show_pending
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     pub fn data_root(&self) -> &DataRoot {
@@ -124,9 +147,7 @@ impl<T> Default for Pending<T> {
 
 impl<T> Pending<T> {
     fn hold(&self, value: T) -> u64 {
-        let id = self
-            .next
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if let Ok(mut slot) = self.slot.lock() {
             *slot = Some((id, value));
         }

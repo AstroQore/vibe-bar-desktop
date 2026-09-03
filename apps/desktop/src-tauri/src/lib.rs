@@ -5,12 +5,12 @@
 //! testable on all three platforms without a GUI.
 
 mod commands;
+mod menu_bar_health;
 mod mini_window;
-mod popover;
 mod native_app;
+mod popover;
 mod state;
 mod tray;
-mod menu_bar_health;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -43,13 +43,13 @@ pub fn run() {
         // A second launch focuses the running window instead of starting a
         // rival tray icon and refresh loop against the same data root.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            tray::show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         // Closing the one user-facing window leaves the tray refresh loop
         // alive. Explicit tray Quit still calls `app.exit(0)` and terminates
         // the process rather than requesting this window close.
@@ -78,6 +78,8 @@ pub fn run() {
             commands::set_autostart,
             commands::pricing_effective,
             commands::open_url,
+            commands::frontend_log,
+            commands::frontend_ready,
             commands::menu_bar_health,
             commands::menu_bar_check_now,
             commands::menu_bar_repair,
@@ -100,7 +102,9 @@ pub fn run() {
         // Every window's page learns whether it sits on a vibrant material,
         // so the sheets can lower their fills and let the desktop through.
         .on_page_load(|webview, payload| {
-            if payload.event() == tauri::webview::PageLoadEvent::Finished && cfg!(target_os = "macos") {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished
+                && cfg!(target_os = "macos")
+            {
                 let _ = webview.eval("document.documentElement.classList.add('vibrant')");
             }
         })
@@ -129,7 +133,9 @@ pub fn run() {
                 // popover cannot be clicked open by a script, so demo mode
                 // presents it on request.
                 if state.data_root().is_demo()
-                    && std::env::var("VIBEBAR_DEMO_SURFACE").map(|s| s.starts_with("popover")).unwrap_or(false)
+                    && std::env::var("VIBEBAR_DEMO_SURFACE")
+                        .map(|s| s.starts_with("popover"))
+                        .unwrap_or(false)
                 {
                     let handle = app.handle().clone();
                     tauri::async_runtime::spawn(async move {
@@ -148,6 +154,7 @@ pub fn run() {
             app.manage(state);
             apply_startup_action(app.handle(), &store, action);
             spawn_refresh_loop(app.handle().clone());
+            spawn_load_watchdog(app.handle().clone());
             spawn_settings_watch(app.handle().clone());
             app.manage(menu_bar_health::Watchdog::default());
             menu_bar_health::spawn(app.handle().clone());
@@ -197,16 +204,15 @@ fn apply_startup_action<R: tauri::Runtime>(
     match action {
         StartupAction::HideToTray => {
             if window.hide().is_err() {
-                let _ = window.show();
+                tray::show_main_window_when_ready(app);
             }
         }
         StartupAction::Show => {
-            let _ = window.show();
+            tray::show_main_window_when_ready(app);
         }
         StartupAction::ShowAndMarkFirstRunComplete => {
-            if window.show().is_ok() {
-                let _ = store.mark_first_run_complete();
-            }
+            tray::show_main_window_when_ready(app);
+            let _ = store.mark_first_run_complete();
         }
     }
 }
@@ -227,7 +233,9 @@ fn spawn_settings_watch(app: tauri::AppHandle) {
             tokio::time::sleep(CADENCE).await;
             let changed = {
                 let state = app.state::<AppState>();
-                let Ok(mut writer) = state.settings().lock() else { continue };
+                let Ok(mut writer) = state.settings().lock() else {
+                    continue;
+                };
                 writer.poll()
             };
             if let Some(change) = changed {
@@ -290,4 +298,31 @@ pub fn apply_glass<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, surface:
     {
         let _ = (window, surface);
     }
+}
+
+/// A page that has not mounted thirty seconds after launch is reloaded once
+/// and, if that does not help either, shown anyway so the tray's Open does
+/// something. Thirty, not six: on a Mac whose CoreAudio HAL stalls, WebKit's
+/// GPU process blocks for fifteen seconds before any page can paint, and a
+/// reload inside that window only restarts the wait.
+fn spawn_load_watchdog(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let state = app.state::<state::AppState>();
+        if state.page_ready() {
+            return;
+        }
+        eprintln!("[watchdog] main page not mounted after 30 s; reloading once");
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.reload();
+        }
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        if !state.page_ready() {
+            eprintln!("[watchdog] main page still not mounted after reload");
+            let _ = state.mark_page_ready();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+            }
+        }
+    });
 }

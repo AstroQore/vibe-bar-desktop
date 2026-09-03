@@ -212,18 +212,33 @@ fn render_title_at(settings: &SharedSettings, view: &QuotaView, now: f64) -> Str
     parts.join(" · ")
 }
 
-
 fn default_label(tool_raw: &str) -> String {
     vibebar_desktop_core::model::ToolType::from_raw(tool_raw)
         .map(|tool| tool.hierarchy().product.to_string())
         .unwrap_or_else(|| tool_raw.to_string())
 }
 
+/// Show the main window because the user asked for it. Before the page has
+/// mounted this is a blank vibrancy sheet, which is the honest answer to a
+/// click: the shell is up, the page is still coming. (On a Mac whose
+/// CoreAudio HAL stalls, WebKit's first paint can take fifteen seconds.)
 pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// Show the main window at startup — once its page has mounted, so it never
+/// opens white. A request before that is parked and honoured by
+/// `frontend_ready`; if the page never reports, the load watchdog steps in.
+pub(crate) fn show_main_window_when_ready<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<AppState>();
+    if !state.page_ready() {
+        state.park_show();
+        return;
+    }
+    show_main_window(app);
 }
 
 #[cfg(test)]
@@ -263,7 +278,12 @@ mod tests {
 
     fn unnamed_fields_settings(fields: &[&str], labels: &[(&str, &str)]) -> SharedSettings {
         let mut settings = settings_with(fields, labels);
-        let item = settings.menu_bar_items.as_mut().unwrap().first_mut().unwrap();
+        let item = settings
+            .menu_bar_items
+            .as_mut()
+            .unwrap()
+            .first_mut()
+            .unwrap();
         item.show_title = Some(false);
         settings
     }
@@ -450,7 +470,10 @@ mod tests {
         let compact = render_title_at(&unnamed_fields_settings(&fields, &labels), &view, 100.0);
         assert!(!compact.contains("ChatGPT"), "{compact}");
         assert!(!compact.contains("A W"), "{compact}");
-        assert!(compact.contains("20%") && compact.contains("66%"), "{compact}");
+        assert!(
+            compact.contains("20%") && compact.contains("66%"),
+            "{compact}"
+        );
 
         // And the labelled form is still the labelled form when nothing asked
         // for compact.
@@ -462,6 +485,9 @@ mod tests {
     fn an_empty_selection_still_says_something_clickable() {
         let view = view(vec![]);
         let title = render_title_at(&settings_with(&[], &[]), &view, 100.0);
-        assert!(!title.is_empty(), "an empty tray title is an invisible item");
+        assert!(
+            !title.is_empty(),
+            "an empty tray title is an invisible item"
+        );
     }
 }
