@@ -19,7 +19,7 @@ import {
   sortRows,
   splitHighlights,
 } from "./model";
-import { foldedLines, messageParts, rowSummary, rowTitle } from "./model";
+import { findMatches, foldedLines, messageParts, rowSummary, rowTitle } from "./model";
 
 function row(id: string, projectDir: string | undefined, lastActiveAt: number): SessionRow {
   return { provider: "codex", harness: "Codex", sessionId: id, sessionRef: id, projectDir, lastActiveAt };
@@ -179,5 +179,20 @@ describe("folding a tool result", () => {
     expect(fold.hidden).toBe(4);
     expect(fold.shown.split("\n")).toHaveLength(8);
     expect(foldedLines("one\ntwo")).toEqual({ shown: "one\ntwo", hidden: 0 });
+  });
+});
+
+describe("find over structured tool calls", () => {
+  const messages = [
+    { role: "assistant" as const, text: '[tool call] Bash {"command":"ls -lh","description":"Check the size"}' },
+    { role: "user" as const, text: "plain words" },
+  ];
+  it("matches what the reader sees — name, purpose, fields — not the log's syntax", () => {
+    expect(findMatches(messages, "Check the size")).toEqual([0]);
+    expect(findMatches(messages, "ls -lh")).toEqual([0]);
+    expect(findMatches(messages, "Bash")).toEqual([0]);
+    expect(findMatches(messages, "tool call")).toEqual([]);
+    expect(findMatches(messages, "description")).toEqual([]);
+    expect(findMatches(messages, "plain")).toEqual([1]);
   });
 });

@@ -231,12 +231,26 @@ export function roleLabel(role: TranscriptMessage["role"]): string {
 }
 
 /** Indices of messages containing the needle, case-insensitively. */
+/** What a message shows once its tool calls are structured: the prose, and
+ *  each call's name, purpose and fields. Find looks here, so a match it
+ *  reports is one the reader can see; the `[tool call]` syntax the log
+ *  holds is not on screen and not searched. */
+export function searchableText(text: string): string {
+  return messageParts(text)
+    .map((part) =>
+      part.kind === "text"
+        ? part.text
+        : [part.name, part.purpose ?? "", ...part.fields.flatMap((field) => [field.key, field.value])].join("\n"),
+    )
+    .join("\n");
+}
+
 export function findMatches(messages: TranscriptMessage[], needle: string): number[] {
   const query = needle.trim().toLowerCase();
   if (query.length === 0) return [];
   const hits: number[] = [];
   messages.forEach((message, index) => {
-    if (message.text.toLowerCase().includes(query)) hits.push(index);
+    if (searchableText(message.text).toLowerCase().includes(query)) hits.push(index);
   });
   return hits;
 }
