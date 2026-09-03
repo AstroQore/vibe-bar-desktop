@@ -50,19 +50,20 @@ function ToolCall({ part, query }: { part: Extract<MessagePart, { kind: "tool" }
   );
 }
 
-/** A tool's output: a code block that shows its first lines and folds the rest. */
 /** A tool's output: a code block that shows its first lines and folds the
  *  rest — and, for a single huge line (minified JSON, base64), the first
  *  few thousand characters, so a result never becomes a wall. */
 const RESULT_CHAR_CAP = 3000;
-function ToolResult({ text, query, hit }: { text: string; query: string; hit: boolean }) {
+function ToolResult({ text, query, active }: { text: string; query: string; active: boolean }) {
   const [open, setOpen] = useState(false);
   const fold = foldedLines(text);
   const shownLines = fold.shown.length > RESULT_CHAR_CAP ? fold.shown.slice(0, RESULT_CHAR_CAP) : fold.shown;
   const hiddenChars = text.length - shownLines.length;
-  // A match the fold would hide is shown: the find bar said "1 of 1", and
-  // the reader must be able to see it without hunting for the fold.
-  const matchHidden = hit && query.trim().length > 0 && !shownLines.toLowerCase().includes(query.trim().toLowerCase());
+  // A match the fold would hide is shown — but only for the match the find
+  // bar is on: the reader must be able to see "3 of 7" without hunting for
+  // the fold, while the other six results stay folded so a query that hits
+  // several huge outputs never unfolds them all at once.
+  const matchHidden = active && query.trim().length > 0 && !shownLines.toLowerCase().includes(query.trim().toLowerCase());
   const showAll = open || matchHidden;
   const foldLabel =
     fold.hidden > 0 ? `Show ${fold.hidden.toLocaleString("en-US")} more lines` : `Show more (${hiddenChars.toLocaleString("en-US")} chars)`;
@@ -78,7 +79,7 @@ function ToolResult({ text, query, hit }: { text: string; query: string; hit: bo
   );
 }
 
-function MessageCard({ message, index, query, hit, onCopy }: { message: TranscriptMessage; index: number; query: string; hit: boolean; onCopy: (text: string) => void }) {
+function MessageCard({ message, index, query, hit, active, onCopy }: { message: TranscriptMessage; index: number; query: string; hit: boolean; active: boolean; onCopy: (text: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const folded = collapses(message.text) && !expanded;
   const text = folded ? collapsed(message.text) : message.text;
@@ -93,7 +94,7 @@ function MessageCard({ message, index, query, hit, onCopy }: { message: Transcri
           {message.timestamp ? <span className="ss-card-time">{messageTime(message.timestamp)}</span> : null}
         </div>
         {isResult ? (
-          <ToolResult text={message.text} query={query} hit={hit} />
+          <ToolResult text={message.text} query={query} active={active} />
         ) : (
           parts.map((part, i) =>
             part.kind === "tool" ? <ToolCall key={i} part={part} query={query} /> : <div key={i} className="ss-card-text"><Highlighted text={part.text} query={query} /></div>,
@@ -249,7 +250,7 @@ export function Transcript({
             <div className="ss-placeholder">This session's log has no readable messages.</div>
           ) : (
             messages.map((message, index) => (
-              <MessageCard key={`${page?.offset ?? 0}-${index}`} message={message} index={index} query={query} hit={hits.includes(index)} onCopy={(text) => onCopy(text, "Message copied.")} />
+              <MessageCard key={`${page?.offset ?? 0}-${index}`} message={message} index={index} query={query} hit={hits.includes(index)} active={hits[hitIndex] === index} onCopy={(text) => onCopy(text, "Message copied.")} />
             ))
           )}
         </div>
