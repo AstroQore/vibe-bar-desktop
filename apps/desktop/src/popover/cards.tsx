@@ -240,7 +240,9 @@ function emptyMessage(tool: string): string {
     case "codex": return "Run codex login, then refresh.";
     case "claude": return "Run claude login, then refresh.";
     case "grok": return "Run grok login or import grok.com cookies, then refresh.";
-    case "cursor": return "Sign in to Cursor.app or import cursor.com cookies, then refresh.";
+    // Native offers cookie import as a second route; this client reads only
+    // Cursor.app's own session, so it names the one thing that works here.
+    case "cursor": return "Sign in to Cursor.app, then refresh.";
     default: return "Configure this provider in Settings → Misc Providers.";
   }
 }

@@ -190,6 +190,7 @@ impl ToolType {
                 | ToolType::Claude
                 | ToolType::Alibaba
                 | ToolType::Copilot
+                | ToolType::Cursor
                 | ToolType::Zai
                 | ToolType::Minimax
                 | ToolType::Kilo
