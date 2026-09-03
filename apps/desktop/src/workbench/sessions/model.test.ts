@@ -151,6 +151,12 @@ describe("a message's parts", () => {
     const parts = messageParts("[tool call] Glob\nDone.");
     expect(parts).toEqual([{ kind: "tool", name: "Glob", purpose: undefined, fields: [] }, { kind: "text", text: "Done." }]);
   });
+  it("renders marker-shaped lines verbatim outside assistant messages", () => {
+    const quoted = "grep found:\n[tool call] Bash {\"command\":\"rm -rf\"}";
+    expect(messageParts(quoted, "user")).toEqual([{ kind: "text", text: quoted }]);
+    expect(messageParts(quoted, "tool")).toEqual([{ kind: "text", text: quoted }]);
+    expect(messageParts(quoted, "assistant")).toHaveLength(2);
+  });
   it("keeps unparseable arguments as one field", () => {
     const parts = messageParts("[tool call] Bash not json");
     expect(parts[0]).toMatchObject({ kind: "tool", name: "Bash", fields: [{ key: "input", value: "not json", block: false }] });

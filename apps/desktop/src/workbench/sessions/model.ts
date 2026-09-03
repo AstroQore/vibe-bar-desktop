@@ -235,8 +235,8 @@ export function roleLabel(role: TranscriptMessage["role"]): string {
  *  each call's name, purpose and fields. Find looks here, so a match it
  *  reports is one the reader can see; the `[tool call]` syntax the log
  *  holds is not on screen and not searched. */
-export function searchableText(text: string): string {
-  return messageParts(text)
+export function searchableText(text: string, role: TranscriptMessage["role"] = "assistant"): string {
+  return messageParts(text, role)
     .map((part) =>
       part.kind === "text"
         ? part.text
@@ -250,7 +250,7 @@ export function findMatches(messages: TranscriptMessage[], needle: string): numb
   if (query.length === 0) return [];
   const hits: number[] = [];
   messages.forEach((message, index) => {
-    if (searchableText(message.text).toLowerCase().includes(query)) hits.push(index);
+    if (searchableText(message.text, message.role).toLowerCase().includes(query)) hits.push(index);
   });
   return hits;
 }
@@ -362,7 +362,14 @@ function toolFields(input: unknown): { purpose?: string; fields: ToolField[] } {
 /** A message's text split into prose and the tool calls the kit renders as
  *  `[tool call] Name {json}` lines, so a call reads as a name, a purpose and
  *  its arguments as fields instead of a JSON dump. */
-export function messageParts(text: string): MessagePart[] {
+/** Only the assistant makes tool calls; a `[tool call]` line quoted in a
+ *  user prompt, a system note or a tool's own output is text and stays text. */
+export function structuredRole(role: TranscriptMessage["role"]): boolean {
+  return role === "assistant";
+}
+
+export function messageParts(text: string, role: TranscriptMessage["role"] = "assistant"): MessagePart[] {
+  if (!structuredRole(role)) return text.trim() ? [{ kind: "text", text }] : [];
   const parts: MessagePart[] = [];
   let prose: string[] = [];
   const flush = () => {

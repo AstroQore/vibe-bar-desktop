@@ -40,7 +40,7 @@ function ToolCall({ part, query }: { part: Extract<MessagePart, { kind: "tool" }
         <div className="ss-tool-fields">
           {part.fields.map((field) => (
             <div key={field.key} className={`ss-tool-field${field.block ? " block" : ""}`}>
-              <span className="ss-tool-key">{field.key}</span>
+              <span className="ss-tool-key"><Highlighted text={field.key} query={query} /></span>
               {field.block ? <code className="wb-code"><Highlighted text={field.value} query={query} /></code> : <span className="ss-tool-value"><Highlighted text={field.value} query={query} /></span>}
             </div>
           ))}
@@ -74,7 +74,7 @@ function MessageCard({ message, index, query, hit, onCopy }: { message: Transcri
   const [expanded, setExpanded] = useState(false);
   const folded = collapses(message.text) && !expanded;
   const text = folded ? collapsed(message.text) : message.text;
-  const parts = useMemo(() => messageParts(text), [text]);
+  const parts = useMemo(() => messageParts(text, message.role), [text, message.role]);
   const isResult = message.role === "tool" && parts.every((part) => part.kind === "text");
   return (
     <article className={`ss-card ${message.role}${hit ? " hit" : ""}`} id={`transcript-message-${index}`}>
