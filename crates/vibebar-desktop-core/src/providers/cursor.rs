@@ -80,7 +80,10 @@ pub async fn fetch(home: &Path, client: &Client) -> Result<AccountQuota, QuotaEr
     }
 
     let snapshot = parse_summary(&summary, request_usage.as_ref(), grok_bot.as_ref());
-    if snapshot.buckets.is_empty() {
+    // The Bot lane is an add-on. A snapshot carrying only that one means the
+    // account's own quota went unread — publishing it would write the Cursor
+    // lanes out of the shared cache.
+    if !snapshot.has_primary_lane() {
         return Err(QuotaError::ParseFailure(
             "Cursor usage-summary carried no usage".into(),
         ));
@@ -252,6 +255,16 @@ pub struct Snapshot {
     pub plan: Option<String>,
 }
 
+impl Snapshot {
+    /// Whether this says anything about Cursor's own quota, as opposed to
+    /// only the Grok Bot add-on that rides along with it.
+    pub fn has_primary_lane(&self) -> bool {
+        self.buckets
+            .iter()
+            .any(|bucket| bucket.id != "grok_bot_weekly")
+    }
+}
+
 pub fn decode_summary(body: &[u8]) -> Result<UsageSummary, QuotaError> {
     serde_json::from_slice(body).map_err(|error| {
         QuotaError::ParseFailure(format!("Cursor usage-summary not parseable: {error}"))
@@ -307,7 +320,9 @@ pub fn parse_summary(
             // Legacy request plan: usage / max if present.
             let entry = request_usage.and_then(|r| r.gpt4.as_ref())?;
             let max = entry.max_request_usage.filter(|max| *max > 0)?;
-            let used = entry.num_requests_total.or(entry.num_requests).unwrap_or(0);
+            // An absent count is not a count of zero: a payload with a
+            // maximum and no usage figure says nothing about this account.
+            let used = entry.num_requests_total.or(entry.num_requests)?;
             Some(clamp_percent(used as f64 / max as f64 * 100.0))
         });
 
@@ -590,13 +605,29 @@ mod tests {
         assert!(snapshot(r#"{ "membershipType": "pro" }"#)
             .buckets
             .is_empty());
-        // A legacy entry with no maximum is no evidence either.
+        // A legacy entry with no maximum is no evidence either — and neither
+        // is one with a maximum but no count.
         let summary = decode_summary(br#"{ "individualUsage": {} }"#).unwrap();
-        let requests: RequestUsage =
-            serde_json::from_str(r#"{"gpt-4": {"numRequestsTotal": 350}}"#).unwrap();
-        assert!(parse_summary(&summary, Some(&requests), None)
-            .buckets
-            .is_empty());
+        for raw in [
+            r#"{"gpt-4": {"numRequestsTotal": 350}}"#,
+            r#"{"gpt-4": {"maxRequestUsage": 500}}"#,
+        ] {
+            let requests: RequestUsage = serde_json::from_str(raw).unwrap();
+            assert!(
+                parse_summary(&summary, Some(&requests), None)
+                    .buckets
+                    .is_empty(),
+                "{raw}"
+            );
+        }
+        // The Bot add-on alone is not the account's own quota.
+        let bot: GrokBotUsage = serde_json::from_str(
+            r#"{"usagePercent": 5.0, "nextResetTimestampUtc": "2026-09-10T00:00:00Z"}"#,
+        )
+        .unwrap();
+        let only_bot = parse_summary(&summary, None, Some(&bot));
+        assert_eq!(only_bot.buckets.len(), 1);
+        assert!(!only_bot.has_primary_lane());
     }
 
     #[test]
