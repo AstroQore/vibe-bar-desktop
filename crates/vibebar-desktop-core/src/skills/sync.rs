@@ -329,7 +329,10 @@ pub fn lexical_symlink_target(link: &Path) -> Option<PathBuf> {
     Some(catalog::lexical_normalize(&absolute))
 }
 
-fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
+/// Copy a tree, preserving symbolic links rather than following them, and
+/// refusing a tree whose links this platform cannot recreate — a copy that
+/// silently drops one is a backup that cannot restore what it claims to hold.
+pub fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
     std::fs::create_dir(destination)?;
     for entry in std::fs::read_dir(source)? {
         let entry = entry?;
@@ -337,19 +340,15 @@ fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
         let to = destination.join(entry.file_name());
         let meta = std::fs::symlink_metadata(&from)?;
         if meta.file_type().is_symlink() {
-            let target = std::fs::read_link(&from)?;
             #[cfg(unix)]
-            std::os::unix::fs::symlink(target, &to)?;
+            std::os::unix::fs::symlink(std::fs::read_link(&from)?, &to)?;
             // Recreating a link needs a privilege Windows does not grant by
-            // default, and a copy that quietly drops one is a backup that
-            // cannot be restored. Say so instead.
+            // default.
             #[cfg(not(unix))]
             return Err(std::io::Error::other(format!(
                 "{} contains a symbolic link this platform cannot copy",
                 from.display()
             )));
-            #[cfg(not(unix))]
-            std::os::windows::fs::symlink_file(target, &to)?;
         } else if meta.is_dir() {
             copy_tree(&from, &to)?;
         } else {

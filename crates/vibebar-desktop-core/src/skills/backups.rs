@@ -78,7 +78,7 @@ impl BackupManager {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o700));
         }
-        copy_tree(&source, &backup.join("skill"))?;
+        sync::copy_tree(&source, &backup.join("skill"))?;
         let metadata = Metadata {
             skill: skill.clone(),
             backup_created_at: created_at,
@@ -172,16 +172,30 @@ impl BackupManager {
             return Err(SkillError::BackupCorrupted(backup.display().to_string()));
         }
         let destination = catalog::ssot_dir(&self.home).join(&meta.skill.directory);
-        if !catalog::is_write_allowed(&destination, &self.home) {
-            return Err(SkillError::WriteOutsideAllowedRoots(
-                destination.display().to_string(),
-            ));
-        }
+        // The same fence every other SSOT mutation passes: without it a
+        // symlinked `.agents` would restore the snapshot outside the library.
+        sync::check_write_fence(&destination, &self.home)?;
         if sync::kind(&destination) != sync::Kind::Missing {
             return Err(SkillError::DestinationExists(meta.skill.directory.clone()));
         }
         sync::ensure_directory(&catalog::ssot_dir(&self.home), &self.home)?;
-        copy_tree(&source, &destination)?;
+        // Copy into a hidden sibling and rename it in whole. A copy that dies
+        // half-way would otherwise leave a partial skill that the next
+        // attempt refuses as an existing destination.
+        let staging = destination.with_file_name(format!(
+            ".{}.vibebar-restore-{}",
+            meta.skill.directory,
+            std::process::id()
+        ));
+        sync::remove_tree_without_following_links(&staging)?;
+        if let Err(error) = sync::copy_tree(&source, &staging) {
+            let _ = sync::remove_tree_without_following_links(&staging);
+            return Err(error.into());
+        }
+        if let Err(error) = std::fs::rename(&staging, &destination) {
+            let _ = sync::remove_tree_without_following_links(&staging);
+            return Err(error.into());
+        }
         Ok(meta.skill)
     }
 
@@ -234,34 +248,6 @@ fn stamp(apple_seconds: f64) -> String {
     local
         .map(|t| t.format("%Y%m%d_%H%M%S").to_string())
         .unwrap_or_else(|| "00000000_000000".to_string())
-}
-
-fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::fs::create_dir(destination)?;
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = destination.join(entry.file_name());
-        let meta = std::fs::symlink_metadata(&from)?;
-        if meta.file_type().is_symlink() {
-            let target = std::fs::read_link(&from)?;
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(target, &to)?;
-            // Recreating a link needs a privilege Windows does not grant by
-            // default, and a copy that quietly drops one is a backup that
-            // cannot be restored. Say so instead.
-            #[cfg(not(unix))]
-            return Err(std::io::Error::other(format!(
-                "{} contains a symbolic link this platform cannot copy",
-                from.display()
-            )));
-        } else if meta.is_dir() {
-            copy_tree(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -149,22 +149,36 @@ pub fn branch_from_source_url(raw: &str) -> Option<String> {
     None
 }
 
+/// `%XX` escapes, decoded from the bytes. Working on bytes rather than string
+/// slices matters: a `%` followed by a multibyte character would put a slice
+/// boundary inside it and panic.
 fn percent_decoded(raw: &str) -> String {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&raw[index + 1..index + 3], 16) {
-                out.push(byte);
-                index += 3;
-                continue;
-            }
+        if let (b'%', Some(high), Some(low)) = (
+            bytes[index],
+            bytes.get(index + 1).copied().and_then(hex_digit),
+            bytes.get(index + 2).copied().and_then(hex_digit),
+        ) {
+            out.push(high << 4 | low);
+            index += 3;
+            continue;
         }
         out.push(bytes[index]);
         index += 1;
     }
     String::from_utf8(out).unwrap_or_else(|_| raw.to_string())
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 /// RFC 3339, with or without fractional seconds, as Apple reference-date
@@ -224,6 +238,11 @@ mod tests {
         assert_eq!(
             branch_from_source_url("https://github.com/o/r?ref=release%2F2"),
             Some("release/2".into())
+        );
+        // A `%` followed by a multibyte character must not slice inside it.
+        assert_eq!(
+            branch_from_source_url("https://github.com/o/r?ref=%€uro"),
+            Some("%€uro".into())
         );
         assert_eq!(branch_from_source_url("https://github.com/o/r.git"), None);
     }

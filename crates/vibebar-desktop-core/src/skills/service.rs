@@ -233,7 +233,14 @@ impl SkillsService {
         // skill projected into the apps.
         self.registry()?;
         let mut skill = self.backups.restore(backup)?;
-        let apps: Vec<AppTarget> = skill.projected_apps();
+        // An old snapshot can name Hermes or OpenCode. Those roots exist here
+        // only so such a record decodes and can be cleaned up; restoring must
+        // not put a skill back into one.
+        let apps: Vec<AppTarget> = skill
+            .projected_apps()
+            .into_iter()
+            .filter(|app| AppTarget::MANAGED.contains(app))
+            .collect();
         skill.apps.clear();
         for app in apps {
             match self
@@ -290,7 +297,7 @@ impl SkillsService {
         if sync::kind(&staging) != Kind::Missing {
             sync::remove_tree_without_following_links(&staging)?;
         }
-        copy_tree(source, &staging)?;
+        sync::copy_tree(source, &staging)?;
         std::fs::rename(&staging, &destination)?;
         Ok(())
     }
@@ -320,34 +327,6 @@ impl SkillsService {
         }
         registry::write(&self.vibebar_dir, &registry)
     }
-}
-
-fn copy_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::fs::create_dir(destination)?;
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = destination.join(entry.file_name());
-        let meta = std::fs::symlink_metadata(&from)?;
-        if meta.file_type().is_symlink() {
-            let target = std::fs::read_link(&from)?;
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(target, &to)?;
-            // Recreating a link needs a privilege Windows does not grant by
-            // default, and a copy that quietly drops one is a backup that
-            // cannot be restored. Say so instead.
-            #[cfg(not(unix))]
-            return Err(std::io::Error::other(format!(
-                "{} contains a symbolic link this platform cannot copy",
-                from.display()
-            )));
-        } else if meta.is_dir() {
-            copy_tree(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
