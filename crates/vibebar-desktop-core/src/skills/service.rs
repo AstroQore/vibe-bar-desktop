@@ -97,6 +97,9 @@ impl SkillsService {
     ) -> Result<Skill, SkillError> {
         validator::validate(name)?;
         let source = catalog::ssot_dir(&self.home).join(name);
+        // Recording a skill means uninstall may delete it later: the tree
+        // has to pass the same fence a deletion would.
+        sync::check_write_fence(&source, &self.home)?;
         if sync::kind(&source) != Kind::Directory {
             return Err(SkillError::SourceDirectoryMissing(name.to_string()));
         }
@@ -228,11 +231,7 @@ impl SkillsService {
     fn copy_into_ssot(&self, source: &Path, name: &str) -> Result<(), SkillError> {
         let ssot = catalog::ssot_dir(&self.home);
         let destination = ssot.join(name);
-        if !catalog::is_write_allowed(&destination, &self.home) {
-            return Err(SkillError::WriteOutsideAllowedRoots(
-                destination.display().to_string(),
-            ));
-        }
+        sync::check_write_fence(&destination, &self.home)?;
         if sync::kind(&destination) != Kind::Missing {
             return Err(SkillError::DirectoryConflict(name.to_string()));
         }
@@ -249,11 +248,7 @@ impl SkillsService {
     fn remove_from_ssot(&self, name: &str) -> Result<(), SkillError> {
         validator::validate(name)?;
         let path = catalog::ssot_dir(&self.home).join(name);
-        if !catalog::is_write_allowed(&path, &self.home) {
-            return Err(SkillError::WriteOutsideAllowedRoots(
-                path.display().to_string(),
-            ));
-        }
+        sync::check_write_fence(&path, &self.home)?;
         match sync::kind(&path) {
             Kind::Missing => Ok(()),
             Kind::Directory => Ok(sync::remove_tree_without_following_links(&path)?),
@@ -374,6 +369,7 @@ mod tests {
         assert!(foreign.join("SKILL.md").exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn installing_over_an_existing_ssot_folder_is_refused_and_adoption_records_it() {
         let (dir, service, source) = setup();
@@ -397,5 +393,36 @@ mod tests {
             adopted.materialization(AppTarget::Codex).unwrap().method,
             SyncMethod::Symlink
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_never_follows_a_symlinked_agents_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        let skill = outside.join("skills/docx");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"), "---\nname: Docx\n---\n").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.path().join(".agents")).unwrap();
+        let vibebar = dir.path().join(".vibebar");
+        std::fs::create_dir_all(&vibebar).unwrap();
+        let service = SkillsService::new(dir.path().to_path_buf(), vibebar);
+        let id = SkillId::Local {
+            directory: "docx".into(),
+        };
+        // Adoption is refused up front, and a registry entry that predates
+        // the link still cannot delete through it.
+        assert!(matches!(
+            service.adopt_existing("docx", &[]),
+            Err(SkillError::WriteOutsideAllowedRoots(_))
+        ));
+        service
+            .upsert(service.make_local_skill("docx").unwrap())
+            .unwrap();
+        assert!(matches!(
+            service.uninstall(&id),
+            Err(SkillError::WriteOutsideAllowedRoots(_))
+        ));
+        assert!(skill.join("SKILL.md").is_file());
     }
 }

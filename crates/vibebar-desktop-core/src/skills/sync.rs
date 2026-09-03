@@ -34,6 +34,31 @@ pub fn kind(path: &Path) -> Kind {
     }
 }
 
+/// The write fence every mutation passes: `path` sits lexically under an
+/// allowed root, and no component between `home` and `path` is a symlink —
+/// otherwise a dotfile-managed `~/.agents` would let a delete or a copy
+/// land wherever that link points.
+pub fn check_write_fence(path: &Path, home: &Path) -> Result<(), SkillError> {
+    if !catalog::is_write_allowed(path, home) || has_symlinked_ancestor(path, home) {
+        return Err(SkillError::WriteOutsideAllowedRoots(
+            path.display().to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Whether any ancestor of `path` strictly between `home` and `path` is a
+/// symlink (lstat; nothing is followed). `home` itself is not inspected —
+/// a home reached through a link is the person's business.
+pub fn has_symlinked_ancestor(path: &Path, home: &Path) -> bool {
+    let path = catalog::lexical_normalize(path);
+    let home = catalog::lexical_normalize(home);
+    path.ancestors()
+        .skip(1)
+        .take_while(|ancestor| ancestor.starts_with(&home) && *ancestor != home.as_path())
+        .any(|ancestor| kind(ancestor) == Kind::Symlink)
+}
+
 /// Create `path` and any missing ancestors up to (never above) `root`, one
 /// component at a time, so the creation is provably confined to the
 /// terminal path — AntiGravity's `~/.gemini/config/skills` is created
@@ -102,13 +127,14 @@ impl SyncEngine {
         }
         let app_directory = catalog::skills_dir(app, &self.home);
         let destination = self.destination(name, app);
-        if !catalog::is_write_allowed(&destination, &self.home) {
-            return Err(SkillError::WriteOutsideAllowedRoots(
-                destination.display().to_string(),
-            ));
-        }
+        check_write_fence(&destination, &self.home)?;
         ensure_directory(&app_directory, &self.home)?;
         let existing = kind(&destination);
+        // A link that does not point back at this skill's SSOT directory is
+        // someone else's: it is never replaced, whatever the method.
+        if existing == Kind::Symlink && !self.is_our_link(&destination, &source) {
+            return Err(SkillError::DirectoryConflict(name.to_string()));
+        }
         match method {
             SyncMethod::Auto => match existing {
                 Kind::Missing => self
@@ -167,11 +193,7 @@ impl SyncEngine {
     ) -> Result<bool, SkillError> {
         validator::validate(name)?;
         let destination = self.destination(name, app);
-        if !catalog::is_write_allowed(&destination, &self.home) {
-            return Err(SkillError::WriteOutsideAllowedRoots(
-                destination.display().to_string(),
-            ));
-        }
+        check_write_fence(&destination, &self.home)?;
         let source = catalog::lexical_normalize(&self.source_directory(name));
         match kind(&destination) {
             Kind::Missing => Ok(true),
@@ -217,6 +239,11 @@ impl SyncEngine {
         let resolved = lexical_symlink_target(&destination)?;
         (resolved == catalog::lexical_normalize(&self.source_directory(name)))
             .then(Materialization::adopted_symlink)
+    }
+
+    fn is_our_link(&self, destination: &Path, source: &Path) -> bool {
+        lexical_symlink_target(destination).as_deref()
+            == Some(catalog::lexical_normalize(source).as_path())
     }
 
     fn link(&self, source: &Path, destination: &Path) -> Result<Materialization, SkillError> {
@@ -333,6 +360,7 @@ mod tests {
         (dir, engine)
     }
 
+    #[cfg(unix)]
     #[test]
     fn auto_links_and_unmaterialize_removes_only_our_link() {
         let (dir, engine) = home_with_skill("docx");
@@ -404,5 +432,51 @@ mod tests {
         ensure_directory(&target, dir.path()).unwrap();
         assert!(target.is_dir());
         assert!(ensure_directory(Path::new("/tmp/elsewhere"), dir.path()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_foreign_link_in_the_slot_is_never_replaced() {
+        let (dir, engine) = home_with_skill("docx");
+        let dest = engine.destination("docx", AppTarget::Codex);
+        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        std::os::unix::fs::symlink(&elsewhere, &dest).unwrap();
+        for method in [SyncMethod::Auto, SyncMethod::Symlink, SyncMethod::Copy] {
+            assert!(matches!(
+                engine.materialize("docx", AppTarget::Codex, method, None),
+                Err(SkillError::DirectoryConflict(_))
+            ));
+        }
+        assert_eq!(std::fs::read_link(&dest).unwrap(), elsewhere);
+        // Our own link is replaceable.
+        std::fs::remove_file(&dest).unwrap();
+        engine
+            .materialize("docx", AppTarget::Codex, SyncMethod::Symlink, None)
+            .unwrap();
+        engine
+            .materialize("docx", AppTarget::Codex, SyncMethod::Auto, None)
+            .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_ancestor_fails_the_write_fence() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(outside.join("skills/docx")).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.path().join(".agents")).unwrap();
+        let path = dir.path().join(".agents/skills/docx");
+        assert!(has_symlinked_ancestor(&path, dir.path()));
+        assert!(matches!(
+            check_write_fence(&path, dir.path()),
+            Err(SkillError::WriteOutsideAllowedRoots(_))
+        ));
+        // A real tree passes; the home itself may be reached through a link.
+        let real = tempfile::tempdir().unwrap();
+        let ssot = real.path().join(".agents/skills/docx");
+        std::fs::create_dir_all(&ssot).unwrap();
+        assert!(!has_symlinked_ancestor(&ssot, real.path()));
+        check_write_fence(&ssot, real.path()).unwrap();
     }
 }

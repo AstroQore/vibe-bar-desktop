@@ -197,8 +197,9 @@ pub fn registry_file(vibebar_dir: &Path) -> PathBuf {
 
 /// Read the registry leniently: an entry that does not decode is dropped
 /// (the native reader does the same), a missing file is an empty registry,
-/// and a file that cannot be parsed at all is an error rather than a fresh
-/// default that would overwrite it.
+/// and a file that cannot be parsed at all, or carries a schema this build
+/// does not know, is an error rather than a fresh default that would
+/// overwrite it.
 pub fn read(vibebar_dir: &Path) -> Result<Registry, SkillError> {
     let path = registry_file(vibebar_dir);
     let bytes = match std::fs::read(&path) {
@@ -217,6 +218,12 @@ pub fn read(vibebar_dir: &Path) -> Result<Registry, SkillError> {
         .get("schemaVersion")
         .and_then(|v| v.as_u64())
         .unwrap_or(1) as u32;
+    // Fail closed on a newer document: every write here serializes only the
+    // fields this build knows, so reading a newer schema would later erase
+    // whatever the other client added.
+    if schema_version != SCHEMA_VERSION {
+        return Err(SkillError::UnsupportedRegistrySchema(schema_version));
+    }
     let skills = object
         .get("skills")
         .and_then(|v| v.as_array())
@@ -309,5 +316,19 @@ mod tests {
             "pretty, keys sorted: {text}"
         );
         assert!(text.contains("\"future-app\""));
+    }
+
+    #[test]
+    fn a_newer_schema_is_refused_rather_than_rewritten() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            registry_file(dir.path()),
+            r#"{"schemaVersion":2,"skills":[],"future":{"kept":true}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read(dir.path()),
+            Err(SkillError::UnsupportedRegistrySchema(2))
+        ));
     }
 }

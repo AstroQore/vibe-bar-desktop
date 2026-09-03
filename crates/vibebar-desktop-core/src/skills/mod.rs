@@ -46,6 +46,8 @@ pub enum SkillError {
     BackupNotFound(String),
     #[error("the backup {0} is unreadable")]
     BackupCorrupted(String),
+    #[error("skills.json is schema {0}; this build understands schema 1 and will not rewrite it")]
+    UnsupportedRegistrySchema(u32),
     #[error("{0}")]
     Io(String),
 }

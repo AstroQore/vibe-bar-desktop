@@ -418,6 +418,7 @@ fn merge_registry(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     #[test]
     fn the_registry_lays_over_the_scan() {
         use crate::skills::catalog::AppTarget;
