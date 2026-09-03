@@ -1,97 +1,329 @@
-# Vibe Bar Desktop
+<p align="center">
+  <img src="apps/desktop/src-tauri/icons/128x128@2x.png" alt="Vibe Bar Desktop" width="128">
+</p>
 
-The cross-platform client of [Vibe Bar](https://github.com/AstroQore/vibe-bar) —
-AI subscription quota and local agent sessions, in a tray icon and a small
-window, on macOS, Windows, and Linux.
+<h1 align="center">Vibe Bar Desktop</h1>
 
-> **Preview (0.x).** This is one product with two client implementations. The
-> macOS native app is the complete one today; Desktop is being built up to it.
-> Until it reaches feature parity, Desktop carries its own `0.x` version and
-> does **not** share the native app's release train. At parity it adopts the
-> shared `MAJOR.MINOR.PATCH` and every feature release ships from both
+<p align="center">
+  <strong>The same Vibe Bar, on Windows, Linux and macOS.</strong><br>
+  <sub>AI subscription quotas, agent sessions, spend and skills — in a tray icon, a small window and a Workbench, on one data root shared with the native app.</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/AstroQore/vibe-bar-desktop/actions/workflows/ci.yml"><img src="https://github.com/AstroQore/vibe-bar-desktop/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/AstroQore/vibe-bar-desktop/releases"><img src="https://img.shields.io/github/v/release/AstroQore/vibe-bar-desktop?display_name=tag&sort=semver&include_prereleases" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-000000?logo=tauri&logoColor=white" alt="macOS, Windows, Linux">
+  <img src="https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white" alt="Tauri 2">
+  <img src="https://img.shields.io/badge/Rust-stable-000000?logo=rust" alt="Rust">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" alt="AGPL-3.0-only"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/AstroQore/vibe-bar-desktop/releases"><strong>Download</strong></a>
+  · <a href="#what-it-does">What it does</a>
+  · <a href="#the-workbench">The Workbench</a>
+  · <a href="#feature-parity">Feature parity</a>
+  · <a href="#build-from-source">Build from source</a>
+  · <a href="#agents-mcp">Agents (MCP)</a>
+  · <a href="README.zh-CN.md">中文</a>
+</p>
+
+Vibe Bar Desktop is the cross-platform client of
+[Vibe Bar](https://github.com/AstroQore/vibe-bar), the local capacity control
+plane for people who run coding agents all day. It shows how much of each AI
+subscription is left and whether it will last until the reset, what the agents
+on this machine are spending, which sessions and skills live here, and it
+answers the same questions to your agents over MCP.
+
+It is one product with two client implementations. The macOS app is native
+AppKit and SwiftUI; Desktop is Tauri 2, Rust and React, and runs on Windows
+and Linux as well. On a Mac that has both, they read one `~/.vibebar` — one
+set of provider accounts, one set of settings, no second copy to maintain —
+and Desktop runs standalone on a machine that has never had the native app.
+
+> **Preview (0.x).** Desktop is being built up to the native app and carries
+> its own `0.x` version until it gets there; the [parity table](#feature-parity)
+> is the honest map of what is and is not ported. At parity both clients adopt
+> one shared `MAJOR.MINOR` and every feature release ships from both
 > repositories together.
 
-## What it does today
+![The Overview: cost and status at the top, one quota card per provider below, each bar carrying its forecast](docs/screenshots/popover-overview-light.png)
 
-- **Quota.** Fetches Codex and Claude with their CLI credentials, plus Alibaba
-  Coding Plan, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, and Warp with
-  explicit credentials or their official CLI. The other 15 providers are read
-  from the shared data root and labeled `shared data`, so the UI never
-  overstates how fresh a number is.
-- **Upcoming resets.** Sorts provider-declared reset times from the current
-  quota view, while keeping expired or future-dated observations visibly
-  separate, and carries each one's forecast. Nothing is manufactured: a
-  forecast appears only where enough observations have been recorded to
-  support one, and says so when they have not.
-- **Tray.** One line of the fields you picked, with your labels and your
-  remaining-vs-used preference — read from the same settings the macOS menu
-  bar uses.
-- **Sessions.** Search and read local agent sessions. Uses the shared session
-  index when one exists (every harness it covers, full-text search), and falls
-  back to scanning Codex and Claude Code logs directly when it does not.
-- **Presentation settings.** Applies the shared used/remaining mode, provider
-  visibility/order, plan labels, and menu-bar field labels. The Settings page
-  shows the effective values, and the three it presents — percent shown,
-  refresh interval, menu-bar colour basis — are editable and save to the shared
-  `settings.json` under a lock, keeping every key this build does not know.
-  When the native app replaces a choice made here, the page says so.
-- **Service status.** Reads cached native status immediately, then refreshes
-  OpenAI-wide, Claude, Google AI, and Cursor status from public feeds without credentials.
-  A fresh Desktop last-good snapshot is private to `client/desktop/`; shared
-  `service_status.json` remains read-only.
-- **Local usage and cost.** Scans bounded Codex, Claude, and Gemini CLI session JSONL files
-  into a priced-usage view, broken down by harness, by model, and by the company
-  that bills for it. Honours the shared Cost Data privacy setting: with it on,
-  nothing is scanned, any snapshot this client saved is deleted, and the window
-  says the data is hidden rather than showing zeroes. A completed aggregate
-  snapshot persists only under
-  `client/desktop/`; unknown models stay visibly unpriced and no shared ledger
-  or history is written.
-- **Skills inventory.** Lists skills from the fixed local SSOT and harness
-  roots, with verified projections and health warnings. It never installs,
-  deletes, syncs, or executes skill content.
+<details>
+<summary>The same Overview in the dark appearance</summary>
 
-API-key adapters read credentials from the process environment and never
-persist them: `DASHSCOPE_API_KEY` (or `ALIBABA_API_KEY`), `Z_AI_API_KEY`,
-`COPILOT_TOKEN`, `MINIMAX_CODING_API_KEY` (or `MINIMAX_API_KEY`),
-`KILO_API_KEY`, `OPENROUTER_API_KEY`, and `WARP_API_KEY` (or `WARP_TOKEN`).
-Kilo can also read its CLI login file; Kiro runs `kiro-cli` non-interactively.
-Endpoint/region overrides retain each provider's standard env names; see the
-corresponding module in `providers/`.
+![The Overview in the dark appearance](docs/screenshots/popover-overview.png)
 
-## One product, two clients
+</details>
+
+## What it does
+
+| The question | Desktop's answer |
+| --- | --- |
+| **How much is left, and will it last?** | Every quota card carries its reset countdown and a personal forecast built from the observations recorded here: run-out or surplus, with a verdict that admits when it is still learning. Nothing is manufactured — a forecast appears only where enough cycles support one. |
+| **Which of these numbers is fresh?** | Codex and Claude are fetched with the credentials their CLIs already keep, eight more plans with an explicit key or their own CLI, and the remaining providers are read from the shared cache and labelled `shared data`. The UI never overstates how fresh a number is. |
+| **Where did the work go?** | The Workbench prices the Codex, Claude Code and Gemini CLI session logs on this machine into a usage view by harness, by model and by the company that bills for it, and indexes every local agent session for full-text search, reading and one-click resume. |
+| **Can my agents use this context?** | The same binary, launched with `--mcp-stdio`, answers quota, session, status, pricing and cost questions over JSON-RPC on stdin/stdout — no port, no socket, no credentials. |
+
+## Quota, one page per company
+
+Each company has a page: its plans and windows, the reset history strip, the
+forecast explained in words, and that provider's public service status.
+Misc providers — the coding and token plans with their own dashboards — and
+remote machines have pages of their own.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/popover-openai-light.png" alt="The OpenAI page: ChatGPT Agentic and Codex Spark windows with their reset history and forecast"><br><sub><strong>OpenAI</strong> — ChatGPT Agentic and Spark, each window with its forecast</sub></td>
+    <td width="50%"><img src="docs/screenshots/popover-anthropic-light.png" alt="The Anthropic page: 5 Hours, Weekly and Fable windows with their forecasts"><br><sub><strong>Anthropic</strong> — 5 Hours, Weekly and the per-model windows</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/popover-google-light.png" alt="The Google AI page: Gemini Web and AntiGravity quotas"><br><sub><strong>Google AI</strong> — Gemini Web and AntiGravity</sub></td>
+    <td width="50%"><img src="docs/screenshots/popover-spacexai-light.png" alt="The SpaceXAI page: Grok, Cursor and Grok Bot quotas"><br><sub><strong>SpaceXAI</strong> — Grok, Cursor and Grok Bot</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/popover-misc-light.png" alt="The Misc providers page: coding and token plans, each with its quota and reset"><br><sub><strong>Misc providers</strong> — coding and token plans with their own dashboards</sub></td>
+    <td width="50%"><img src="docs/screenshots/popover-machines-light.png" alt="The Machines page, explaining end-to-end encrypted remote usage"><br><sub><strong>Machines</strong> — remote usage, end-to-end encrypted to this machine</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary>The company pages in the dark appearance</summary>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/popover-openai.png" alt="The OpenAI page in the dark appearance"></td>
+    <td width="50%"><img src="docs/screenshots/popover-anthropic.png" alt="The Anthropic page in the dark appearance"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/popover-google.png" alt="The Google AI page in the dark appearance"></td>
+    <td width="50%"><img src="docs/screenshots/popover-spacexai.png" alt="The SpaceXAI page in the dark appearance"></td>
+  </tr>
+</table>
+
+</details>
+
+## Mini window
+
+A small always-available window with the fields you chose, in any of the
+seven layouts the native app has: regular, compact, ledger, tile, focus, rail,
+and strip in its roomy, two-line and narrow forms. The window fits what it
+draws and follows the shared `miniWindow` settings, so a layout chosen on one
+client is the layout on the other.
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/mini-regular-light.png" alt="The regular mini layout: quota rings"><br><sub><strong>Regular</strong></sub></td>
+    <td width="33%"><img src="docs/screenshots/mini-compact-light.png" alt="The compact mini layout"><br><sub><strong>Compact</strong></sub></td>
+    <td width="33%"><img src="docs/screenshots/mini-ledger-light.png" alt="The ledger mini layout: one row per field"><br><sub><strong>Ledger</strong></sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/mini-tile-light.png" alt="The tile mini layout"><br><sub><strong>Tile</strong></sub></td>
+    <td width="33%"><img src="docs/screenshots/mini-focus-light.png" alt="The focus mini layout: one field, large"><br><sub><strong>Focus</strong></sub></td>
+    <td width="33%"><img src="docs/screenshots/mini-rail-light.png" alt="The rail mini layout: a lane with ticks and markers"><br><sub><strong>Rail</strong></sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/mini-strip-roomy-light.png" alt="The strip mini layout, roomy"><br><sub><strong>Strip</strong> — roomy</sub></td>
+    <td width="33%"><img src="docs/screenshots/mini-strip-twoLine-light.png" alt="The strip mini layout, two lines"><br><sub><strong>Strip</strong> — two lines</sub></td>
+    <td width="33%"><img src="docs/screenshots/mini-strip-narrow-light.png" alt="The strip mini layout, narrow"><br><sub><strong>Strip</strong> — narrow</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary>The mini layouts in the dark appearance</summary>
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/mini-regular.png" alt="Regular, dark"></td>
+    <td width="33%"><img src="docs/screenshots/mini-compact.png" alt="Compact, dark"></td>
+    <td width="33%"><img src="docs/screenshots/mini-ledger.png" alt="Ledger, dark"></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/mini-tile.png" alt="Tile, dark"></td>
+    <td width="33%"><img src="docs/screenshots/mini-focus.png" alt="Focus, dark"></td>
+    <td width="33%"><img src="docs/screenshots/mini-rail.png" alt="Rail, dark"></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/mini-strip-roomy.png" alt="Strip roomy, dark"></td>
+    <td width="33%"><img src="docs/screenshots/mini-strip-twoLine.png" alt="Strip two lines, dark"></td>
+    <td width="33%"><img src="docs/screenshots/mini-strip-narrow.png" alt="Strip narrow, dark"></td>
+  </tr>
+</table>
+
+</details>
+
+## The Workbench
+
+A larger window for the questions a glance cannot answer. Five pages, one
+[design language](docs/DESIGN.md) — the same porcelain the native Workbench
+is built from, with its tokens, type ramp, radii and provider accents carried
+over exactly rather than approximated.
+
+### Usage Stats
+
+What the agents on this machine spent, priced locally from their own session
+logs: hero cards for the period, a trend chart, distribution donuts by harness,
+model and billing company, and a breakdown table. The harness filters are the
+shared pill; the period and grouping are one control each.
+
+![Usage Stats: hero cards, trend chart, distribution and breakdown](docs/screenshots/workbench-usage-light.png)
+
+<details>
+<summary>Usage Stats in the dark appearance</summary>
+
+![Usage Stats in the dark appearance](docs/screenshots/workbench-usage.png)
+
+</details>
+
+### Sessions
+
+Every local agent session, searchable in full text with a scope of your
+choosing, filtered by folder, company, harness and time. A transcript opens beside the list with
+tool calls and results folded, find-in-transcript with a pager, and a resume
+command for the harness that made it. Sessions can be deleted from here —
+sidecars first, never through a symlink, only below the roots the session kit
+recognises.
+
+![Sessions: the filter toolbar, the session list and an open transcript](docs/screenshots/workbench-sessions-light.png)
+
+<details>
+<summary>Sessions in the dark appearance</summary>
+
+![Sessions in the dark appearance](docs/screenshots/workbench-sessions.png)
+
+</details>
+
+### Resets
+
+When capacity comes back. The refill horizon shows the next seven days as
+columns, one card per window carries its forecast, the calendar lays the
+cycles out by day, and the run-out risk list ranks the windows the forecast
+says will not last.
+
+![Resets: refill horizon, cycle cards, the reset calendar and run-out risk](docs/screenshots/workbench-resets-light.png)
+
+<details>
+<summary>Resets in the dark appearance</summary>
+
+![Resets in the dark appearance](docs/screenshots/workbench-resets.png)
+
+</details>
+
+### Skills
+
+One skill library under `~/.agents/skills`, projected into six agent CLIs.
+The page shows every skill with a slot per app — linked, copied, foreign or
+missing — and lets you toggle projections, install a skill from a folder,
+record one that is already there, uninstall with a snapshot first, and
+restore from the backups. The native sync engine's rules are applied verbatim:
+a name is one safe path segment, every write sits under an allowed root,
+nothing is deleted through a symlink.
+
+![Skills: the library with a projection slot per app](docs/screenshots/workbench-skills-light.png)
+
+<details>
+<summary>Skills in the dark appearance</summary>
+
+![Skills in the dark appearance](docs/screenshots/workbench-skills.png)
+
+</details>
+
+## Settings that stay shared
+
+Settings are read from, and the ones this client presents written back to,
+the same `settings.json` the native app uses — under a lock, putting back only
+the keys you changed and keeping every key this build does not know. When the
+native app replaces a choice made here, the page says so. On first run a
+short assistant walks through subscriptions, browser cookies, other plans,
+model pricing and launch at login, and marks itself complete in the shared
+settings so the native app will not ask again.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings-system-light.png" alt="Settings › System: refresh cadence, update channel, launch at login, what this client writes"><br><sub><strong>System</strong> — refresh, updates, launch at login, and what this client writes where</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-menubar-light.png" alt="Settings › Menu bar: the fields the tray shows and their labels"><br><sub><strong>Menu bar</strong> — the fields the tray shows, in your words</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings-costData-light.png" alt="Settings › Cost data: the privacy switch and the scan scope"><br><sub><strong>Cost data</strong> — the privacy switch that stops every scan</sub></td>
+    <td width="50%"><img src="docs/screenshots/onboarding-welcome-light.png" alt="The first-run assistant over the Workbench"><br><sub><strong>First run</strong> — seven short steps, shared completion flag</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary>Settings in the dark appearance</summary>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings-system.png" alt="System settings, dark"></td>
+    <td width="50%"><img src="docs/screenshots/settings-menuBarHealth.png" alt="Menu Bar Health settings, dark"></td>
+  </tr>
+</table>
+
+</details>
+
+## Agents (MCP)
+
+Run the Desktop binary with `--mcp-stdio` and it serves `quota.get`,
+`sessions.list`, `sessions.search`, `status.get`, `pricing.effective` and
+`cost.snapshot` over JSON-RPC on stdin/stdout. This mode never refreshes
+providers, scans usage, writes configuration, or connects to the native app;
+it answers from what the last run recorded. Session calls accept the native
+provider and harness filters, and listing supports RFC 3339 `since`, `offset`
+and a bounded `limit`. The Unix socket in your home directory belongs to the
+native app.
+
+## What Desktop reads, and the five things it writes
 
 Desktop **depends on no part of the native app**: not its process, not its
-MCP socket, not its binaries. On a Mac that has never seen the native app it
-discovers its own data, and works.
+MCP socket, not its binaries. Everything it shows is read from files already
+on the machine — the CLIs' own credentials and session logs, and the shared
+`~/.vibebar` root.
 
-But Vibe Bar data belongs to the *user*, not to one client. On the same Mac,
-both clients read the same `~/.vibebar`. Desktop shows the providers the
-native app tracks even though it has no adapter for them yet, and honours the
-menu-bar fields and labels you configured once.
-
-In this preview that sharing is read-only, with one exception:
-
-| | Shared data root | `client/desktop/` |
+| Surface | Quota and status | Cost and activity |
 | --- | --- | --- |
-| Read | yes | yes |
-| Write | **only `settings.json`** | yes |
+| ChatGPT / Codex | Codex subscription windows, OpenAI status | `~/.codex/sessions/**/*.jsonl` |
+| Claude Code | 5 Hours, Weekly, per-model weekly, Anthropic status | `~/.claude/projects/**/*.jsonl` |
+| Gemini + AntiGravity | Read from the shared cache | Gemini CLI session logs |
+| Grok + Cursor | Read from the shared cache; Cursor status | — |
+| Coding and token plans | Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter and Warp with an explicit key or their CLI; the rest from the shared cache | — |
 
-Every other shared store stays read-only, and for the original reason: writing
-one needs a cross-process storage contract — a lease, schema negotiation,
-fail-closed migrations — that exists on neither side, and several of them
-respond to a schema mismatch by dropping data.
+Vibe Bar data belongs to the person, not to one client, and a second client
+writing into a store the first one owns is how data gets lost. So Desktop
+writes exactly five things into the shared root, each through one documented
+writer with the native app's rules:
 
-`settings.json` is the exception because it now has that contract, in
-[docs/contracts/settings-write-v1.md](docs/contracts/settings-write-v1.md): an
-advisory `flock(2)` both clients take, a merge that puts back only the keys the
-writer changed and preserves every key it does not know, and a whitelist of the
-settings Desktop's own Settings presents. See
-[docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
+1. **`settings.json`** — under an advisory lock, a merge that puts back only
+   the keys this client changed and keeps every key it does not know
+   ([the contract](docs/contracts/settings-write-v1.md)).
+2. **The quota cache** — its own fresh observations, in the file layout the
+   native app reads.
+3. **The Control Center allow-list repair** — the same script the native app
+   runs when macOS 26 hides a menu-bar icon.
+4. **Whole-session deletion** — through the session kit's deleter, only at
+   your request, only below the roots it recognises, never through a symlink.
+5. **The skill library** — `~/.agents/skills`, the managed app directories,
+   the registry and its backups, through the skills service and nothing else.
 
-[HANDOVER.md](HANDOVER.md) is the map from here to parity: what the native
-app does that Desktop does not, in what order to close the gap, and the bugs
-this preview found in itself along the way.
+Everything else — the session index, the usage ledger, cost history — is read
+here and written by the native app until it too has a writer with rules like
+those. An unreadable or unknown-version store degrades to "not available"
+with an explanation; Desktop never repairs, migrates or rebuilds another
+client's data. The full reasoning is in
+[docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md) and the rules in
+[AGENTS.md](AGENTS.md).
+
+## About the screenshots
+
+Every picture on this page is this app's real UI, rendered in a browser from
+the same React code the Tauri window loads, over a flat backdrop, in both
+appearances. The data is the app's built-in fixtures — the numbers one
+maintainer's usage shaped, with every account, path, machine and session
+replaced or written for the occasion — so nothing here identifies a person,
+and no refresh left the machine.
+[`apps/desktop/scripts/capture-screenshots.mjs`](apps/desktop/scripts/capture-screenshots.mjs)
+produces the whole set (`pnpm screenshots`), so the gallery is regenerated,
+not retouched. The native app's screenshots come from its own demo mode; the
+two galleries are the same fixtures seen through the two clients.
 
 ## Feature parity
 
@@ -109,8 +341,9 @@ Two things are exempt from parity, and only these two:
   platform's autostart. Those are the same feature, built differently.
 
 **This table lists only where the two differ.** Anything not here is at
-parity — the quota hierarchy, tray percentages with your own fields and
-labels, session search and transcripts, mini-window geometry, and so on. A new
+parity — the quota hierarchy, tray fields with your own labels, session search
+and transcripts, session deletion, the mini-window layouts, the reset
+calendar, the first-run assistant, in-app updates, launch at login. A new
 feature on either side must appear here until it lands on both.
 
 **Until then.** Desktop is `0.x` and this contract is not yet in force: the
@@ -124,64 +357,52 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Feature | macOS native | Desktop | Note |
 | --- | :---: | :---: | --- |
 | **Quota** |
-| Live provider fetch | ● 25 | ◐ 10 | Desktop reads the rest from the shared cache, labelled as such |
-| Browser-cookie providers | ● | ○ | Windows blocks third-party cookie reads; explicit import there |
+| Live provider fetch | ● 25 | ◐ 10 | Codex, Claude, Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, Warp. The rest is read from the shared cache and labelled as such |
+| Browser-cookie providers | ● | ○ | Gemini, Grok, Cursor and the cookie-slot plans need a cookie reader; Windows blocks third-party cookie reads, so it will be an explicit import there |
 | Observation and forecast history | ● | ◐ | Desktop records observations and draws the reset-history strip; the quota history chart with its brush is not ported |
-| Service status sources | ● 5 | ● 4 | |
+| Service status sources | ● 5 | ● 4 | OpenAI, Anthropic, Google, Cursor; xAI's page is scraped and not ported |
 | **Menu bar / tray** |
-| Rich-text and two-row title | ● | — | Windows and Linux trays have no title at all, only an icon |
-| Field editor with style scopes | ● | ○ | |
-| Control Center allow-list watchdog | ● | — | macOS 26 platform behaviour |
+| Rich-text and two-row title | ● | — | Windows and Linux trays have no title at all, only an icon; the macOS tray shows one line |
+| Field editor with style scopes | ● | ○ | Fields and labels are read from the shared settings and edited on the Menu bar page without the style scopes |
+| Control Center allow-list watchdog | ● | ◐ | Desktop runs the same repair script; the watchdog that notices the icon is gone is native-only |
 | **Main window** |
-| Provider detail pages | ● 4 | ◐ | Desktop has a page per company with its quota and status; native's also carry that provider's cost cards and history charts |
-| Arrangeable module waterfall | ● 11 | ○ | |
+| Provider detail pages | ● 4 | ◐ | Each company has its page with quota, forecast explanation, reset history and status; native's also carry that provider's cost cards and history charts |
+| Arrangeable module waterfall | ● 11 | ◐ | The Overview draws the modules in the shared order; arranging them is native-only |
 | Layout editor with presets | ● | ○ | |
 | **Mini window** |
-| Layouts | ● 7 | ◐ 6 | all but strip. The rail has its lane, ticks, markers and legend; native's hover card is not ported yet. Follows the shared `miniWindow.displayMode`, falling back to regular for strip |
-| Multiple independent windows | ● | ○ | |
-| Window fits the layout | ● | ● | Both size the mini window to what it is drawing and clamp it to the screen. A layout wider than the monitor is cropped on both, which is the limit rather than a choice |
+| Multiple independent windows | ● | ○ | One mini window, seven layouts |
 | Translucent surface | ● Liquid Glass | ○ | Planned as a platform blur, deliberately not a copy. The window is currently opaque and undecorated |
 | **Workbench** |
-| Usage charts, donuts, breakdown tables | ● | ○ | Desktop draws the reset-history strip but no usage charts |
-| Session deletion | ● | ○ | |
-| Resets: risk view | ● | ◐ | Desktop lists resets with each one's forecast; the calendar and the risk grouping are not ported |
-| Skills: install, import, discover, backups | ● | ◐ | Desktop is a read-only inventory |
+| Skills: install, import, discover, backups | ● | ◐ | Install from a folder, import, projections, uninstall and backups are here; repository install, discover and the harness activation patches stay native for now |
+| Session hand-off to a terminal | ● | ◐ | Desktop copies the resume command; native opens Terminal with it |
 | **Cost and usage** |
 | Local usage scan | ● 7 harnesses | ◐ 3 | Codex, Claude Code, Gemini CLI. Counts harnesses with a local scanner: Cursor's usage comes from dashboard events and Grok Bot has no usage source at all, so neither is a local scan on either side |
-| Per-request ledger, multi-source pricing, history | ● | ○ | Desktop keeps an in-memory aggregate |
-| Spend by billing company | ● | ● | Both group by company rather than by harness: two harnesses can bill one company |
+| Per-request ledger, multi-source pricing, history | ● | ○ | Desktop keeps a priced aggregate under `client/desktop/` and a static price table; no shared ledger or history is written |
 | **Settings** |
-| Writable | ● | ◐ 3 | The cross-client write contract is in place (`docs/contracts/settings-write-v1.md`): a lock, a merge that keeps every key the writer does not know, and a notice when the other client replaces a choice made here. Desktop writes the three settings its own Settings presents |
-| Provider credential panes | ● 25 | ○ | |
+| Writable | ● | ◐ 12 keys | The keys Desktop's own Settings presents, through the cross-client write contract; provider credentials and the layout editor are not among them |
+| Provider credential panes | ● 25 | ○ | API-key adapters read the process environment; nothing is persisted |
 | **Platform** |
-| MCP tools | ● 12 | ◐ 6 | Read-only subset. `cost.snapshot` reports what the last local scan found, in the shape native's does |
-| Remote probe sync | ● | ○ | |
-| Launch at login | ● | ○ | |
-| In-app updates | ● Sparkle | ○ | Designed, not built: [docs/RELEASE.md](docs/RELEASE.md). Tauri updater, Main and Dev endpoints on an `updates` branch, channel read from the shared `updateChannel` |
-| App Sandbox | ○ by design | ○ for now | Neither ships sandboxed. Native **cannot**: reading browser cookies, probing AntiGravity with `ps`/`lsof`, and driving Terminal by Apple events are all blocked inside it, and the release script refuses a sandboxed bundle. Desktop needs none of that while it stays read-only, so it is the one that *could* — an option that closes as soon as it grows cookie providers |
-| Windows and Linux | — | ◐ | Core is tested on all three and the credential and scan paths are portable; the GUI has only had a macOS pass. Both are release targets from the first version — see [docs/RELEASE.md](docs/RELEASE.md) |
+| MCP tools | ● 12 | ◐ 6 | Read-only subset over stdio; the Unix socket is native's |
+| Remote probe sync | ● | ○ | The Machines page explains the model; no relay client yet |
+| App Sandbox | ○ by design | ○ for now | Neither ships sandboxed. Native **cannot**: reading browser cookies, probing AntiGravity and driving Terminal are all blocked inside it. Desktop has no reason yet, and would lose the same cookie reads |
+| Windows and Linux | — | ◐ | The core crate is tested on all three on every pull request and the credential and scan paths are portable; the GUI has had its end-to-end pass on macOS only. Both are release targets — see [docs/RELEASE.md](docs/RELEASE.md) |
 
-## Layout
+[HANDOVER.md](HANDOVER.md) is the map from here to parity: what the native
+app does that Desktop does not, in what order to close the gap, and the bugs
+this preview found in itself along the way.
 
-```
-crates/vibebar-desktop-core/   Platform-independent core: shared-data readers,
-                               provider adapters, refresh orchestration.
-                               No Tauri, no GUI, tested on all three platforms.
-apps/desktop/                  React + TypeScript UI
-apps/desktop/src-tauri/        Tauri shell: window, tray, IPC
-docs/                          Architecture, the shared-storage rules, and
-                               the design record for cross-client writes
-```
+## Design language
 
-The `core` crate is tested on macOS, Linux, and Windows on every pull request.
-The app job — workspace tests, frontend build, and the Tauri build — runs on
-macOS only, and the GUI has had its end-to-end pass there only.
+The Workbench, the popover and the mini window are drawn from one spec,
+[docs/DESIGN.md](docs/DESIGN.md): the native Workbench's porcelain — its
+window and sidebar tints, the 0.5px hairline, the accent, the provider colours,
+the type ramp, the radii and the single 26px control height — lifted from the
+Swift source rather than eyeballed, with the shared pieces (pills, capsules,
+segmented controls, code blocks, switches) implemented once in
+[`porcelain.css`](apps/desktop/src/workbench/porcelain.css). A page that needs
+a new piece extends the spec first.
 
-Session reading comes from [`agent-session-core`](https://github.com/AstroQore/agent-session-kit),
-the Rust lane of `agent-session-kit` — the same kit the native app's Swift
-implementation uses, so both clients read sessions by one set of rules.
-
-## Build
+## Build from source
 
 Requires Rust (stable), Node 22.13+, pnpm, and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
@@ -193,35 +414,55 @@ pnpm tauri dev      # run
 pnpm tauri build    # package
 ```
 
-### Read-only MCP stdio
-
-Run the Desktop binary with `--mcp-stdio` to serve cached `quota.get`,
-`sessions.list`, `sessions.search`, `status.get`, and `pricing.effective` over
-JSON-RPC stdin/stdout. This mode never refreshes providers, scans usage, writes
-configuration, or connects to the native app. `status.get` returns only
-Desktop's fresh private last-good snapshot; `pricing.effective` returns the
-static Codex, Claude, and Gemini table used by the local cost scanner.
-Session calls accept the native provider and harness filters; listing also
-supports RFC3339 `since`, `offset`, and bounded `limit` pagination.
-
-Verification:
+Verification, the same four steps CI runs:
 
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cd apps/desktop && pnpm typecheck && pnpm build
+cd apps/desktop && pnpm typecheck && pnpm test && pnpm build
 ```
 
 Point the app at a synthetic data root with `VIBEBAR_DEMO_HOME=<dir>` — the
 same environment variable the native app's demo mode uses. In demo mode
-Desktop makes no network requests and reads no credentials.
+Desktop makes no network requests, reads no credentials and refuses every
+write that would leave that directory.
 
-There is also a read-only diagnostic that prints what Desktop can see from a
-data root without starting the GUI:
+Two more things the repository can do without starting the GUI:
 
 ```sh
-cargo run -p vibebar-desktop-core --example inspect -- <data-root>
+cargo run -p vibebar-desktop-core --example inspect -- <data-root>   # what Desktop can see from a data root
+cd apps/desktop && pnpm screenshots                                  # regenerate docs/screenshots/
 ```
+
+### Updates
+
+Releases are built by [`release.yml`](.github/workflows/release.yml) from a
+tag — `vX.Y.Z` on the Main channel, `vX.Y.Z-dev.N` on Dev — and the updater
+feed lives on the `updates` branch, one entry per channel. The app checks once
+a day, reads the channel from the shared `updateChannel` setting, and offers
+the update from the tray. [docs/RELEASE.md](docs/RELEASE.md) has the whole
+pipeline.
+
+## Layout
+
+```
+crates/vibebar-desktop-core/   Platform-independent core: shared-data readers
+                               and writers, provider adapters, refresh
+                               orchestration, the usage scanner, the skills
+                               service, the MCP server. No Tauri, no GUI,
+                               tested on all three platforms.
+apps/desktop/                  React + TypeScript UI: popover, mini window,
+                               Workbench, settings, the first-run assistant
+apps/desktop/src-tauri/        Tauri shell: windows, tray, IPC, the updater
+docs/                          Architecture, the shared-storage rules, the
+                               design language, the release pipeline, and the
+                               contracts for cross-client writes
+```
+
+Session reading and deletion come from
+[`agent-session-core`](https://github.com/AstroQore/agent-session-kit), the
+Rust lane of `agent-session-kit` — the same kit the native app's Swift
+implementation uses, so both clients handle sessions by one set of rules.
 
 ## License
 

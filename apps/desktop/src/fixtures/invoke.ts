@@ -15,6 +15,9 @@ import { FIXTURE_RESET_HISTORY } from "../workbench/resets/fixture";
 import { FIXTURE_SKILLS } from "../workbench/skills/fixture";
 import { FIXTURE_INFO, FIXTURE_PRICING } from "../workbench/settings/fixture";
 
+/** The fixtures' "now", for pages that take a clock. */
+export const FIXTURE_NOW_SECONDS = FIXTURE_NOW;
+
 export function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
