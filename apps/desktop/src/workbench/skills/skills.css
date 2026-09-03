@@ -4,10 +4,6 @@
 .sk-toolbar { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; }
 .sk-toolbar-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .sk-search { width: 250px; max-width: 100%; }
-.sk-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 14px; font-size: 11.5px; font-weight: 600; color: var(--wb-text); background: var(--wb-field); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); white-space: nowrap; }
-.sk-btn:hover:not(:disabled) { background: var(--wb-hover); }
-.sk-btn:disabled { opacity: 0.55; }
-.sk-btn.prominent { background: var(--wb-accent); color: #fff; box-shadow: none; }
 .sk-apps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .sk-app { --tint: var(--wb-accent); display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border-radius: 14px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--wb-text); background: color-mix(in srgb, var(--tint) 14%, transparent); box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--tint) 45%, transparent); }
 .sk-app.zero { background: color-mix(in srgb, var(--tint) 5%, transparent); box-shadow: inset 0 0 0 0.8px color-mix(in srgb, var(--tint) 16%, transparent); color: var(--wb-secondary); }

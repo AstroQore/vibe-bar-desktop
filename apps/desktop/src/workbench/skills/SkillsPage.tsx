@@ -69,7 +69,7 @@ function WiringModal({ dark, onClose }: { dark: boolean; onClose: () => void }) 
         </div>
         <p>{WIRING.footer}</p>
         <div className="sk-modal-actions">
-          <button type="button" className="sk-btn prominent" onClick={onClose}>
+          <button type="button" className="wb-pill prominent" onClick={onClose}>
             Done
           </button>
         </div>
@@ -219,19 +219,19 @@ export function SkillsPage({ refreshToken = 0, fixture, dark = false }: { refres
               </button>
             ) : null}
           </div>
-          <button type="button" className="sk-btn" disabled title={READ_ONLY}>
+          <button type="button" className="wb-pill" disabled title={READ_ONLY}>
             <Refresh size={12} /> Check Updates
           </button>
-          <button type="button" className="sk-btn" disabled title={READ_ONLY}>
+          <button type="button" className="wb-pill" disabled title={READ_ONLY}>
             <ZipIcon /> Install from ZIP
           </button>
-          <button type="button" className="sk-btn" disabled title={READ_ONLY}>
+          <button type="button" className="wb-pill" disabled title={READ_ONLY}>
             <ImportIcon /> Import Existing
           </button>
-          <button type="button" className="sk-btn" disabled title={READ_ONLY}>
+          <button type="button" className="wb-pill" disabled title={READ_ONLY}>
             <ClockIcon /> Backups
           </button>
-          <button type="button" className="sk-btn prominent" disabled title="Browse configured repositories and the skills.sh index — in the native app for now" style={{ opacity: 0.6 }}>
+          <button type="button" className="wb-pill prominent" disabled title="Browse configured repositories and the skills.sh index — in the native app for now" style={{ opacity: 0.6 }}>
             <Search size={12} /> Discover
           </button>
           <button type="button" className="wb-iconbtn" title="Rescan the skill library" onClick={() => void load()} disabled={loading || !!fixture}>
@@ -260,10 +260,10 @@ export function SkillsPage({ refreshToken = 0, fixture, dark = false }: { refres
             <div className="sk-empty-title">No skills recorded yet</div>
             <div className="sk-empty-detail">Vibe Bar keeps one copy of every skill in ~/.agents/skills and links it into each agent CLI. Import what is already on this Mac, or install something new from a repository.</div>
             <div className="sk-empty-actions">
-              <button type="button" className="sk-btn" disabled title={READ_ONLY}>
+              <button type="button" className="wb-pill" disabled title={READ_ONLY}>
                 Import Existing
               </button>
-              <button type="button" className="sk-btn prominent" disabled title={READ_ONLY} style={{ opacity: 0.6 }}>
+              <button type="button" className="wb-pill prominent" disabled title={READ_ONLY} style={{ opacity: 0.6 }}>
                 Discover
               </button>
             </div>
