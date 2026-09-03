@@ -226,22 +226,36 @@ fn frames(body: &[u8]) -> Vec<(u8, &[u8])> {
     out
 }
 
+/// `%XX` escapes, decoded from the bytes. Working on bytes rather than string
+/// slices matters: a `%` followed by a multibyte character would put a slice
+/// boundary inside it and panic on a message this build does not control.
 fn percent_decoded(raw: &str) -> String {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&raw[index + 1..index + 3], 16) {
-                out.push(byte);
-                index += 3;
-                continue;
-            }
+        if let (b'%', Some(high), Some(low)) = (
+            bytes[index],
+            bytes.get(index + 1).copied().and_then(hex_digit),
+            bytes.get(index + 2).copied().and_then(hex_digit),
+        ) {
+            out.push(high << 4 | low);
+            index += 3;
+            continue;
         }
         out.push(bytes[index]);
         index += 1;
     }
     String::from_utf8(out).unwrap_or_else(|_| raw.to_string())
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 // MARK: - Protobuf scanner
@@ -570,6 +584,18 @@ mod tests {
         ));
         match check_status(grpc_status_from_trailers(&failed)) {
             Err(QuotaError::Network(message)) => assert!(message.contains("internal error")),
+            other => panic!("{other:?}"),
+        }
+        // A `%` followed by a multibyte character must not slice inside it.
+        let mut odd = data_frame(&usage_payload(1.0));
+        odd.extend(trailer_frame(
+            "grpc-status:13\r\ngrpc-message:%€uro and %2Fslash\r\n",
+        ));
+        match check_status(grpc_status_from_trailers(&odd)) {
+            Err(QuotaError::Network(message)) => {
+                assert!(message.contains("%€uro"), "{message}");
+                assert!(message.contains("/slash"), "{message}");
+            }
             other => panic!("{other:?}"),
         }
         let mut ok = data_frame(&usage_payload(1.0));
