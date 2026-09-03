@@ -5029,7 +5029,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibe-bar-desktop"
-version = "0.1.0-dev.4"
+version = "0.1.0-dev.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -5047,7 +5047,7 @@ dependencies = [
 
 [[package]]
 name = "vibebar-desktop-core"
-version = "0.1.0-dev.4"
+version = "0.1.0-dev.5"
 dependencies = [
  "agent-session-core",
  "base64 0.22.1",
