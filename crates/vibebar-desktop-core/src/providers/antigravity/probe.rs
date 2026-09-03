@@ -32,9 +32,28 @@ pub struct ServerProcess {
     pub extension_csrf_token: Option<String>,
 }
 
+/// A loopback address the server was seen listening on. Which one matters:
+/// a server bound only to `[::1]` is unreachable through `127.0.0.1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Loopback {
+    V4,
+    V6,
+}
+
+impl Loopback {
+    /// The host as it goes into a URL, brackets and all.
+    fn host(self) -> &'static str {
+        match self {
+            Loopback::V4 => "127.0.0.1",
+            Loopback::V6 => "[::1]",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
     pub scheme: &'static str,
+    pub host: Loopback,
     pub port: u16,
     pub csrf_token: String,
 }
@@ -73,7 +92,13 @@ impl LocalClient {
         path: &str,
         body: &'static [u8],
     ) -> Result<Vec<u8>, QuotaError> {
-        let url = format!("{}://127.0.0.1:{}{}", endpoint.scheme, endpoint.port, path);
+        let url = format!(
+            "{}://{}:{}{}",
+            endpoint.scheme,
+            endpoint.host.host(),
+            endpoint.port,
+            path
+        );
         let response = self
             .client
             .post(&url)
@@ -127,10 +152,12 @@ async fn detect(timeout: &Duration) -> Result<Vec<ServerProcess>, QuotaError> {
         // this build does not have on Windows yet. Saying so beats guessing.
         return Err(QuotaError::NotImplemented);
     }
-    // `-ww` twice: Darwin's ps truncates the command to the terminal width
-    // otherwise, and the AntiGravity path alone can run past it, hiding the
-    // `--csrf_token` that follows.
-    let output = run("/bin/ps", &["-axww", "-o", "pid=,command="], timeout)
+    // `-x` without `-a`: this user's processes, including those with no
+    // terminal, and nobody else's — another account's CSRF token is not ours
+    // to use, and its quota is not ours to publish. `-ww` twice because
+    // Darwin otherwise truncates the command to the terminal width, and the
+    // AntiGravity path alone can run past the `--csrf_token` that follows.
+    let output = run("/bin/ps", &["-xww", "-o", "pid=,command="], timeout)
         .await
         .map_err(|error| QuotaError::Unknown(format!("Could not list processes: {error}")))?;
     let processes = parse_processes(&output);
@@ -212,7 +239,7 @@ fn flag(command: &str, name: &str) -> Option<String> {
     }
 }
 
-async fn listening_ports(pid: i32, timeout: &Duration) -> Result<Vec<u16>, QuotaError> {
+async fn listening_ports(pid: i32, timeout: &Duration) -> Result<Vec<(Loopback, u16)>, QuotaError> {
     let lsof = ["/usr/sbin/lsof", "/usr/bin/lsof"]
         .into_iter()
         .find(|path| std::path::Path::new(path).is_file())
@@ -227,7 +254,7 @@ async fn listening_ports(pid: i32, timeout: &Duration) -> Result<Vec<u16>, Quota
     )
     .await
     .map_err(|error| QuotaError::Unknown(format!("lsof failed: {error}")))?;
-    let ports = parse_listening_ports(&output);
+    let ports = parse_listening_sockets(&output);
     if ports.is_empty() {
         return Err(QuotaError::ParseFailure(
             "Antigravity is running but no listening ports found yet — wait a few seconds and retry".into(),
@@ -236,49 +263,79 @@ async fn listening_ports(pid: i32, timeout: &Duration) -> Result<Vec<u16>, Quota
     Ok(ports)
 }
 
-/// The ports out of `lsof -nP -iTCP -sTCP:LISTEN`, sorted and deduplicated.
-pub fn parse_listening_ports(output: &str) -> Vec<u16> {
-    let mut ports: Vec<u16> = output
+/// The listening sockets out of `lsof -nP -iTCP -sTCP:LISTEN`, keeping which
+/// loopback address each was on — a server bound only to `[::1]` cannot be
+/// reached through `127.0.0.1`. Sorted, deduplicated, IPv4 first so the
+/// common case is tried first.
+pub fn parse_listening_sockets(output: &str) -> Vec<(Loopback, u16)> {
+    let mut sockets: Vec<(Loopback, u16)> = output
         .lines()
         .filter(|line| line.contains("(LISTEN)"))
         .filter_map(|line| {
             let before = line.split("(LISTEN)").next()?.trim_end();
-            let port = before.rsplit(':').next()?;
-            port.parse().ok()
+            let socket = before.rsplit(char::is_whitespace).next()?;
+            let (address, port) = socket.rsplit_once(':')?;
+            let port = port.parse().ok()?;
+            // `*` and `[::1]`/`[::]` are the v6 shapes lsof prints; anything
+            // in brackets is v6, a bare address is v4.
+            let family = if address.starts_with('[') || address == "*" {
+                Loopback::V6
+            } else {
+                Loopback::V4
+            };
+            Some((family, port))
         })
         .collect();
-    ports.sort_unstable();
-    ports.dedup();
-    ports
+    // `*` binds both families, so a wildcard port is worth trying on each.
+    let wildcards: Vec<u16> = output
+        .lines()
+        .filter(|line| line.contains("(LISTEN)"))
+        .filter_map(|line| {
+            let before = line.split("(LISTEN)").next()?.trim_end();
+            let socket = before.rsplit(char::is_whitespace).next()?;
+            let (address, port) = socket.rsplit_once(':')?;
+            (address == "*").then(|| port.parse().ok())?
+        })
+        .collect();
+    sockets.extend(wildcards.into_iter().map(|port| (Loopback::V4, port)));
+    sockets.sort_unstable_by_key(|(family, port)| (*port, matches!(family, Loopback::V6)));
+    sockets.dedup();
+    sockets
 }
 
 /// Every shape worth trying for one server: each listening port over HTTPS,
 /// then the extension server's plain-HTTP port with its own token and with
 /// the main one, since builds differ on which it accepts.
-pub fn candidates(process: &ServerProcess, ports: &[u16]) -> Vec<Endpoint> {
-    let mut endpoints: Vec<Endpoint> = ports
+pub fn candidates(process: &ServerProcess, sockets: &[(Loopback, u16)]) -> Vec<Endpoint> {
+    let mut endpoints: Vec<Endpoint> = sockets
         .iter()
-        .map(|port| Endpoint {
+        .map(|(host, port)| Endpoint {
             scheme: "https",
+            host: *host,
             port: *port,
             csrf_token: process.csrf_token.clone(),
         })
         .collect();
     if let Some(port) = process.extension_port {
-        for token in [
-            process.extension_csrf_token.as_ref(),
-            Some(&process.csrf_token),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            let candidate = Endpoint {
-                scheme: "http",
-                port,
-                csrf_token: token.clone(),
-            };
-            if !endpoints.contains(&candidate) {
-                endpoints.push(candidate);
+        // lsof did not name this one — it comes from the command line — so
+        // both loopback addresses are worth a try.
+        for host in [Loopback::V4, Loopback::V6] {
+            for token in [
+                process.extension_csrf_token.as_ref(),
+                Some(&process.csrf_token),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let candidate = Endpoint {
+                    scheme: "http",
+                    host,
+                    port,
+                    csrf_token: token.clone(),
+                };
+                if !endpoints.contains(&candidate) {
+                    endpoints.push(candidate);
+                }
             }
         }
     }
@@ -362,16 +419,43 @@ mod tests {
     }
 
     #[test]
-    fn listening_ports_come_out_sorted_and_deduplicated() {
+    fn listening_sockets_keep_their_address_family() {
         let output = concat!(
             "COMMAND   PID USER   FD  TYPE            DEVICE SIZE/OFF NODE NAME\n",
             "language_ 501 me    30u  IPv4 0x1              0t0  TCP 127.0.0.1:9100 (LISTEN)\n",
             "language_ 501 me    31u  IPv6 0x2              0t0  TCP [::1]:9100 (LISTEN)\n",
-            "language_ 501 me    32u  IPv4 0x3              0t0  TCP 127.0.0.1:8080 (LISTEN)\n",
+            "language_ 501 me    32u  IPv6 0x3              0t0  TCP [::1]:8080 (LISTEN)\n",
             "language_ 501 me    33u  IPv4 0x4              0t0  TCP 127.0.0.1:7000->1.2.3.4:443 (ESTABLISHED)\n",
         );
-        assert_eq!(parse_listening_ports(output), vec![8080, 9100]);
-        assert!(parse_listening_ports("").is_empty());
+        assert_eq!(
+            parse_listening_sockets(output),
+            vec![
+                (Loopback::V6, 8080),
+                (Loopback::V4, 9100),
+                (Loopback::V6, 9100)
+            ]
+        );
+        // A wildcard bind is worth trying on both families.
+        let wildcard = "language_ 501 me 30u IPv6 0x1 0t0 TCP *:9100 (LISTEN)\n";
+        assert_eq!(
+            parse_listening_sockets(wildcard),
+            vec![(Loopback::V4, 9100), (Loopback::V6, 9100)]
+        );
+        assert!(parse_listening_sockets("").is_empty());
+    }
+
+    #[test]
+    fn a_v6_only_server_is_addressed_as_v6() {
+        let process = ServerProcess {
+            pid: 1,
+            csrf_token: "main".into(),
+            extension_port: None,
+            extension_csrf_token: None,
+        };
+        let endpoints = candidates(&process, &[(Loopback::V6, 9100)]);
+        assert_eq!(endpoints.len(), 1);
+        assert_eq!(endpoints[0].host, Loopback::V6);
+        assert_eq!(endpoints[0].host.host(), "[::1]");
     }
 
     #[test]
@@ -382,33 +466,27 @@ mod tests {
             extension_port: Some(5500),
             extension_csrf_token: Some("ext".into()),
         };
-        let endpoints = candidates(&process, &[9100]);
+        let endpoints = candidates(&process, &[(Loopback::V4, 9100)]);
+        let shapes: Vec<(&str, &str, u16, &str)> = endpoints
+            .iter()
+            .map(|e| (e.scheme, e.host.host(), e.port, e.csrf_token.as_str()))
+            .collect();
         assert_eq!(
-            endpoints,
+            shapes,
             vec![
-                Endpoint {
-                    scheme: "https",
-                    port: 9100,
-                    csrf_token: "main".into()
-                },
-                Endpoint {
-                    scheme: "http",
-                    port: 5500,
-                    csrf_token: "ext".into()
-                },
-                Endpoint {
-                    scheme: "http",
-                    port: 5500,
-                    csrf_token: "main".into()
-                },
+                ("https", "127.0.0.1", 9100, "main"),
+                ("http", "127.0.0.1", 5500, "ext"),
+                ("http", "127.0.0.1", 5500, "main"),
+                ("http", "[::1]", 5500, "ext"),
+                ("http", "[::1]", 5500, "main"),
             ]
         );
-        // With no separate extension token there is one HTTP shape, not two.
+        // With no separate extension token there is one HTTP shape per family.
         let process = ServerProcess {
             extension_csrf_token: None,
             ..process
         };
-        assert_eq!(candidates(&process, &[]).len(), 1);
+        assert_eq!(candidates(&process, &[]).len(), 2);
         // And with nothing to address at all, nothing is invented.
         let process = ServerProcess {
             extension_port: None,
