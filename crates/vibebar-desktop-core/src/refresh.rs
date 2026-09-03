@@ -126,6 +126,12 @@ impl QuotaEngine {
                     // A failed persist must not lose the observation we
                     // already have in hand.
                     let _ = self.store.save_quota(&quota);
+                    // Both clients write the shared cache: the native popover
+                    // then shows this refresh too. Only a read that succeeded is
+                    // worth publishing, and never from demo mode.
+                    if quota.error.is_none() && !self.store.data_root().is_demo() {
+                        let _ = crate::shared::quota_cache::save(self.store.data_root(), &quota);
+                    }
                     fetched.push(quota);
                 }
                 Err(error) => fetched.push(AccountQuota {

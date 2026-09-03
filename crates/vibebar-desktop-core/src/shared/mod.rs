@@ -28,6 +28,30 @@ pub mod settings_writer;
 /// so every timestamp read out of a shared JSON store crosses this boundary.
 pub const APPLE_EPOCH_OFFSET: f64 = 978_307_200.0;
 
+/// The inverse: what the native app's `Date` encodes as.
+pub fn unix_to_apple_seconds(value: f64) -> f64 {
+    value - APPLE_EPOCH_OFFSET
+}
+
+/// Write bytes to `path` through a temporary file in the same directory and
+/// a rename, so a reader never sees a half-written file.
+pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let directory = path.parent().ok_or_else(|| std::io::Error::other("no parent directory"))?;
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    let temp = directory.join(format!(".{name}.{}.tmp", std::process::id()));
+    let result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&temp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
 pub fn apple_seconds_to_unix(value: f64) -> f64 {
     value + APPLE_EPOCH_OFFSET
 }

@@ -81,6 +81,16 @@ invisible against the fill it sits on: all found there, none by a unit test.
 6. The view is pushed to the window as an event and rendered into the tray
    title.
 
+## Publishing a refresh
+
+A quota read that succeeded is written twice: to Desktop's own restart
+cache under `client/desktop/quotas/`, and to the shared
+`quotas/quota-v1-<sha256(accountId)>.json` through
+`shared::quota_cache::save` in the native `QuotaCacheStore` schema — Apple
+reference seconds, sorted keys, one account per file, temp file and
+rename — so the native popover shows a Desktop refresh as one of its own.
+Reads that failed and demo mode never publish.
+
 ## Two sources, one list, honestly labeled
 
 Desktop fetches ten providers and reads twenty-five. A number it fetched and

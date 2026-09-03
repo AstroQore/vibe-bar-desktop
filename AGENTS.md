@@ -20,34 +20,40 @@ must work fully on a machine that has never had it installed.
 
 ## 2. Rules that cause silent damage if ignored
 
-1. **Never write outside `<data root>/client/desktop/`, with one exception.**
-   The shared root has no cross-process locking for most stores, coalesces
-   writes for up to 30 seconds, and responds to schema mismatches by dropping
-   data. `ClientStore::write_json` enforces the boundary and there are tests;
-   do not add a bypass. The full reasoning and the conditions for lifting this
-   are in [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
+1. **Write a shared store only through its documented writer.** The shared
+   root has no cross-process locking for most stores, coalesces writes for
+   up to 30 seconds, and responds to schema mismatches by dropping data, so
+   Desktop's own state lives under `<data root>/client/desktop/`
+   (`ClientStore::write_json` enforces that boundary and there are tests;
+   do not add a bypass). Both clients write the shared stores that have a
+   writer whose rules are written down — and nothing else:
 
-   The exception is `settings.json`, through
-   `shared::settings_writer::SettingsWriter`, which meets those conditions:
-   an advisory `flock(2)` both clients take, a merge that puts back only what
-   changed and preserves every key this build does not know, and a whitelist
-   of the settings Desktop's own UI presents. The rule is
-   [docs/contracts/settings-write-v1.md](docs/contracts/settings-write-v1.md)
-   and it is shared with the native app — a change to it is a change in both
-   repositories.
+   - `settings.json`, through `shared::settings_writer::SettingsWriter`:
+     an advisory `flock(2)` both clients take, a merge that puts back only
+     the top-level keys this process changed and preserves every key this
+     build does not know, and the whitelist of what Desktop's own Settings
+     presents. The rule is
+     [docs/contracts/settings-write-v1.md](docs/contracts/settings-write-v1.md),
+     shared with the native app — a change to it is a change in both
+     repositories.
+   - `quotas/quota-v1-<sha256(accountId)>.json`, through
+     `shared::quota_cache::save`: the native `QuotaCacheStore` schema (tool,
+     buckets, plan, `queriedAt` in Apple reference seconds), pretty with
+     sorted keys, one account per file, written to a temporary file and
+     renamed; only a read that succeeded, never from demo mode. The last
+     atomic write for an account wins, which is what the native app's own
+     multiple routes already do.
+   - The Control Center menu-bar allow-list, a macOS system preference and
+     not a Vibe Bar store, rewritten by the menu bar health repair only on
+     the user's click or the shared `menuBarAutoRepairEnabled`, through the
+     bundled `fix_menu_bar_allowlist.py` (backup, only stale references to
+     this bundle id, atomic write, Control Center restart). See
+     [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-   The boundary is about Vibe Bar's shared stores. One system file sits
-   outside it by name: the Control Center menu-bar allow-list
-   (`~/Library/Group Containers/group.com.apple.controlcenter/.../group.com.apple.controlcenter.plist`),
-   which the menu bar health repair rewrites — only when the user clicks
-   Repair or has opted in through the shared `menuBarAutoRepairEnabled`,
-   only through the bundled `fix_menu_bar_allowlist.py` (the native app's
-   script with this bundle id), which backs the file up beside itself,
-   removes only stale references to this bundle id from other apps'
-   `menuItemLocations`, writes atomically, and restarts Control Center. It
-   never touches another app's show/hide state and never runs from an audit
-   alone. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), "The menu bar
-   health watchdog".
+   Everything else under the shared root — the session index, the usage
+   ledger, cost history, the skill library, session logs — is read here and
+   written by the native app until it too has a writer with rules like the
+   above. Full reasoning in [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
 2. **Never repair, migrate, prune, or rebuild a shared store.** Including the
    session index. An unreadable or unknown-version store degrades to "not
    available" with an explanation — it is another client's data.
