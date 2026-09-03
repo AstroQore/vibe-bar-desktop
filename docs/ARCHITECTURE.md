@@ -122,14 +122,23 @@ handle rather than reopening a checked pathname.
 
 ## What is deliberately absent
 
-- **No writes to shared state.** See [SHARED-STORAGE.md](SHARED-STORAGE.md).
+- **Five writers into the shared root, and nothing else.** Settings, the quota
+  cache, the Control Center repair, whole-session deletion and the skill
+  library, each through one documented writer with the native app's rules.
+  Every other shared store is read here. See
+  [SHARED-STORAGE.md](SHARED-STORAGE.md).
 - **No dependency on the native app.** Its presence is detected only to offer
   a link, and never changes what Desktop can do.
 - **No credential writing or OAuth refresh.** Three processes share
   `~/.codex/auth.json` and none of them take a lock.
-- **No notifications, no cost pipeline, no MCP server, no remote sync.** These
-  are parity work, tracked in `HANDOVER.md`, not omissions to be patched in
-  ad hoc.
+- **No per-request ledger, no cost history.** The local scan produces an
+  aggregate that stays under `client/desktop/`; the ledger, the multi-source
+  price catalog and the history the native app keeps are parity work.
+- **No MCP socket, no notifications, no remote sync.** The read-only stdio
+  server answers six questions from what the last run recorded; the Unix
+  socket, its writer tools and the relay client belong to the native app.
+  These are parity work, tracked in `HANDOVER.md`, not omissions to be
+  patched in ad hoc.
 
 ## The popover
 

@@ -1,52 +1,46 @@
-# Handover: paused parity checkpoint
+# Handover: where Desktop is, and what is still open
 
 This is the authoritative restart note for `AstroQore/vibe-bar-desktop` as of
-2026-08-31. Feature development is intentionally paused. Read
-[AGENTS.md](AGENTS.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and
+2026-09-03. Read [AGENTS.md](AGENTS.md),
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md) before changing anything.
 
-Do not infer full native parity from the amount of code that landed. The safe,
-read-only and Desktop-private slices are on `main`; several credential,
-shared-writer, analysis, surface, platform, and release lanes remain open.
+Do not infer full native parity from the amount of code that landed. The
+[README's parity table](README.md#feature-parity) is the list of what differs;
+this note says where the work stands and which lanes are open.
 
-## 1. Exact stop point
+## 1. Where things stand
 
-| Item | Checkpoint state |
+| Item | State |
 | --- | --- |
-| Desktop version | `0.1.0` (pre-parity versioning remains intentional) |
-| Desktop feature stop | `42d34e90c475cc5c2550ec14a49c3c2274db44de`, clean and equal to `origin/main` before this docs-only checkpoint |
-| Desktop integration | PR [#26](https://github.com/AstroQore/vibe-bar-desktop/pull/26) merged normally; merge tree is byte-identical to reviewed head `391d92663d576ee3b62a364f6373e21b84e97f4b` |
-| Desktop feature PR queue | No open feature PRs; the earlier stacked PRs were verified as included and closed as superseded |
-| Native baseline | `AstroQore/vibe-bar` `v1.4.1-dev.56`, commit `25b5b6959827c27cad20217ed9b3ba6af72b99b6` |
-| Session kit | `AstroQore/agent-session-kit` `main` at `0419098d549bebdc67c63dc93f6be5d67929bdc4` |
-| Desktop kit pin | `agent-session-core` pinned to release tag `0.7.0` |
-| Release state | No Desktop tag, package, installer release, signing, or update feed was produced |
-
-The native baseline moved from dev.52 to dev.56 during this work. Those native
-releases added SIGPIPE hardening, adopted session-kit 0.6.3, and refined
-menu-bar logo metrics and Mini layout tiering. Desktop has not completed a new
-visual parity pass against every dev.56 Mini variant.
+| Desktop version | `0.1.0-dev.4` on `main`, released; pre-parity `0.x` versioning is intentional |
+| Release channels | Main (`vX.Y.Z`) and Dev (`vX.Y.Z-dev.N`) tags build through `release.yml`; the updater feed lives on the `updates` branch. See [docs/RELEASE.md](docs/RELEASE.md) |
+| Native baseline | `AstroQore/vibe-bar` `1.6.2`, Dev channel at `v1.6.2-dev.63` |
+| Session kit | Desktop pins `agent-session-core` to the release tag `0.8.0`, which added the Rust `deletion` module both clients' rules now come from |
+| Open feature PRs | None |
 
 ## 2. What Desktop `main` does now
 
 | Area | Current implementation |
 | --- | --- |
-| Quota: Codex and Claude | Live provider fetch using the official CLI credential files; credentials are read but never rewritten |
-| Quota: Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter, Warp | Live fetch using explicit environment credentials or the provider's official CLI route |
-| Remaining providers | Shared-cache read only, labelled as shared data; no browser/session credential import |
-| Presentation | Shared display mode, provider visibility/order, plan labels, native app icons, and a Desktop settings view |
-| Tray and lifecycle | Single-instance app, close-to-tray, explicit Quit, first-run visibility, later tray startup, and resume handling |
-| Mini | One Desktop-owned quota layout, tray toggle, private geometry and visibility state |
-| Status | Public OpenAI, Claude, Google AI, and Cursor status with last-good state stored only under Desktop's private namespace |
-| Usage and cost | Read-only local Codex, Claude, and Gemini CLI scan; aggregate snapshot stays Desktop-private |
-| Resets | Provider-declared upcoming reset times from current quota observations, each with its forecast; cycle history is inferred from recorded observations, never invented |
-| Skills | Read-only inventory from fixed local SSOT and harness roots; no install, delete, or sync |
-| Sessions | Shared index when compatible; otherwise bounded local Codex and Claude discovery |
-| Search and transcripts | Indexed FTS or bounded metadata fallback, paged transcript reads, opaque expiring capabilities, and page-local find |
-| Resume | Shared kit command builder with platform-safe shell handling; copied to the clipboard |
-| MCP | Exactly five read-only tools: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective` |
-| Writes | Enforced boundary: only `<data root>/client/desktop/` |
-| Platforms | Cross-platform Rust/Tauri code exists; the final head has not had end-to-end Windows or Linux GUI QA |
+| Quota: live adapters | Thirteen. Codex, Claude and Grok from their CLI credential files; Cursor from the session Cursor.app keeps in its own state store; AntiGravity from the language server running on this machine; Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter and Warp from an explicit environment credential or the provider's own CLI. Credentials are read, never rewritten |
+| Quota: the rest | Shared-cache read only, labelled as shared data. The browser-cookie providers wait on a cookie reader |
+| Forecast | Per-bucket run-out and surplus from recorded observations, with a verdict that says when there is not enough evidence yet |
+| Presentation | Shared display mode, provider visibility and order, plan labels, menu-bar fields, native app icons |
+| Settings | The twelve keys Desktop's own Settings presents are written back to the shared `settings.json` through the documented contract; a change the native app later makes is noticed and shown |
+| Tray and lifecycle | Single instance, close-to-tray, explicit Quit, ready-gated first show with a watchdog, later tray startup, resume handling, launch at login |
+| Updates | A daily check against the channel's feed, offered from the tray and installed on request |
+| Mini | All seven native layouts, tray toggle, private geometry and visibility |
+| Popover | A page per company with quota, forecast, reset history and status, plus Misc providers and Machines |
+| Status | Public OpenAI, Claude, Google AI and Cursor status; Desktop's own last-good snapshot stays private |
+| Usage and cost | Bounded local Codex, Claude and Gemini CLI scan into a priced aggregate that stays Desktop-private; honours the shared Cost Data privacy switch |
+| Resets | Refill horizon, cycle cards with forecasts, the reset calendar and a run-out risk list |
+| Skills | Install from a folder, adopt, toggle projections, uninstall with a snapshot, restore — through `SkillsService` and the native sync engine's rules. Repository installs, Discover and harness activation patches stay native |
+| Sessions | Shared index when compatible, otherwise bounded local discovery; full-text search, paged transcripts with find, resume command, and deletion through the kit's fenced deleter |
+| First run | The native setup assistant, step for step, marking completion in the shared settings |
+| MCP | Six read-only tools over stdio: `quota.get`, `sessions.list`, `sessions.search`, `status.get`, `pricing.effective`, `cost.snapshot` |
+| Writes | Five documented writers into the shared root and nothing else; see [AGENTS.md](AGENTS.md) rule 1 |
+| Platforms | The core crate is tested on macOS, Linux and Windows on every pull request; the GUI has had its end-to-end pass on macOS only |
 
 Desktop does not depend on the native process, native binaries, or the native
 MCP socket. It must remain usable on a machine where the native app has never
@@ -85,11 +79,27 @@ safe feature stack in one normal merge. It includes:
 PRs #1 and #14 had already merged independently. After #26 landed, the heads
 of the remaining stacked PRs were verified as ancestors of `main` (PR #16's
 last patch was patch-equivalent) and those redundant PRs were closed with a
-supersession note. No feature PR was left open.
+supersession note.
 
-## 4. Verification evidence at pause
+### Since that checkpoint
 
-The final integration head `391d926...` passed:
+The pause ended. In order: the popover's company pages and Overview, the
+remaining Mini layouts, Usage Stats, the reset calendar, the shared settings
+writer and its contract, the release pipeline and updater feed, launch at
+login, the daily update check, session deletion (with kit `0.8.0`, whose Rust
+`deletion` module both clients now share), the first-run assistant, the
+porcelain design language and the pages migrated onto it, the Skills manager,
+the README gallery and its capture script, and the Cursor, Grok and
+AntiGravity adapters.
+
+## 4. How this is verified
+
+Every pull request runs the core crate's tests and clippy on macOS, Linux and
+Windows, plus the workspace tests, the frontend typecheck and build, and the
+Tauri build on macOS. Locally the same four commands are the gate; see
+[AGENTS.md](AGENTS.md).
+
+The original integration head `391d926...` passed:
 
 - `cargo test --workspace --all-targets`: 6 Tauri tests plus 236 core tests,
   242 total;
@@ -126,7 +136,9 @@ the SQLite `session_index.sqlite3-shm` mtime.
 
 ## 5. Invariants that must not be weakened
 
-1. Never write outside `<data root>/client/desktop/`.
+1. Write into the shared root only through the five documented writers, on
+   the terms [AGENTS.md](AGENTS.md) rule 1 sets out. Everything else Desktop
+   writes goes under `<data root>/client/desktop/`.
 2. Never repair, migrate, prune, rebuild, or downgrade another client's shared
    store. Unknown or unreadable versions degrade to unavailable with a reason.
 3. Keep quota hierarchy and usage-harness grouping as separate naming axes.
@@ -139,7 +151,8 @@ the SQLite `session_index.sqlite3-shm` mtime.
    filesystem paths in source, fixtures, tests, or logs.
 8. Keep Desktop on `0.x` until the parity checklist actually passes.
 9. Keep the MCP surface read-only unless the user explicitly authorizes a
-   particular local-data exposure or writer role.
+   particular local-data exposure or writer role. The stdio server never
+   refreshes a provider, scans usage, or writes anything.
 10. On a demo root, quota, sessions, cost, status, geometry, and all scans must
     stay inside that demo root. Both the app runtime and
     `examples/inspect.rs` comply.
@@ -151,30 +164,28 @@ larger product/architecture decision.
 
 ### Requires explicit user authority
 
-- Exposing `cost.snapshot` over MCP. The local aggregate includes usage,
-  token, request, and spend information.
-- AntiGravity discovery from process arguments/ports and its localhost API.
-- Grok and the remaining browser/session-backed providers, including cookie
-  extraction or import.
+- Reading browser cookies, and the WebView login windows that go with them.
+  This is the gate in front of Gemini, the cookie-slot plans, and the web
+  routes of providers that already have a CLI route here.
 - Volc Agent AK/SK and other provider credential stores.
-- Launch-at-login, which mutates OS login-item state outside the
-  `client/desktop` filesystem boundary.
-- Creating a tag, signing, packaging, publishing a release, or installing it
-  over the user's current app.
+- Anything that installs a release over the user's current app.
 
 ### Still requires engineering
 
-- A safe cross-client writer architecture for shared stores: role leases,
-  fail-closed migrations, and removal of destructive native schema recovery.
+- A safe cross-client writer architecture for the stores that still have no
+  writer: role leases, fail-closed migrations, and removal of destructive
+  native schema recovery.
 - The remaining provider and credential matrix on macOS, Windows, and Linux.
-- All-harness usage scanning, per-request ledger, multi-source pricing,
-  history, fill/forecast timelines, and subscription-cycle inference.
-- The other native Mini layouts, layout editor, full settings tree, writable
-  Skills management, full Workbench, and deeper Resets surfaces.
-- Native's broader 12-tool MCP surface, socket ownership, and remote probe
-  sync.
-- Windows/Linux GUI validation, launch integration, signed updates, and the
-  final shared-version release checklist.
+- All-harness usage scanning, the per-request ledger, multi-source pricing,
+  cost history, fill/forecast timelines, and subscription-cycle inference.
+- Multiple Mini windows, the layout editor, the arrangeable Overview, the
+  menu-bar field editor's style scopes, and the provider credential panes.
+- Skills: repository installs, Discover, and the harness activation patches.
+- Native's broader 12-tool MCP surface and socket ownership — most of those
+  tools need a scan, a refresh, or a store Desktop does not keep, so each one
+  is a decision about what the stdio contract may do, not a port.
+- Remote probe sync.
+- Windows and Linux GUI validation and launch integration.
 
 Do not start several of these lanes together. Pick one explicit product slice,
 create one topic worktree, and keep its authority and verification boundary
@@ -210,19 +221,13 @@ narrow.
 
 ## 8. Local cleanup and recovery notes
 
-At pause:
+Task worktrees live under `.agents/worktrees/` and are removed once their pull
+request is settled; `git worktree list` should show the main worktree and
+whatever is genuinely in flight, nothing more. The Kit worktrees
+`feat/mcp-request-context` and `docs/used-by` belong to other work and are
+left alone.
 
-- After this docs-only checkpoint worktree is merged and removed, Desktop has
-  only its main worktree at `<desktop-repo>`.
-- Twenty-eight obsolete Desktop worktrees and the task's temporary
-  `agent-session-kit` worktree were removed.
-- Twenty-two `/private/tmp/vbd-*` build, review, demo, and inspection paths
-  were deleted, reclaiming about 36 GiB (38 GB).
-- The two pre-existing Kit worktrees
-  `feat/mcp-request-context` and `feat/rust-session-core` were intentionally
-  left untouched.
-
-Three dirty old Desktop worktrees contained task-time rustfmt residue; one also
+From the original checkpoint: three dirty old Desktop worktrees contained task-time rustfmt residue; one also
 contained an older copy of the already-merged platform-safe resume helper.
 Direct forced deletion was rejected, so the changes were preserved before the
 worktrees were removed:
@@ -239,7 +244,7 @@ They are recovery-only and are not needed by `main`. Inspect with
 ## 9. Restart checklist
 
 1. Read this file and the three documents linked at the top.
-2. Confirm actual current state; do not trust this checkpoint after branches
+2. Confirm the actual current state; do not trust this note after branches
    have moved:
 
    ```sh
@@ -249,19 +254,22 @@ They are recovery-only and are not needed by `main`. Inspect with
    gh pr list --state open
    ```
 
-3. Re-read the native checkout and note any drift from
-   `v1.4.1-dev.56`/`25b5b69`.
-4. Check whether GitHub-hosted jobs can start again. Rerun CI before treating
-   Windows/Linux or storage-contract parity as current evidence.
+3. Re-read the native checkout and note any drift from the baseline in
+   section 1.
+4. Rerun CI before treating Windows/Linux or storage-contract parity as
+   current evidence; the macOS-only local run has hidden real bugs before.
 5. Ask for or confirm authority before choosing any item in section 6.
 6. Work in a fresh `feat/`, `fix/`, `docs/`, or `test/` worktree from
    current `main`; never edit the user's main worktree directly.
 7. Run the full Rust, clippy, TypeScript, and build verification set. For data
    changes, run the shared-root before/after check. For UI changes, verify the
    installed or built app with Computer rather than relying on unit tests.
-8. Merge normally through a PR. Do not use an admin bypass for billing-failed
-   checks, do not tag or release without explicit instruction, and remove the
-   task worktree after the PR is settled.
+8. Merge normally through a PR, and do not tag or release without explicit
+   instruction. Two process traps, both learned the hard way: never point an
+   automatic merge at a pull request whose base branch you are still
+   rebasing, and never merge with `--delete-branch` while another pull
+   request uses that branch as its base — GitHub closes the child rather than
+   retargeting it. Remove the task worktree after the pull request settles.
 
 ## 10. Ecosystem references
 
