@@ -95,14 +95,24 @@ impl LocalClient {
 pub async fn connected_endpoints(timeout: &Duration) -> Result<Vec<Endpoint>, QuotaError> {
     let processes = detect(timeout).await?;
     let mut endpoints = Vec::new();
+    let mut port_error = None;
     for process in processes {
-        let ports = listening_ports(process.pid, timeout).await.unwrap_or_default();
+        let ports = match listening_ports(process.pid, timeout).await {
+            Ok(ports) => ports,
+            Err(error) => {
+                // A missing or blocked lsof is not "no ports yet", and
+                // waiting will not fix it. Keep the reason in case no
+                // process yields an endpoint.
+                port_error.get_or_insert(error);
+                Vec::new()
+            }
+        };
         endpoints.extend(candidates(&process, &ports));
     }
     if endpoints.is_empty() {
-        return Err(QuotaError::ParseFailure(
+        return Err(port_error.unwrap_or_else(|| QuotaError::ParseFailure(
             "Antigravity is running but no listening ports found yet — wait a few seconds and retry".into(),
-        ));
+        )));
     }
     Ok(endpoints)
 }
@@ -113,7 +123,10 @@ async fn detect(timeout: &Duration) -> Result<Vec<ServerProcess>, QuotaError> {
         // this build does not have on Windows yet. Saying so beats guessing.
         return Err(QuotaError::NotImplemented);
     }
-    let output = run("/bin/ps", &["-ax", "-o", "pid=,command="], timeout)
+    // `-ww` twice: Darwin's ps truncates the command to the terminal width
+    // otherwise, and the AntiGravity path alone can run past it, hiding the
+    // `--csrf_token` that follows.
+    let output = run("/bin/ps", &["-axww", "-o", "pid=,command="], timeout)
         .await
         .map_err(|error| QuotaError::Unknown(format!("Could not list processes: {error}")))?;
     let processes = parse_processes(&output);
@@ -153,8 +166,7 @@ pub fn parse_processes(ps_output: &str) -> Vec<ServerProcess> {
 /// token — what tells "restart it" apart from "not running".
 pub fn saw_antigravity(ps_output: &str) -> bool {
     ps_output.lines().any(|line| {
-        split_process_line(line)
-            .is_some_and(|(_, command)| is_antigravity(&command.to_lowercase()))
+        split_process_line(line).is_some_and(|(_, command)| is_antigravity(&command.to_lowercase()))
     })
 }
 
@@ -211,7 +223,13 @@ async fn listening_ports(pid: i32, timeout: &Duration) -> Result<Vec<u16>, Quota
     )
     .await
     .map_err(|error| QuotaError::Unknown(format!("lsof failed: {error}")))?;
-    Ok(parse_listening_ports(&output))
+    let ports = parse_listening_ports(&output);
+    if ports.is_empty() {
+        return Err(QuotaError::ParseFailure(
+            "Antigravity is running but no listening ports found yet — wait a few seconds and retry".into(),
+        ));
+    }
+    Ok(ports)
 }
 
 /// The ports out of `lsof -nP -iTCP -sTCP:LISTEN`, sorted and deduplicated.
@@ -325,7 +343,9 @@ mod tests {
         let tokenless = "  504 /Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos --nope\n";
         assert!(parse_processes(tokenless).is_empty());
         assert!(saw_antigravity(tokenless));
-        assert!(!saw_antigravity("  503 /opt/othervendor/language_server --csrf_token x\n"));
+        assert!(!saw_antigravity(
+            "  503 /opt/othervendor/language_server --csrf_token x\n"
+        ));
         assert!(!saw_antigravity(""));
     }
 
@@ -362,9 +382,21 @@ mod tests {
         assert_eq!(
             endpoints,
             vec![
-                Endpoint { scheme: "https", port: 9100, csrf_token: "main".into() },
-                Endpoint { scheme: "http", port: 5500, csrf_token: "ext".into() },
-                Endpoint { scheme: "http", port: 5500, csrf_token: "main".into() },
+                Endpoint {
+                    scheme: "https",
+                    port: 9100,
+                    csrf_token: "main".into()
+                },
+                Endpoint {
+                    scheme: "http",
+                    port: 5500,
+                    csrf_token: "ext".into()
+                },
+                Endpoint {
+                    scheme: "http",
+                    port: 5500,
+                    csrf_token: "main".into()
+                },
             ]
         );
         // With no separate extension token there is one HTTP shape, not two.
