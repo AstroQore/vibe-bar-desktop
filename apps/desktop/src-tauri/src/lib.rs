@@ -301,8 +301,8 @@ pub fn apply_glass<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, surface:
 }
 
 /// A page that has not mounted thirty seconds after launch is reloaded once
-/// and, if that does not help either, shown anyway so the tray's Open does
-/// something. Thirty, not six: on a Mac whose CoreAudio HAL stalls, WebKit's
+/// and, if that does not help either, a show that was parked goes through
+/// anyway so the request is not lost. Thirty, not six: on a Mac whose CoreAudio HAL stalls, WebKit's
 /// GPU process blocks for fifteen seconds before any page can paint, and a
 /// reload inside that window only restarts the wait.
 fn spawn_load_watchdog(app: tauri::AppHandle) {
@@ -319,9 +319,10 @@ fn spawn_load_watchdog(app: tauri::AppHandle) {
         tokio::time::sleep(Duration::from_secs(20)).await;
         if !state.page_ready() {
             eprintln!("[watchdog] main page still not mounted after reload");
-            let _ = state.mark_page_ready();
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
+            // Only a show that was actually asked for goes through: a
+            // tray-only startup stays in the tray, blank page or not.
+            if state.mark_page_ready() {
+                tray::show_main_window(&app);
             }
         }
     });
