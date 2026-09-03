@@ -131,7 +131,7 @@ pub fn run() {
             mini_window::install(app.handle(), state.data_root().clone())?;
             // Tray failure deliberately does not abort setup: without a tray,
             // hiding the only window would leave the user no way back in.
-            let tray_installed = tray::install(app.handle(), &state).is_ok();
+            let tray_installed = tray::install(app.handle()).is_ok();
             // The popover exists only where a tray exists to anchor it.
             if tray_installed {
                 let _ = popover::install(app.handle());
@@ -387,11 +387,11 @@ fn spawn_update_check_loop(app: tauri::AppHandle) {
     });
 }
 
-/// After any check — scheduled or from Settings — the tray menu shows or
-/// drops its "Update to X…" item and every open page hears the result,
-/// `null` included, so a page offering a withdrawn update stops offering it.
+/// After any check — scheduled or from Settings — every open page hears the
+/// result, `null` included, so a page offering a withdrawn update stops
+/// offering it. The tray menu needs no telling: it is built when it is
+/// popped.
 pub(crate) fn announce_update(app: &tauri::AppHandle, found: Option<&commands::PendingUpdate>) {
-    tray::refresh_menu(app);
     let _ = app.emit(UPDATE_EVENT, found);
 }
 
@@ -402,8 +402,7 @@ pub(crate) fn announce_update(app: &tauri::AppHandle, found: Option<&commands::P
 pub(crate) async fn install_pending_update(app: &tauri::AppHandle, id: u64) {
     let state = app.state::<AppState>();
     let Some(update) = state.take_update(id) else {
-        eprintln!("[update] the menu's find was overtaken by a newer check; rebuilding the menu");
-        tray::refresh_menu(app);
+        eprintln!("[update] the menu's find was overtaken by a newer check; the next right click builds a fresh menu");
         return;
     };
     match update.download_and_install(|_, _| {}, || {}).await {
