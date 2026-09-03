@@ -107,11 +107,16 @@ must work fully on a machine that has never had it installed.
 7. **Timestamps from a shared cache are untrusted input.** An observation
    cannot come from the future; one that claims to must not win a recency
    comparison. See `AccountQuota::has_plausible_timestamp`.
-8. **User-facing strings come from the shared catalog.** Both clients read
-   [`AstroQore/vibe-bar-i18n`](https://github.com/AstroQore/vibe-bar-i18n),
-   so a sentence must not be assembled from fragments, a plural must not be
-   chosen with a ternary, and a number must not be formatted for one locale
-   inside a translated sentence. See [docs/I18N.md](docs/I18N.md); the
+8. **User-facing strings come from the shared catalog, and an existing key
+   wins.** Both clients read
+   [`AstroQore/vibe-bar-i18n`](https://github.com/AstroQore/vibe-bar-i18n).
+   Before adding a string, search `catalog/en.json` — the native client is
+   ahead, and a second key meaning the same thing is two translations that
+   drift. A genuinely new one is authored there, not here, and used through
+   `t()`. Regardless of whether a surface is localized yet: a sentence must
+   not be assembled from fragments, a plural must not be chosen with a
+   ternary, and a number or date must not be formatted for a locale other
+   than the one the app resolved. See [docs/I18N.md](docs/I18N.md); the
    catalog's own `AGENTS.md` is the contract for keys and placeholders.
 
 ## 3. Versioning
