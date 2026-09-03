@@ -19,7 +19,7 @@ import {
   sortRows,
   splitHighlights,
 } from "./model";
-import { findMatches, foldedLines, messageParts, rowSummary, rowTitle } from "./model";
+import { foldedLines, messageParts, rowSummary, rowTitle } from "./model";
 
 function row(id: string, projectDir: string | undefined, lastActiveAt: number): SessionRow {
   return { provider: "codex", harness: "Codex", sessionId: id, sessionRef: id, projectDir, lastActiveAt };
