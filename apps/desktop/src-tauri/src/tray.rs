@@ -223,9 +223,18 @@ fn default_label(tool_raw: &str) -> String {
 /// click: the shell is up, the page is still coming. (On a Mac whose
 /// CoreAudio HAL stalls, WebKit's first paint can take fifteen seconds.)
 pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.set_focus();
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if window.show().is_err() {
+        return;
+    }
+    let _ = window.set_focus();
+    // A first launch counts as seen only now that the window is on screen.
+    let state = app.state::<AppState>();
+    if state.take_first_run_mark() {
+        let store = vibebar_desktop_core::client_store::ClientStore::new(state.data_root().clone());
+        let _ = store.mark_first_run_complete();
     }
 }
 
@@ -233,12 +242,9 @@ pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 /// opens white. A request before that is parked and honoured by
 /// `frontend_ready`; if the page never reports, the load watchdog steps in.
 pub(crate) fn show_main_window_when_ready<R: Runtime>(app: &AppHandle<R>) {
-    let state = app.state::<AppState>();
-    if !state.page_ready() {
-        state.park_show();
-        return;
+    if app.state::<AppState>().park_show_unless_ready() {
+        show_main_window(app);
     }
-    show_main_window(app);
 }
 
 #[cfg(test)]

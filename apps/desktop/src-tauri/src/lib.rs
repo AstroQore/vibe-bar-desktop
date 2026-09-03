@@ -211,8 +211,9 @@ fn apply_startup_action<R: tauri::Runtime>(
             tray::show_main_window_when_ready(app);
         }
         StartupAction::ShowAndMarkFirstRunComplete => {
+            // Recorded by the show itself, once the window is actually up.
+            app.state::<AppState>().defer_first_run_mark();
             tray::show_main_window_when_ready(app);
-            let _ = store.mark_first_run_complete();
         }
     }
 }

@@ -24,6 +24,10 @@ pub struct AppState {
     /// request is parked, so the window never appears white.
     page_ready: std::sync::atomic::AtomicBool,
     show_pending: std::sync::atomic::AtomicBool,
+    /// A first launch records its completion only once the main window has
+    /// actually been shown, so a crash during a slow load does not turn the
+    /// next launch into a tray-only one nobody has seen the window for.
+    first_run_mark_on_show: std::sync::atomic::AtomicBool,
     /// What the last update check found, kept so that installing puts on the
     /// version the person was shown rather than whatever the feed serves by
     /// the time they click.
@@ -68,6 +72,7 @@ impl AppState {
             data_root,
             page_ready: std::sync::atomic::AtomicBool::new(false),
             show_pending: std::sync::atomic::AtomicBool::new(false),
+            first_run_mark_on_show: std::sync::atomic::AtomicBool::new(false),
             pending_update: Pending::default(),
         }
     }
@@ -97,20 +102,39 @@ impl AppState {
     }
 
     pub fn page_ready(&self) -> bool {
-        self.page_ready.load(std::sync::atomic::Ordering::Acquire)
+        self.page_ready.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Record that the page mounted; returns whether a show was waiting.
     pub fn mark_page_ready(&self) -> bool {
         self.page_ready
-            .store(true, std::sync::atomic::Ordering::Release);
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         self.show_pending
-            .swap(false, std::sync::atomic::Ordering::AcqRel)
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
-    pub fn park_show(&self) {
+    /// Park a show until the page is ready. Returns `true` when the page
+    /// turned out to be ready already — then the caller shows now. The park
+    /// happens before the re-check, so whichever of the two sides runs
+    /// second sees the other's work: `mark_page_ready` finds the parked
+    /// show, or this finds readiness. Exactly one of them claims it.
+    pub fn park_show_unless_ready(&self) -> bool {
         self.show_pending
-            .store(true, std::sync::atomic::Ordering::Release);
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.page_ready.load(std::sync::atomic::Ordering::SeqCst)
+            && self
+                .show_pending
+                .swap(false, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn defer_first_run_mark(&self) {
+        self.first_run_mark_on_show
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn take_first_run_mark(&self) -> bool {
+        self.first_run_mark_on_show
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn data_root(&self) -> &DataRoot {
