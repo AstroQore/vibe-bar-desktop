@@ -207,7 +207,7 @@ function SubProviderBlock({ account, buckets, subProvider, now, mode, staleAfter
         </div>
       ) : null}
       {buckets.length === 0 ? (
-        <MessageRow text={account.error ? account.error.detail ?? account.error.kind : "No quota windows reported."} tone={account.error ? "warning" : "secondary"} />
+        <MessageRow text={errorMessage(account) ?? "No quota windows reported."} tone={account.error ? "warning" : "secondary"} />
       ) : (
         <div className="pv-buckets">
           {bucketGroups(buckets).map((group, index) => (
@@ -232,6 +232,19 @@ function MessageRow({ text, tone }: { text: string; tone: "secondary" | "warning
       <span>{text}</span>
     </div>
   );
+}
+
+/** What a provider block with no windows should say.
+ *
+ *  A credential problem has an answer, and the answer is the provider's own:
+ *  the same sentence the empty card shows. Only an error with no obvious
+ *  action falls back to what the adapter reported. */
+function errorMessage(account: AccountQuota): string | undefined {
+  if (!account.error) return undefined;
+  if (account.error.kind === "noCredential" || account.error.kind === "needsLogin") {
+    return emptyMessage(account.tool);
+  }
+  return account.error.detail ?? account.error.kind;
 }
 
 /** Native `ProviderQuotaCard.emptyMessage`. */
