@@ -50,10 +50,21 @@ must work fully on a machine that has never had it installed.
      this bundle id, atomic write, Control Center restart). See
      [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+   - Whole-session deletion — a session's own log files under `~/.codex/`
+     or `~/.claude/`, never the shared index — through the kit's fenced
+     deleter (`agent_session_core::deletion`, the Rust counterpart of the
+     native `SessionDeleter`), only from the Sessions page after the person
+     armed and confirmed the delete: every target must resolve strictly
+     below one of the provider's roots under this home with no symlinked
+     component, and the file is re-parsed for its session id right before
+     removal so a stale row cannot delete a different session. Only Codex
+     and Claude Code sessions are candidates. A deleted session leaves
+     listings because its file is gone; the index row is the native app's
+     to drop. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
    Everything else under the shared root — the session index, the usage
-   ledger, cost history, the skill library, session logs — is read here and
-   written by the native app until it too has a writer with rules like the
-   above. Full reasoning in [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
+   ledger, cost history, the skill library — is read here and written by
+   the native app until it too has a writer with rules like the above. Full reasoning in [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
 2. **Never repair, migrate, prune, or rebuild a shared store.** Including the
    session index. An unreadable or unknown-version store degrades to "not
    available" with an explanation — it is another client's data.

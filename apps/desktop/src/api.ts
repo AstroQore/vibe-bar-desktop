@@ -166,6 +166,13 @@ export interface SessionRow {
   excerpt?: string;
 }
 
+export interface SessionDeleteReport {
+  sessionRef: string;
+  deleted: boolean;
+  /** Why it was not deleted, in the deleter's words. */
+  reason?: string;
+}
+
 export interface HarnessCount {
   harness: string;
   provider: string;
@@ -187,7 +194,8 @@ export interface SessionListing {
   source: SessionSource;
   rows: SessionRow[];
   indexedTotal?: number;
-  indexNote?: string;
+  indexNote?: string;  /** Where the next page starts in the index; absent when exhausted, scanned, or searched. */
+  nextOffset?: number;
 }
 
 export interface TranscriptMessage {
@@ -516,6 +524,8 @@ export const api = {
   sessionList: (limit = 100) => invoke<SessionListing>("session_list", { limit }),
   sessionSearch: (query: string, limit = 50) =>
     invoke<SessionListing>("session_search", { query, limit }),
+  /** Delete whole sessions by reference; only after the person confirmed. */
+  sessionDelete: (sessionRefs: string[]) => invoke<SessionDeleteReport[]>("session_delete", { sessionRefs }),
   sessionTranscript: (
     sessionRef: string,
     offset = 0,

@@ -98,6 +98,8 @@ export async function fixtureInvoke<T>(command: string, args?: Record<string, un
     case "session_search":
     case "session_listing":
       return answer(FIXTURE_SESSIONS);
+    case "session_delete":
+      return ((args as { sessionRefs: string[] }).sessionRefs.map((sessionRef) => ({ sessionRef, deleted: true }))) as T;
     case "session_transcript":
       return answer(FIXTURE_TRANSCRIPT);
     case "quota_cycles": {

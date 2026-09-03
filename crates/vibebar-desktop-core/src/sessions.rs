@@ -78,6 +78,17 @@ pub struct SessionRow {
     pub excerpt: Option<String>,
 }
 
+/// One session's deletion, as the page reports it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDeleteReport {
+    pub session_ref: String,
+    pub deleted: bool,
+    /// Why it was not deleted, in the deleter's words.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessCount {
@@ -113,6 +124,11 @@ pub struct SessionListing {
     pub indexed_total: Option<i64>,
     /// Set when an index exists but this build will not read it.
     pub index_note: Option<String>,
+    /// Where the next page starts in the index — not `offset + rows.len()`
+    /// once vanished rows were dropped. Absent when the index is exhausted
+    /// or the listing was scanned or searched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<usize>,
 }
 
 pub struct SessionsService {
@@ -125,6 +141,9 @@ pub struct SessionsService {
 struct ResolvedSession {
     provider: SessionProvider,
     source_path: PathBuf,
+    /// The id the row carried; deletion re-parses the file and refuses
+    /// when it no longer names this session.
+    session_id: String,
     expires_at: Instant,
 }
 
@@ -220,19 +239,44 @@ impl SessionsService {
         match self.open_index() {
             IndexState::Ready(reader) => {
                 let until = unix_now().saturating_add(FUTURE_TIMESTAMP_TOLERANCE_SECONDS);
-                let mut rows: Vec<_> = reader
-                    .list(&SessionListFilter {
-                        providers: providers.map(<[SessionProvider]>::to_vec),
-                        harnesses: harnesses.map(<[String]>::to_vec),
-                        since,
-                        until: Some(until),
-                        limit,
-                        offset,
-                    })
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(indexed_row)
-                    .collect();
+                // A page is `limit` sessions that still exist. The index keeps
+                // its row for a deleted session until its owner rebuilds, so
+                // the page is filled from further index rows rather than
+                // shipped short — a short page would read as the end of the
+                // list. `next_offset` is the index offset the next page starts
+                // at, which is not `offset + rows.len()` once rows were
+                // dropped.
+                let mut rows: Vec<SessionRow> = Vec::with_capacity(limit);
+                let mut cursor = offset;
+                let mut exhausted = false;
+                for _ in 0..8 {
+                    let wanted = limit - rows.len();
+                    let chunk: Vec<SessionRow> = reader
+                        .list(&SessionListFilter {
+                            providers: providers.map(<[SessionProvider]>::to_vec),
+                            harnesses: harnesses.map(<[String]>::to_vec),
+                            since,
+                            until: Some(until),
+                            limit: wanted,
+                            offset: cursor,
+                        })
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(indexed_row)
+                        .collect();
+                    let fetched = chunk.len();
+                    cursor += fetched;
+                    let mut live = chunk;
+                    self.drop_vanished(&mut live);
+                    rows.extend(live);
+                    if fetched < wanted {
+                        exhausted = true;
+                        break;
+                    }
+                    if rows.len() >= limit {
+                        break;
+                    }
+                }
                 self.authorize_rows(&mut rows);
                 let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
@@ -241,6 +285,7 @@ impl SessionsService {
                     rows,
                     indexed_total,
                     index_note,
+                    next_offset: (!exhausted).then_some(cursor),
                 }
             }
             IndexState::Unusable(note) => {
@@ -301,7 +346,8 @@ impl SessionsService {
                         row
                     })
                     .collect();
-                self.authorize_rows(&mut rows);
+                self.drop_vanished(&mut rows);
+        self.authorize_rows(&mut rows);
                 let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
                     harness_counts: Vec::new(),
@@ -309,6 +355,7 @@ impl SessionsService {
                     rows,
                     indexed_total,
                     index_note,
+                    next_offset: None,
                 }
             }
             state => {
@@ -338,13 +385,15 @@ impl SessionsService {
                 // Capabilities are issued only for rows this search returns.
                 // Authorizing the wider scan first lets stale overlapping
                 // searches evict references still visible in the UI.
-                self.authorize_rows(&mut rows);
+                self.drop_vanished(&mut rows);
+        self.authorize_rows(&mut rows);
                 SessionListing {
                     harness_counts: Vec::new(),
                     source: SessionSource::Scanned,
                     rows,
                     indexed_total: None,
                     index_note: Some(scanned_limit_note(note)),
+                    next_offset: None,
                 }
             }
         }
@@ -355,6 +404,84 @@ impl SessionsService {
     /// The capability is only an in-memory lookup key. It is not a path (or a
     /// path encoding), expires after 15 minutes, and a stale process cannot be
     /// used to read a newly supplied file.
+    /// Delete whole sessions the person named by reference — the one write
+    /// this service performs, and only through the kit's fenced deleter:
+    /// every target must resolve below the provider's roots under this
+    /// service's home, a symlinked target is refused, and the file is
+    /// re-parsed for its session id right before removal. A reference that
+    /// is unknown or expired is reported, never guessed at. The shared
+    /// index is not touched: its row for a deleted session vanishes from
+    /// listings because the file it points at is gone.
+    pub fn delete_sessions(&self, session_refs: &[String]) -> Vec<SessionDeleteReport> {
+        use agent_session_core::deletion::{self, DeleteOutcome, SessionToDelete};
+        let mut reports = Vec::with_capacity(session_refs.len());
+        let mut targets: Vec<(String, SessionToDelete)> = Vec::new();
+        {
+            let now = Instant::now();
+            let Ok(references) = self.references.lock() else {
+                return session_refs
+                    .iter()
+                    .map(|session_ref| SessionDeleteReport {
+                        session_ref: session_ref.clone(),
+                        deleted: false,
+                        reason: Some("the session references are unavailable".to_string()),
+                    })
+                    .collect();
+            };
+            for session_ref in session_refs {
+                match references
+                    .get(session_ref)
+                    .filter(|resolved| resolved.expires_at > now)
+                {
+                    Some(resolved) => targets.push((
+                        session_ref.clone(),
+                        SessionToDelete {
+                            provider: resolved.provider,
+                            session_id: resolved.session_id.clone(),
+                            source_path: resolved.source_path.clone(),
+                        },
+                    )),
+                    None => reports.push(SessionDeleteReport {
+                        session_ref: session_ref.clone(),
+                        deleted: false,
+                        reason: Some("this session is no longer listed; refresh and try again".to_string()),
+                    }),
+                }
+            }
+        }
+        let outcomes = deletion::delete(
+            &self.home,
+            &targets.iter().map(|(_, target)| target.clone()).collect::<Vec<_>>(),
+        );
+        let mut deleted_refs = Vec::new();
+        for ((session_ref, _), outcome) in targets.into_iter().zip(outcomes) {
+            match outcome {
+                DeleteOutcome::Succeeded(_) => {
+                    deleted_refs.push(session_ref.clone());
+                    reports.push(SessionDeleteReport { session_ref, deleted: true, reason: None });
+                }
+                DeleteOutcome::Failed(_, error) => reports.push(SessionDeleteReport {
+                    session_ref,
+                    deleted: false,
+                    reason: Some(error.to_string()),
+                }),
+            }
+        }
+        if let Ok(mut references) = self.references.lock() {
+            for session_ref in &deleted_refs {
+                references.remove(session_ref);
+            }
+        }
+        // Reports in the order the references were given.
+        reports.sort_by_key(|report| {
+            session_refs
+                .iter()
+                .position(|session_ref| *session_ref == report.session_ref)
+                .unwrap_or(usize::MAX)
+        });
+        reports
+    }
+
     pub fn transcript(
         &self,
         session_ref: &str,
@@ -430,6 +557,7 @@ impl SessionsService {
             has_plausible_timestamp(row, now) && matches_filters(row, providers, harnesses, since)
         });
         let mut rows: Vec<_> = rows.into_iter().skip(offset).take(limit).collect();
+        self.drop_vanished(&mut rows);
         self.authorize_rows(&mut rows);
         SessionListing {
             harness_counts: Vec::new(),
@@ -437,6 +565,7 @@ impl SessionsService {
             rows,
             indexed_total: None,
             index_note: Some(scanned_limit_note(note)),
+            next_offset: None,
         }
     }
 
@@ -445,6 +574,20 @@ impl SessionsService {
         discovered.extend(discovery::discover_claude(&self.home, SCAN_LIMIT));
         discovered.sort_by_key(|s| std::cmp::Reverse(s.modified_at));
         discovered.into_iter().map(scanned_row).collect()
+    }
+
+    /// A row whose log file no longer exists — deleted by this client, by the
+    /// native app, or by hand — is not a session anyone can open. The shared
+    /// index still lists it until its owner rebuilds; this client just does
+    /// not show it, which is also how a deletion takes effect here without
+    /// touching the index.
+    fn drop_vanished(&self, rows: &mut Vec<SessionRow>) {
+        rows.retain(|row| {
+            let path = std::path::Path::new(&row.source_path);
+            // Only the logs under this home are ours to check; an index row
+            // pointing elsewhere is listed as the index says.
+            !path.starts_with(&self.home) || std::fs::symlink_metadata(path).is_ok()
+        });
     }
 
     fn authorize_rows(&self, rows: &mut [SessionRow]) {
@@ -495,6 +638,7 @@ impl SessionsService {
                 ResolvedSession {
                     provider,
                     source_path,
+                    session_id: row.session_id.clone(),
                     expires_at: now + SESSION_REFERENCE_TTL,
                 },
             );
@@ -1068,6 +1212,50 @@ mod tests {
     }
 
     #[test]
+    fn a_page_is_filled_past_rows_whose_file_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let root = DataRoot::at(home.join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+        // Three sessions on disk under this home; the index knows all three.
+        let sessions = home.join(".codex/sessions/2026/09/03");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let mut inserts = String::new();
+        for (i, id) in ["a", "b", "c"].iter().enumerate() {
+            let path = sessions.join(format!("rollout-{id}.jsonl"));
+            std::fs::write(&path, "{}\n").unwrap();
+            inserts.push_str(&format!(
+                "INSERT INTO sessions(id, provider, session_id, harness, last_active_at, source_path) VALUES ({}, 'codex', 'session-{id}', 'codex', {}, '{}');",
+                i + 1,
+                1_700_000_000 - i as i64,
+                path.display()
+            ));
+        }
+        let conn = rusqlite::Connection::open(root.session_index_file()).unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = 5;\
+             CREATE TABLE sessions(\
+               id INTEGER PRIMARY KEY, provider TEXT NOT NULL, session_id TEXT NOT NULL,\
+               provider_variant TEXT, harness TEXT, model TEXT, title TEXT, summary TEXT,\
+               project_dir TEXT, created_at INTEGER, last_active_at INTEGER, source_path TEXT NOT NULL,\
+               size_bytes INTEGER, message_count INTEGER\
+             );{inserts}"
+        ))
+        .unwrap();
+        drop(conn);
+        // The newest session's file is gone — deleted here or elsewhere.
+        std::fs::remove_file(sessions.join("rollout-a.jsonl")).unwrap();
+        let service = SessionsService::with_home(root, home);
+        let page = service.list_filtered(None, None, None, 0, 2);
+        let ids: Vec<&str> = page.rows.iter().map(|row| row.session_id.as_str()).collect();
+        assert_eq!(ids, vec!["session-b", "session-c"], "the page is still two live sessions");
+        assert_eq!(page.next_offset, Some(3), "three index rows were consumed for two live ones; the index may hold more");
+        let page = service.list_filtered(None, None, None, 0, 1);
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.next_offset, Some(2), "the next page starts after the vanished row and the one shown");
+    }
+
+    #[test]
     fn indexed_list_filters_future_rows_before_paging() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
@@ -1153,6 +1341,7 @@ mod tests {
             ResolvedSession {
                 provider: SessionProvider::Codex,
                 source_path: path.clone(),
+                session_id: String::new(),
                 expires_at: Instant::now().checked_sub(Duration::from_secs(1)).unwrap(),
             },
         );
@@ -1184,6 +1373,7 @@ mod tests {
                 ResolvedSession {
                     provider: SessionProvider::Codex,
                     source_path: PathBuf::from("/synthetic"),
+                    session_id: String::new(),
                     expires_at,
                 },
             );
@@ -1280,6 +1470,7 @@ mod tests {
             ResolvedSession {
                 provider: SessionProvider::Grok,
                 source_path: path,
+                session_id: String::new(),
                 expires_at: Instant::now() + SESSION_REFERENCE_TTL,
             },
         );
@@ -1344,4 +1535,40 @@ mod tests {
             .open_approved_session_file(SessionProvider::Codex, &apparent_root)
             .is_none());
     }
+
+    #[test]
+    fn deletes_a_listed_session_by_reference_and_stops_listing_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let id = "0199c4f8-77a1-7e52-b3d8-0a6f6f1e1d2c";
+        let path = home
+            .join(".codex/sessions/2026/09/03")
+            .join(format!("rollout-2026-09-03T10-00-00-{id}.jsonl"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            format!("{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{id}\",\"cwd\":\"/Users/example/app\"}}}}\n"),
+        )
+        .unwrap();
+        let service = SessionsService::with_home(DataRoot::at(dir.path().join(".vibebar")), &home);
+        let listing = service.listing(&SessionListingQuery::default());
+        let row = listing
+            .rows
+            .iter()
+            .find(|row| row.session_id == id)
+            .expect("the scanned session is listed");
+        assert!(!row.session_ref.is_empty());
+        let reports = service.delete_sessions(&[row.session_ref.clone(), "not-a-reference".to_string()]);
+        assert!(reports[0].deleted, "{:?}", reports[0]);
+        assert!(!reports[1].deleted);
+        assert!(!path.exists());
+        assert!(service
+            .listing(&SessionListingQuery::default())
+            .rows
+            .iter()
+            .all(|row| row.session_id != id));
+        // The reference is gone with the file.
+        assert!(matches!(service.transcript(&reports[0].session_ref, 0, 10), Err(CoreError::SessionReferenceInvalid)));
+    }
+
 }

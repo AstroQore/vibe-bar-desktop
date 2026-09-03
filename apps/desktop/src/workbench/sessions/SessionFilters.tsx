@@ -42,6 +42,8 @@ export function SessionFilters({
   deleteMode,
   onToggleDeleteMode,
   checkedCount,
+  deleteArmed,
+  deleting,
   onDelete,
   deleteDisabledReason,
 }: {
@@ -54,6 +56,9 @@ export function SessionFilters({
   deleteMode: boolean;
   onToggleDeleteMode: () => void;
   checkedCount: number;
+  /** The first click armed the button; the next one deletes. */
+  deleteArmed: boolean;
+  deleting: boolean;
   onDelete: () => void;
   deleteDisabledReason: string | null;
 }) {
@@ -67,7 +72,7 @@ export function SessionFilters({
 
   return (
     <div className="wb-toolbar ss-toolbar">
-      <div className="ss-toolbar-row">
+      <div className={`ss-toolbar-row${deleteMode ? " deleting" : ""}`}>
         <div className="wb-field ss-search">
           <Search size={12} />
           <input
@@ -254,8 +259,14 @@ export function SessionFilters({
         <span className="wb-spacer" />
         {deleteMode ? (
           <>
-            <button type="button" className="wb-pill danger" disabled={checkedCount === 0 || deleteDisabledReason !== null} title={deleteDisabledReason ?? "Delete the checked sessions"} onClick={onDelete}>
-              <Trash size={12} /> {checkedCount === 0 ? "Delete" : `Delete ${checkedCount}`}
+            <button
+              type="button"
+              className={`wb-pill danger${deleteArmed ? " prominent" : ""}`}
+              disabled={checkedCount === 0 || deleting || deleteDisabledReason !== null}
+              title={deleteDisabledReason ?? (deleteArmed ? "Click again to delete these sessions' log files for good" : "Delete the checked sessions")}
+              onClick={onDelete}
+            >
+              <Trash size={12} /> {deleting ? "Deleting…" : checkedCount === 0 ? "Delete" : deleteArmed ? `Confirm: delete ${checkedCount}` : `Delete ${checkedCount}`}
             </button>
             <button type="button" className="wb-pill" title="Leave selection mode" onClick={onToggleDeleteMode}>
               <CheckCircle size={12} /> Done

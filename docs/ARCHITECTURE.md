@@ -213,6 +213,15 @@ the Project Mix card says so instead of drawing an empty ring.
 
 ### Sessions
 
+Deleting sessions is the page's one destructive action: Select in the
+Options menu, check rows, click Delete, then click again within six
+seconds to confirm. `session_delete` resolves each reference back to the
+provider, path and id it was issued for and hands them to the kit's
+deleter, which re-parses the file and refuses anything outside the
+provider roots or through a symlink; the report says per session whether
+it went and, if not, why. Rows whose file is gone leave listings on the
+next load — the shared index is not written.
+
 The page is the first on the codified porcelain language — see
 `docs/DESIGN.md` for the tokens, controls and patterns it composes.
 

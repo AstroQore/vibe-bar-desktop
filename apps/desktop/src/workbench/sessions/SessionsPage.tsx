@@ -8,7 +8,6 @@ import { TRANSCRIPT_PAGE, applyFolderFilters, buildListingQuery, groupRows, inde
 import "./sessions.css";
 
 const PAGE = 250;
-const DELETE_REASON = "Deleting session logs is the native app's job in this release; this client reads the shared store without writing to it.";
 
 const DEFAULTS: SessionFilterState = {
   search: "",
@@ -53,6 +52,13 @@ export function SessionsPage({
   const [history, setHistory] = useState<TranscriptCursor[]>([]);
   const [deleteMode, setDeleteMode] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Deletion is two clicks: the first arms the button, the second — within
+  // a few seconds — removes the checked sessions' log files for good.
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  /** The references the first click armed; the second click deletes only
+   *  exactly these, and any change to the checked set disarms. */
+  const armedRefs = useRef<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [listWidth, setListWidth] = useState(380);
   const generation = useRef(0);
@@ -119,6 +125,54 @@ export function SessionsPage({
     setToast(note);
     window.setTimeout(() => setToast((current) => (current === note ? null : current)), 2_200);
   };
+
+  useEffect(() => {
+    if (!deleteArmed) return;
+    const timer = window.setTimeout(() => setDeleteArmed(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, [deleteArmed]);
+  useEffect(() => {
+    // Ticking a row, changing a filter, a reload: whatever moved the checked
+    // set, the armed click no longer describes it.
+    const current = [...checked].sort().join("\n");
+    if (deleteArmed && armedRefs.current.slice().sort().join("\n") !== current) setDeleteArmed(false);
+  }, [checked, deleteArmed]);
+
+  const deleteChecked = async () => {
+    if (checked.size === 0 || deleting) return;
+    if (!deleteArmed) {
+      armedRefs.current = [...checked];
+      setDeleteArmed(true);
+      return;
+    }
+    const refs = armedRefs.current.slice();
+    if (refs.slice().sort().join("\n") !== [...checked].sort().join("\n")) {
+      setDeleteArmed(false);
+      return;
+    }
+    setDeleteArmed(false);
+    setDeleting(true);
+    try {
+      const reports = await api.sessionDelete(refs);
+      const gone = new Set(reports.filter((report) => report.deleted).map((report) => report.sessionRef));
+      const failed = reports.filter((report) => !report.deleted);
+      setRows((current) => current.filter((row) => !gone.has(row.sessionRef)));
+      if (selected && gone.has(selected.sessionRef)) setSelected(null);
+      setChecked(new Set(failed.map((report) => report.sessionRef)));
+      if (failed.length === 0) setDeleteMode(false);
+      const first = failed[0]?.reason;
+      notify(
+        failed.length === 0
+          ? `Deleted ${gone.size} ${gone.size === 1 ? "session" : "sessions"}.`
+          : `Deleted ${gone.size}; ${failed.length} not deleted${first ? ` — ${first}` : ""}.`,
+      );
+      void load(0);
+    } catch (error) {
+      notify(`Could not delete: ${String(error)}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
   const copy = async (text: string, note: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -178,10 +232,13 @@ export function SessionsPage({
         onToggleDeleteMode={() => {
           setDeleteMode((v) => !v);
           setChecked(new Set());
+          setDeleteArmed(false);
         }}
         checkedCount={checked.size}
-        onDelete={() => notify(DELETE_REASON)}
-        deleteDisabledReason={DELETE_REASON}
+        deleteArmed={deleteArmed}
+        deleting={deleting}
+        onDelete={() => void deleteChecked()}
+        deleteDisabledReason={null}
       />
       <div className="ss-split">
         <div className="ss-list-pane" style={{ width: listWidth }}>
@@ -203,8 +260,8 @@ export function SessionsPage({
               })
             }
             empty={empty}
-            canLoadMore={!fixture && !filters.search && listing != null && listing.rows.length === PAGE}
-            onLoadMore={() => void load(rows.length)}
+            canLoadMore={!fixture && !filters.search && listing != null && (listing.nextOffset != null || (listing.source !== "indexed" && listing.rows.length === PAGE))}
+            onLoadMore={() => void load(listing?.nextOffset ?? rows.length)}
             loading={loading}
           />
         </div>

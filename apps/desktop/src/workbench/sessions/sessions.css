@@ -7,6 +7,9 @@
 /* Below the default window width the row may wrap rather than lose the
    count and the rescan control off the edge. */
 @container (max-width: 880px) { .ss-toolbar { padding: 8px 10px; } .ss-toolbar-row { flex-wrap: wrap; row-gap: 6px; } }
+/* Selecting sessions to delete adds two controls; the row may wrap for that. */
+.ss-toolbar-row.deleting { flex-wrap: wrap; row-gap: 6px; }
+.ss-toolbar:has(.ss-toolbar-row.deleting) { padding: 8px 10px; }
 .ss-search { flex: 0 1 220px; min-width: 120px; }
 .ss-search .wb-iconbtn { width: 20px; height: 20px; }
 .ss-index { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--wb-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
