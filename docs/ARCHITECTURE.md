@@ -144,13 +144,17 @@ handle rather than reopening a checked pathname.
 - **No per-request ledger, no cost history.** The local scan produces an
   aggregate that stays under `client/desktop/`; the ledger, the multi-source
   price catalog and the history the native app keeps are parity work.
-- **No MCP socket, no notifications, no remote sync.** The stdio server is
-  read-only and answers six questions: quota, status, cost and pricing from
-  what the last run recorded, and the two session tools from the shared index
-  or, when it is absent, a bounded discovery at request time — reading the
-  filesystem, never writing it or refreshing a provider. The Unix socket, its
-  writer tools and the relay client belong to the native app. These are parity
-  work, tracked in `HANDOVER.md`, not omissions to be patched in ad hoc.
+- **No MCP socket, no notifications, no remote sync.** The stdio server
+  answers six questions and writes nothing by request: quota, status and cost
+  from what the last run recorded, `pricing.effective` from this build's
+  compiled table — no prior run needed — and the two session tools from the
+  shared index or, when it is absent, a bounded discovery at request time,
+  reading the filesystem and never refreshing a provider. It has one storage
+  side effect, at construction rather than on a request: with Cost Data
+  privacy on, the cost engine deletes this client's saved snapshot before
+  reading it, which is that setting working. The Unix socket, its writer
+  tools and the relay client belong to the native app. These are parity work,
+  tracked in `HANDOVER.md`, not omissions to be patched in ad hoc.
 
 ## The popover
 

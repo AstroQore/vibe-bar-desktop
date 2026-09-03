@@ -59,7 +59,8 @@ been installed.
 - PR [#15](https://github.com/AstroQore/agent-session-kit/pull/15) merged and
   released as `0.7.0`: Swift and Rust became peer implementation lanes under
   `implementations/`, with `contracts/` holding the facts both must honour.
-  Desktop now pins that tag.
+  Desktop pinned that tag at the time; the pin is `0.8.0` now, which
+  added the Rust `deletion` module.
 
 ### vibe-bar-desktop
 
@@ -137,12 +138,13 @@ the SQLite `session_index.sqlite3-shm` mtime.
 ## 5. Invariants that must not be weakened
 
 1. Write outside `<data root>/client/desktop/` only in the authorized
-   domains, each through its documented writer, on the terms
-   [AGENTS.md](AGENTS.md) rule 1 sets out. Most are not under the Vibe Bar
-   root at all: one is a macOS preference, one removes a harness's own logs,
-   one is the skill library and the app directories it projects into, one is
-   the OS login-item registration, and installing an accepted update replaces
-   the application itself.
+   domains. Five of them — shared settings, the quota cache, the Control
+   Center allow-list, session deletion and the skill library — go through a
+   documented writer on the terms [AGENTS.md](AGENTS.md) rule 1 sets out, and
+   most are not under the Vibe Bar root at all. The other two have no such
+   writer and cannot: autostart and the updater hand off to the platform at
+   an explicit yes, one registering a login item and one replacing the
+   application itself.
 2. Never repair, migrate, prune, rebuild, or downgrade another client's shared
    store. Unknown or unreadable versions degrade to unavailable with a reason.
 3. Keep quota hierarchy and usage-harness grouping as separate naming axes.
