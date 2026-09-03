@@ -6,6 +6,7 @@ import { UsageStatsPage } from "./workbench/usage/UsageStatsPage";
 import { ResetsPage } from "./workbench/resets/ResetsPage";
 import { SessionsPage } from "./workbench/sessions/SessionsPage";
 import { SettingsPage } from "./workbench/settings/SettingsPage";
+import { OnboardingAssistant } from "./workbench/onboarding/OnboardingAssistant";
 import { SkillsPage } from "./workbench/skills/SkillsPage";
 import { WorkbenchRoot, useAppearance } from "./workbench/WorkbenchRoot";
 import type { WorkbenchPageId } from "./workbench/pages";
@@ -35,13 +36,22 @@ export function App() {
    *  nobody here touched — that is taken on silently, since nothing was lost. */
   const [replacedSettings, setReplacedSettings] = useState<string[] | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** The setup assistant: open on a fresh install (the shared gate says so)
+   *  or when Settings asks for it. */
+  const [assistant, setAssistant] = useState(false);
 
 
   useEffect(() => {
     // Cached view first so the window paints immediately, then live updates
     // arrive from the background refresh loop.
     api.quotaView().then(setView).catch(() => undefined);
-    api.appInfo().then(setInfo).catch(() => undefined);
+    api
+      .appInfo()
+      .then((next) => {
+        setInfo(next);
+        if (next.onboarding === "show") setAssistant(true);
+      })
+      .catch(() => undefined);
     api.presentationSettings().then(setPresentation).catch(() => undefined);
     api
       .costView()
@@ -129,6 +139,7 @@ export function App() {
         onDismissReplaced={() => setReplacedSettings(null)}
         onRescanCost={() => api.refreshCost().then(setCost)}
         onCheckConnections={() => api.refreshQuota().then(setView)}
+        onShowAssistant={() => setAssistant(true)}
         initialSection={(new URLSearchParams(window.location.search).get("section") ?? "system") as never}
       />
     ),
@@ -150,6 +161,19 @@ export function App() {
       version={info?.version}
       dark={dark}
       onToggleDark={toggleDark}
+      overlay={
+        assistant ? (
+          <OnboardingAssistant
+            info={info}
+            settings={presentation}
+            onClose={() => setAssistant(false)}
+            onSettingsChanged={() => {
+              api.presentationSettings().then(setPresentation).catch(() => undefined);
+              api.appInfo().then(setInfo).catch(() => undefined);
+            }}
+          />
+        ) : null
+      }
     />
   );
 }

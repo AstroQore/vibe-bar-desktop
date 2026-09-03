@@ -157,6 +157,7 @@ export function SettingsPage({
   onDismissReplaced,
   onRescanCost,
   onCheckConnections,
+  onShowAssistant,
   fixture = false,
   pricingFixture,
   initialSection = "system",
@@ -172,6 +173,7 @@ export function SettingsPage({
   onDismissReplaced: () => void;
   onRescanCost: () => Promise<unknown>;
   onCheckConnections: () => Promise<unknown>;
+  onShowAssistant?: () => void;
   fixture?: boolean;
   pricingFixture?: EffectiveModelPricingRow[];
   initialSection?: SectionId;
@@ -303,7 +305,7 @@ export function SettingsPage({
               </div>
               <p className="st-note">Registers this app as a login item; the menu bar icon is back before the first refresh.</p>
               <div className="st-line">
-                <button type="button" className="wb-pill" disabled title="The setup assistant arrives with a later Desktop release.">
+                <button type="button" className="wb-pill" disabled={!onShowAssistant} title="Walk through the first-run choices again" onClick={onShowAssistant}>
                   Show setup assistant
                 </button>
               </div>

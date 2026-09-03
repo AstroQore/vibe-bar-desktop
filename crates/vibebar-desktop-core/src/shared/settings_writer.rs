@@ -128,6 +128,22 @@ impl SettingsWriter {
     /// never taken out of the object in the first place.
     ///
     /// Returns what was written, or an error if nothing could be.
+    /// Record that the setup assistant was completed (or skipped): the one
+    /// key written outside the Settings whitelist, by the assistant alone,
+    /// through the same lock and merge as every other write. The native app
+    /// reads the same flag, so a Mac that met either client's assistant is
+    /// not greeted twice.
+    pub fn record_onboarding_completion(&mut self) -> Result<Applied, CoreError> {
+        let mut changes = Object::new();
+        changes.insert(
+            "hasCompletedOnboarding".to_string(),
+            serde_json::Value::Bool(true),
+        );
+        let mut owned = Self::owned();
+        owned.insert("hasCompletedOnboarding".to_string());
+        self.apply_owned(&changes, &owned)
+    }
+
     pub fn apply(&mut self, changes: &Object) -> Result<Applied, CoreError> {
         let owned = Self::owned();
         let refused: Vec<&String> = changes.keys().filter(|key| !owned.contains(*key)).collect();
@@ -135,7 +151,14 @@ impl SettingsWriter {
             refused.is_empty(),
             "settings Desktop does not present: {refused:?} — add the control first, then the key"
         );
+        self.apply_owned(changes, &owned)
+    }
 
+    /// The write itself — lock, re-read, merge only the keys in `owned`,
+    /// keep every unknown one. `apply` passes the Settings whitelist; the
+    /// one key with its own documented writer passes that whitelist plus
+    /// itself, so neither path widens the other.
+    fn apply_owned(&mut self, changes: &Object, owned: &BTreeSet<String>) -> Result<Applied, CoreError> {
         let directory = self.directory().to_path_buf();
         file_lock::with_lock("settings", &directory, || {
             // A file that exists but cannot be read is not a file to rebuild.

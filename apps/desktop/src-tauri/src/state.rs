@@ -36,9 +36,25 @@ pub struct AppState {
     /// check still in flight when the person switches channel and checks by
     /// hand cannot finish afterwards and overwrite the newer result.
     update_check: tokio::sync::Mutex<()>,
+    /// Whether to show the setup assistant, decided once at startup — before
+    /// this process's own refresh could write a quota cache or the assistant
+    /// a settings file, either of which would make a fresh install look like
+    /// an upgrade.
+    onboarding: std::sync::OnceLock<vibebar_desktop_core::onboarding::Decision>,
 }
 
 impl AppState {
+    pub fn onboarding(&self) -> vibebar_desktop_core::onboarding::Decision {
+        *self
+            .onboarding
+            .get()
+            .unwrap_or(&vibebar_desktop_core::onboarding::Decision::Skip)
+    }
+
+    pub fn set_onboarding(&self, decision: vibebar_desktop_core::onboarding::Decision) {
+        let _ = self.onboarding.set(decision);
+    }
+
     pub fn update_check_lock(&self) -> &tokio::sync::Mutex<()> {
         &self.update_check
     }
@@ -90,6 +106,7 @@ impl AppState {
             first_run_mark_on_show: std::sync::atomic::AtomicBool::new(false),
             pending_update: Pending::default(),
             update_check: tokio::sync::Mutex::new(()),
+            onboarding: std::sync::OnceLock::new(),
         }
     }
 

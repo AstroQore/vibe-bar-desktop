@@ -230,6 +230,8 @@ export interface AppInfo {
   dataRoot: string;
   isDemo: boolean;
   nativeApp: NativeAppPresence;
+  /** Whether the setup assistant should open: `show` on a fresh install, `skip` once completed. */
+  onboarding: "show" | "skip" | "markCompleted";
 }
 
 export interface SkillInventoryRow {
@@ -544,6 +546,8 @@ export const api = {
   /** The writable keys as they sit in the shared file, raw — for editing a
    *  nested object (menu bar item, cost data, mini window) whole. */
   sharedSettingsRaw: () => invoke<Record<string, unknown>>("shared_settings_raw"),
+  /** The assistant finished or was skipped; the shared flag both clients honour. */
+  completeOnboarding: () => invoke<void>("complete_onboarding"),
   saveSharedSettings: (changes: Record<string, unknown>) =>
     invoke<PresentationSettings>("save_shared_settings", { changes }),
   /** Tell the shell how large the mini window's content is, so it can fit the

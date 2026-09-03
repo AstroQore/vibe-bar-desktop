@@ -314,6 +314,23 @@ used here. Remote probes, the MCP socket, the menu bar health monitor,
 WebView login, and cookie import remain the native app's; each section
 says so rather than presenting a control that would do nothing.
 
+## The setup assistant
+
+The native app's first-run assistant, step for step — Welcome,
+Subscriptions, Browser cookies, Other plans, Model pricing, Launch at
+login, All set — drawn as a 720×560 sheet over the Workbench. Whether it
+opens is the native `OnboardingGate` verbatim (`core::onboarding`), on the
+same shared signals: skip when `hasCompletedOnboarding` is set; on an
+upgrade that never saw an assistant (quota caches or a settings file
+already exist) record completion rather than greet; show only a fresh
+install. `app_info` carries the answer and performs that one record.
+Everything the assistant changes — which subscriptions and plans are
+visible, launch at login, and the completion flag itself — goes through
+the shared settings writer (or the autostart plugin), so both clients see
+it; Finish and Skip both set the flag. Browser-cookie import stays the
+native app's job in this release and the step says so. Settings › System
+reopens the assistant at any time.
+
 ## Showing the main window
 
 The main window is created hidden and, at startup, shown only once the

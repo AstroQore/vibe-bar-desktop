@@ -99,6 +99,7 @@ pub fn run() {
             commands::session_delete,
             commands::quota_cycles,
             commands::app_info,
+            commands::complete_onboarding,
             commands::skills_inventory,
         ])
         // Every window's page learns whether it sits on a vibrant material,
@@ -155,6 +156,9 @@ pub fn run() {
             );
             app.manage(state);
             apply_startup_action(app.handle(), action);
+            // Before this process's first refresh can write a quota cache.
+            commands::snapshot_onboarding(&app.state::<AppState>());
+
             spawn_refresh_loop(app.handle().clone());
             spawn_load_watchdog(app.handle().clone());
             spawn_update_check_loop(app.handle().clone());
