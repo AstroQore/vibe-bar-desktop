@@ -66,9 +66,12 @@ invisible against the fill it sits on: all found there, none by a unit test.
 ## Data flow for a refresh
 
 1. `QuotaEngine::refresh` fetches every provider with a live adapter
-   (Codex, Claude, Cursor, Grok, Alibaba, Copilot, Z.ai, MiniMax, Kilo,
-   Kiro, OpenRouter, and Warp today), in sequence, each with a 30-second
-   ceiling.
+   (Codex, Claude, Cursor, Grok, AntiGravity, Alibaba, Copilot, Z.ai,
+   MiniMax, Kilo, Kiro, OpenRouter, and Warp today), in sequence, each with a
+   30-second ceiling. AntiGravity is the one that talks to this machine
+   rather than a provider: its language server is discovered from the process
+   list, and its own loopback client is the only place certificate
+   verification is off.
 2. Each success is persisted to `client/desktop/quotas/` and kept in hand —
    a failed write must not lose an observation already obtained.
 3. The shared cache is read, with account ids claimed from both the native
