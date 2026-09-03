@@ -360,18 +360,35 @@ fn spawn_update_check_loop(app: tauri::AppHandle) {
                 };
                 let _ = store.record_update_check(now);
                 match found {
-                    Ok(Some(update)) => {
-                        eprintln!("[update] {} is available", update.version);
-                        tray::refresh_menu(&app);
-                        let _ = app.emit(UPDATE_EVENT, &update);
+                    Ok(found) => {
+                        if let Some(update) = &found {
+                            eprintln!("[update] {} is available", update.version);
+                        }
+                        announce_update(&app, found.as_ref());
                     }
-                    Ok(None) => tray::refresh_menu(&app),
                     Err(error) => eprintln!("[update] scheduled check failed: {error}"),
                 }
+                tokio::time::sleep(DAILY).await;
+            } else {
+                // Sleep only until the last check is a day old, so a launch
+                // near the end of the window keeps the daily cadence rather
+                // than adding a whole day to it.
+                let due = store
+                    .last_update_check_at()
+                    .map(|at| (at + DAILY.as_secs_f64() - now).max(60.0))
+                    .unwrap_or(DAILY.as_secs_f64());
+                tokio::time::sleep(Duration::from_secs_f64(due.min(DAILY.as_secs_f64()))).await;
             }
-            tokio::time::sleep(DAILY).await;
         }
     });
+}
+
+/// After any check — scheduled or from Settings — the tray menu shows or
+/// drops its "Update to X…" item and every open page hears the result,
+/// `null` included, so a page offering a withdrawn update stops offering it.
+pub(crate) fn announce_update(app: &tauri::AppHandle, found: Option<&commands::PendingUpdate>) {
+    tray::refresh_menu(app);
+    let _ = app.emit(UPDATE_EVENT, found);
 }
 
 /// Install what the last check is holding and restart into it; the tray's

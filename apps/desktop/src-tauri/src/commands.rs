@@ -213,7 +213,9 @@ pub async fn check_for_update(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<PendingUpdate>, String> {
-    perform_update_check(&app, &state).await
+    let found = perform_update_check(&app, &state).await?;
+    crate::announce_update(&app, found.as_ref());
+    Ok(found)
 }
 
 /// What the last check found and is still holding, for a page that opens

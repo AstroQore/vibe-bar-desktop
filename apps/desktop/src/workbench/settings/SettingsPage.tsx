@@ -84,11 +84,19 @@ function UpdateCheck({ fixture }: { fixture: boolean }) {
   useEffect(() => {
     if (fixture) return;
     let live = true;
-    void api.pendingUpdate().then((update) => {
-      if (live && update) setState((current) => (current.at === "installing" ? current : { at: "found", update }));
-    }).catch(() => undefined);
-    const off = api.onUpdateAvailable((update) => {
-      if (live) setState((current) => (current.at === "installing" ? current : { at: "found", update }));
+    const apply = (update: PendingUpdate | null) => {
+      if (!live) return;
+      setState((current) => {
+        if (current.at === "installing") return current;
+        if (update) return { at: "found", update };
+        return current.at === "found" ? { at: "idle", note: "no longer available" } : current;
+      });
+    };
+    // Listen first, then ask: a check that finishes between the two would
+    // otherwise be missed by both.
+    const off = api.onUpdateAvailable(apply).then((unlisten) => {
+      void api.pendingUpdate().then(apply).catch(() => undefined);
+      return unlisten;
     });
     return () => {
       live = false;

@@ -555,8 +555,9 @@ export const api = {
   checkForUpdate: () => invoke<PendingUpdate | null>("check_for_update"),
   /** What the scheduled daily check found and is holding, if anything. */
   pendingUpdate: () => invoke<PendingUpdate | null>("pending_update"),
-  onUpdateAvailable: (handler: (update: PendingUpdate) => void) =>
-    listen<PendingUpdate>(UPDATE_EVENT, (event) => handler(event.payload)).then((unlisten) => unlisten),
+  /** Every check's result, `null` when it found nothing (or the find was withdrawn). */
+  onUpdateAvailable: (handler: (update: PendingUpdate | null) => void) =>
+    listen<PendingUpdate | null>(UPDATE_EVENT, (event) => handler(event.payload)).then((unlisten) => unlisten),
   /** Installs what that check found and restarts into it. */
   installUpdate: (id: number) => invoke<void>("install_update", { id }),
   onQuotaUpdated: (handler: (view: QuotaView) => void) =>
