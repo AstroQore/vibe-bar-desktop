@@ -33,9 +33,12 @@ one sitting.
 
 ## Releasing
 
-Not yet possible: there is no release workflow, no tag, and no signing key.
-[RELEASE.md](RELEASE.md) is the design, including the three things that cannot
-be changed once a version has reached someone.
+`release.yml` builds and signs from a tag — `vX.Y.Z` on the Main channel,
+`vX.Y.Z-dev.N` on Dev — into a draft release, and the updater feed lives on
+the `updates` branch, one document per channel. The app checks once a day and
+offers the update from the tray. [RELEASE.md](RELEASE.md) has the pipeline,
+the gates, and the three things that cannot be changed once a version has
+reached someone.
 
 ## Looking at the mini layouts
 
@@ -58,7 +61,8 @@ invisible against the fill it sits on: all found there, none by a unit test.
 | Finding credentials the CLIs and Cursor.app wrote | `credentials/` |
 | One provider's endpoint and wire shape | `providers/<name>.rs` |
 | Merging live and cached into what the UI shows | `refresh.rs` |
-| Presentation preferences | `shared/settings.rs` reads them; `shared/settings_writer.rs` is the only thing here that writes a shared store |
+| Presentation preferences | `shared/settings.rs` reads them, `shared/settings_writer.rs` writes them |
+| Writing a shared store | `shared/settings_writer.rs`, `shared/quota_cache.rs`, `skills/service.rs`, the session kit's deleter, and the bundled `resources/fix_menu_bar_allowlist.py` for the Control Center preference — the writers named in [AGENTS.md](../AGENTS.md) rule 1, and nothing else |
 | Public OpenAI-wide/Claude/Google AI/Cursor service status | `status.rs` → in-memory cache → status IPC |
 | Local Codex/Claude usage and priced portion | `cost.rs` → in-memory cache → cost IPC |
 | Indexed vs scanned sessions | `sessions.rs` |
@@ -97,7 +101,7 @@ Reads that failed and demo mode never publish.
 
 ## Two sources, one list, honestly labeled
 
-Desktop fetches ten providers and reads twenty-five. A number it fetched and
+Desktop fetches thirteen providers and reads the rest from the shared cache. A number it fetched and
 a number the native app left in the cache are different claims about
 freshness, so `QuotaOrigin` travels with every account and the UI marks cached
 ones `shared data`. The alternative — showing them identically — would make
@@ -122,14 +126,36 @@ handle rather than reopening a checked pathname.
 
 ## What is deliberately absent
 
-- **No writes to shared state.** See [SHARED-STORAGE.md](SHARED-STORAGE.md).
+- **A closed list of authorized write domains.** Shared settings and the
+  quota cache under `~/.vibebar`; the Control Center allow-list, which is a
+  macOS preference; whole-session deletion, which removes logs under a
+  harness's own directory; the skill library under `~/.agents/skills` with the
+  managed app directories; and the OS login-item registration behind launch at
+  login. Installing an accepted update replaces the application itself, which
+  is a seventh and needs saying out loud. The first five go through one
+  documented writer each, carrying the native app's rules; the last two do
+  not and cannot — they hand off to the platform, `tauri-plugin-autostart`
+  and the updater, at a person's explicit yes. Everything else those roots
+  hold is read here. See
+  [SHARED-STORAGE.md](SHARED-STORAGE.md) and [AGENTS.md](../AGENTS.md) rule 1.
 - **No dependency on the native app.** Its presence is detected only to offer
   a link, and never changes what Desktop can do.
 - **No credential writing or OAuth refresh.** Three processes share
   `~/.codex/auth.json` and none of them take a lock.
-- **No notifications, no cost pipeline, no MCP server, no remote sync.** These
-  are parity work, tracked in `HANDOVER.md`, not omissions to be patched in
-  ad hoc.
+- **No per-request ledger, no cost history.** The local scan produces an
+  aggregate that stays under `client/desktop/`; the ledger, the multi-source
+  price catalog and the history the native app keeps are parity work.
+- **No MCP socket, no notifications, no remote sync.** The stdio server
+  answers six questions and writes nothing by request: quota, status and cost
+  from what the last run recorded, `pricing.effective` from this build's
+  compiled table — no prior run needed — and the two session tools from the
+  shared index or, when it is absent, a bounded discovery at request time,
+  reading the filesystem and never refreshing a provider. It has one storage
+  side effect, at construction rather than on a request: with Cost Data
+  privacy on, the cost engine deletes this client's saved snapshot before
+  reading it, which is that setting working. The Unix socket, its writer
+  tools and the relay client belong to the native app. These are parity work,
+  tracked in `HANDOVER.md`, not omissions to be patched in ad hoc.
 
 ## The popover
 

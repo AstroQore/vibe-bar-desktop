@@ -1,10 +1,11 @@
-# Releases and in-app updates — the plan
+# Releases and in-app updates
 
-**Nothing here is implemented yet.** Desktop has `ci.yml` and nothing else: no
-release workflow, no tags, no updater configuration, and no signing key. This
-is the design to build, written down first because the pieces constrain each
-other and half of them are one-way doors once a version has shipped to
-someone.
+**This is built and running.** `release.yml` builds and signs from a tag,
+`publish-update-feed.yml` rebuilds the feed from what is published, and both
+channels have shipped versions — the Dev channel is on `0.1.0-dev.5` at the
+time of writing. This document is both the design and the runbook: the pieces
+constrain each other, and half of them are one-way doors once a version has
+shipped to someone, so the reasoning is kept alongside the steps.
 
 The native client's pipeline is the reference. Where this differs, it is
 because Sparkle and the Tauri updater differ, and the difference is called out.
@@ -15,7 +16,7 @@ Read from the repository rather than from memory:
 
 | | |
 | --- | --- |
-| Version SSOT | `Resources/Info.plist` — `CFBundleShortVersionString` (1.5.0) and `CFBundleVersion` (58) |
+| Version SSOT | `Resources/Info.plist` — `CFBundleShortVersionString` and `CFBundleVersion`, 1.6.2 and 64 as this was last checked |
 | Tags | `v<version>` for Main, `v<version>-dev.<CFBundleVersion>` for Dev |
 | Gate | `scripts/release_app.sh` refuses a tag that disagrees with the plist, and refuses a bundle carrying an `app-sandbox` entitlement |
 | Feed | one `appcast.xml` on the `updates` branch holding **both** channel heads |
@@ -32,18 +33,19 @@ Two of these are load-bearing and easy to get wrong:
 - **A Dev subscriber sees both channels.** The channel tag filters what a
   client is *allowed* to see; the build number decides what it *takes*. That is
   why Dev users get a Main release the moment its build number is higher —
-  today Main is 1.5.0 (58) while Dev is 1.4.1 (57).
+  when this was last checked Main was 1.6.1 while Dev was 1.6.2-dev.63.
 
 ## Version SSOT: one file, not three
 
-Desktop carries `0.1.0` in `apps/desktop/src-tauri/tauri.conf.json`,
-`apps/desktop/package.json`, and the workspace `Cargo.toml`. Three copies of
-one fact, and nothing checks that they agree.
+Desktop carries its version in `apps/desktop/src-tauri/tauri.conf.json`,
+`apps/desktop/package.json`, and the workspace `Cargo.toml`, and `Cargo.lock`
+records it a fourth time. Four copies of one fact.
 
 `tauri.conf.json` is the one that matters: it is what Tauri bakes into the
 bundle and into the updater artifacts, so it is the truth. The other two are
-checked against it in CI and the release script refuses to build when they
-disagree. Not generated — a generated `Cargo.toml` version is a worse trade
+checked against it by `scripts/check_versions.sh`, which CI runs on every pull
+request and `release.yml` runs before the build, and which fails when any of
+them — the lockfile included — disagrees. Not generated — a generated `Cargo.toml` version is a worse trade
 than a check that fails loudly.
 
 ## Channels and version numbers
@@ -94,13 +96,11 @@ Pages build and no domain that can lapse.
 The app reads `updateChannel` from the shared `settings.json` — the same key
 the native client uses, so choosing Dev in one window applies to both.
 
-**Desktop has to be able to set it too, not only read it.** On a machine with
-no native client there is otherwise no way into the Dev channel at all: the key
-is not in `settings_writer::WRITABLE_KEYS` and Desktop's Settings presents
-three controls, none of them this one. So the updater work includes a channel
-control in Settings and `updateChannel` in the whitelist — which is the rule
-that list already states, that a key may be writable only when a control
-submits it.
+**Desktop sets it too, not only reads it.** On a machine with no native
+client there would otherwise be no way into the Dev channel at all. So
+`updateChannel` is in `settings_writer::WRITABLE_KEYS` and Settings renders
+the channel control that submits it — which is the rule that list already
+states, that a key may be writable only when a control submits it.
 
 Each file is the Tauri updater's shape:
 
@@ -196,8 +196,8 @@ the bundler saying which ones it wrote.
   not numeric, so `0.1.0-dev.1` cannot be packaged as an MSI at all — it
   fails the build rather than producing something. NSIS drops the pre-release
   from `VIProductVersion` and carries on, and the Windows updater artifact is
-  the NSIS zip either way, so MSI would only add an installer no update path
-  uses. Each target names its bundles explicitly for this reason; the default
+  the `-setup.exe` itself — that is the URL the manifest carries — so MSI
+  would only add an installer no update path uses. Each target names its bundles explicitly for this reason; the default
   is every format the platform supports.
 - **Windows code signing.** Unsigned installers meet SmartScreen. A
   certificate is a cost and a decision; without one the first-run experience
@@ -322,8 +322,9 @@ back.
 - **A Windows signing certificate.** Until there is one, Windows installers
   meet SmartScreen. That is a purchase and a decision, not a build step.
 - **Delta updates.** Sparkle does not use them here either.
-- **A "check now" button.** Native's daily ask-first check is the behaviour to
-  match, and it needs the settings pane before it needs a button.
+- **Rolling out to a fraction of users.** Both feeds serve one head per
+  channel; staging a release to some subscribers first would need a second
+  document and a rule for who reads which.
 - **Rollback.** There is none, and the channel switch is not one — which is
   worth stating because it is the obvious thing to assume. The updater only
   offers versions *newer* than the installed one, so someone on a bad
