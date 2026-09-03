@@ -148,9 +148,14 @@ fn check_status(status: GrpcStatus) -> Result<(), QuotaError> {
     if code == 0 {
         return Ok(());
     }
-    // 16 is UNAUTHENTICATED.
+    // The two gRPC codes that mean something more specific than "failed":
+    // 16 is UNAUTHENTICATED, 8 is RESOURCE_EXHAUSTED, which is a rate limit
+    // arriving inside an HTTP 200 rather than as a 429.
     if code == 16 {
         return Err(QuotaError::NeedsLogin);
+    }
+    if code == 8 {
+        return Err(QuotaError::RateLimited);
     }
     Err(QuotaError::Network(format!(
         "Grok RPC failed: {}",
@@ -550,6 +555,14 @@ mod tests {
         assert!(matches!(
             check_status(grpc_status_from_trailers(&body)),
             Err(QuotaError::NeedsLogin)
+        ));
+        let mut exhausted = data_frame(&usage_payload(1.0));
+        exhausted.extend(trailer_frame(
+            "grpc-status:8\r\ngrpc-message:quota%20exhausted\r\n",
+        ));
+        assert!(matches!(
+            check_status(grpc_status_from_trailers(&exhausted)),
+            Err(QuotaError::RateLimited)
         ));
         let mut failed = data_frame(&usage_payload(1.0));
         failed.extend(trailer_frame(
