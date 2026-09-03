@@ -297,30 +297,30 @@ pub fn apply_glass<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>, surface:
     }
 }
 
-/// A page that has not mounted thirty seconds after launch is reloaded once
-/// and, if that does not help either, a show that was parked goes through
-/// anyway so the request is not lost. Thirty, not six: on a Mac whose CoreAudio HAL stalls, WebKit's
-/// GPU process blocks for fifteen seconds before any page can paint, and a
-/// reload inside that window only restarts the wait.
+/// A page that has not mounted thirty seconds after launch is loaded again
+/// once — as a new generation, so a report from the old page cannot be
+/// taken for the new one — and, if that does not help either, a show that
+/// was parked goes through anyway so the request is not lost. Thirty, not
+/// six: on a Mac whose CoreAudio HAL stalls, WebKit's GPU process blocks for
+/// fifteen seconds before any page can paint, and a reload inside that
+/// window only restarts the wait.
 fn spawn_load_watchdog(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        let state = app.state::<state::AppState>();
-        if state.page_ready() {
+        let Some(generation) = app.state::<state::AppState>().begin_reload_unless_ready() else {
             return;
-        }
-        eprintln!("[watchdog] main page not mounted after 30 s; reloading once");
+        };
+        eprintln!("[watchdog] main page not mounted after 30 s; loading generation {generation}");
         if let Some(window) = app.get_webview_window("main") {
-            let _ = window.reload();
+            if let Ok(mut url) = window.url() {
+                url.set_query(Some(&format!("boot={generation}")));
+                let _ = window.navigate(url);
+            }
         }
         tokio::time::sleep(Duration::from_secs(20)).await;
-        if !state.page_ready() {
-            eprintln!("[watchdog] main page still not mounted after reload");
-            // Only a show that was actually asked for goes through: a
-            // tray-only startup stays in the tray, blank page or not.
-            if state.mark_page_ready() {
-                tray::show_main_window(&app);
-            }
+        if app.state::<state::AppState>().give_up_waiting() {
+            eprintln!("[watchdog] main page still not mounted; showing the parked window anyway");
+            tray::show_main_window(&app);
         }
     });
 }

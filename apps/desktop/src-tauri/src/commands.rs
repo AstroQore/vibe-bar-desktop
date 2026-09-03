@@ -537,14 +537,22 @@ pub async fn menu_bar_repair(
         .map_err(|error| error.to_string())?
 }
 
-/// The page mounted. A show that was waiting happens now; a load
-/// watchdog that was armed stands down.
+/// The page mounted. A show that was waiting happens now; a load watchdog
+/// that was armed stands down. `generation` is the `boot` query parameter
+/// the page was loaded with — zero on the first load — so a report from a
+/// page the watchdog has already replaced is not taken for the new one.
 #[tauri::command]
-pub fn frontend_ready(app: AppHandle, state: State<'_, AppState>) {
-    let was_waiting = state.mark_page_ready();
-    eprintln!("[ready] main page mounted; show_pending={was_waiting}");
-    if was_waiting {
-        crate::tray::show_main_window(&app);
+pub fn frontend_ready(app: AppHandle, state: State<'_, AppState>, generation: u32) {
+    match state.mark_page_ready(generation) {
+        Some(was_waiting) => {
+            eprintln!(
+                "[ready] main page mounted (generation {generation}); show_pending={was_waiting}"
+            );
+            if was_waiting {
+                crate::tray::show_main_window(&app);
+            }
+        }
+        None => eprintln!("[ready] ignoring a report from superseded page generation {generation}"),
     }
 }
 

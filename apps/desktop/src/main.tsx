@@ -35,8 +35,11 @@ if (params.get("vibrant") === "1") document.documentElement.classList.add("vibra
 function Ready() {
   React.useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
+    // The load generation the shell gave this page (its watchdog reloads
+    // with `?boot=N`); zero on the first load.
+    const generation = Number(new URLSearchParams(location.search).get("boot") ?? "0") || 0;
     void import("@tauri-apps/api/core")
-      .then(({ invoke }) => invoke("frontend_ready"))
+      .then(({ invoke }) => invoke("frontend_ready", { generation }))
       .catch(() => undefined);
   }, []);
   return null;
