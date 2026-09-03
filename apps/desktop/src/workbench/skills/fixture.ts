@@ -5,7 +5,10 @@ import { FIXTURE_NOW } from "../../popover/fixture";
 const all = ["codex", "claude", "gemini", "antigravity", "grok", "cursor"];
 const noAntigravity = all.filter((t) => t !== "antigravity");
 function skill(name: string, description: string, targets: string[], health = "healthy") {
-  return { name, directory: `/Users/example/.agents/skills/${name}`, description, targets, health, source: "local" };
+  const apps = Object.fromEntries(
+    ["codex", "claude", "gemini", "antigravity", "grok", "cursor"].map((app) => [app, { state: targets.includes(app) ? "projected" : "missing", adopted: false } as const]),
+  );
+  return { name, directory: `/Users/example/.agents/skills/${name}`, description, targets, health, source: "local", id: `local:${name}`, registered: true, apps };
 }
 
 export const FIXTURE_SKILLS: SkillsInventoryView = {

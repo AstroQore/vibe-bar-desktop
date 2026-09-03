@@ -711,6 +711,99 @@ pub fn skills_inventory(state: State<'_, AppState>) -> SkillsInventoryView {
     vibebar_desktop_core::skills::scan(state.data_root())
 }
 
+fn skill_id(raw: &str) -> Result<vibebar_desktop_core::skills::registry::SkillId, String> {
+    vibebar_desktop_core::skills::registry::SkillId::parse(raw).ok_or_else(|| format!("not a skill id: {raw}"))
+}
+
+/// The apps a command may create a projection in. The catalog still knows
+/// Hermes and OpenCode so an old registry decodes and can be cleaned up, but
+/// nothing here may put a new skill in one.
+fn app_targets(raws: &[String]) -> Result<Vec<vibebar_desktop_core::skills::catalog::AppTarget>, String> {
+    use vibebar_desktop_core::skills::catalog::AppTarget;
+    raws.iter()
+        .map(|raw| {
+            AppTarget::from_raw(raw)
+                .filter(|app| AppTarget::MANAGED.contains(app))
+                .ok_or_else(|| format!("not a managed app: {raw}"))
+        })
+        .collect()
+}
+
+/// Project a recorded skill into an app, or take it out. Demo mode never
+/// writes. Returns whether the app-side entry changed; `false` on removal
+/// means the entry was left alone because it is not ours.
+#[tauri::command]
+pub fn skills_set_projection(state: State<'_, AppState>, id: String, app: String, on: bool) -> Result<bool, String> {
+    if state.data_root().is_demo() {
+        return Err("demo mode does not write the skill library".to_string());
+    }
+    let app = app_targets(std::slice::from_ref(&app))?[0];
+    state.skills().set_projection(&skill_id(&id)?, app, on).map_err(|e| e.to_string())
+}
+
+/// Uninstall a recorded skill: snapshot, take it out of every app, remove
+/// it from the SSOT, forget it. Called only after the page confirmed.
+#[tauri::command]
+pub fn skills_uninstall(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<vibebar_desktop_core::skills::service::UninstallResult, String> {
+    if state.data_root().is_demo() {
+        return Err("demo mode does not write the skill library".to_string());
+    }
+    state.skills().uninstall(&skill_id(&id)?).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn skills_backups(state: State<'_, AppState>) -> Vec<vibebar_desktop_core::skills::backups::Backup> {
+    state.skills().backups()
+}
+
+#[tauri::command]
+pub fn skills_restore_backup(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<vibebar_desktop_core::skills::registry::Skill, String> {
+    if state.data_root().is_demo() {
+        return Err("demo mode does not write the skill library".to_string());
+    }
+    state.skills().restore_backup(std::path::Path::new(&path)).map_err(|e| e.to_string())
+}
+
+/// Install from a folder the person picked: copied into the SSOT under
+/// `name` (its own folder name by default) and projected into `apps`.
+#[tauri::command]
+pub fn skills_install_local(
+    state: State<'_, AppState>,
+    path: String,
+    name: String,
+    apps: Vec<String>,
+) -> Result<vibebar_desktop_core::skills::registry::Skill, String> {
+    if state.data_root().is_demo() {
+        return Err("demo mode does not write the skill library".to_string());
+    }
+    let apps = app_targets(&apps)?;
+    state
+        .skills()
+        .install_local(std::path::Path::new(&path), &name, &apps)
+        .map_err(|e| e.to_string())
+}
+
+/// Record a folder already in the SSOT, keeping links apps already have
+/// and projecting into `apps` besides.
+#[tauri::command]
+pub fn skills_adopt(
+    state: State<'_, AppState>,
+    name: String,
+    apps: Vec<String>,
+) -> Result<vibebar_desktop_core::skills::registry::Skill, String> {
+    if state.data_root().is_demo() {
+        return Err("demo mode does not write the skill library".to_string());
+    }
+    let apps = app_targets(&apps)?;
+    state.skills().adopt_existing(&name, &apps).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -34,6 +34,24 @@ pub struct SkillInventoryRow {
     pub targets: Vec<String>,
     pub health: String,
     pub source: String,
+    /// The registry's id (`owner/repo:dir` or `local:dir`); `local:dir` for
+    /// a folder the registry does not know.
+    pub id: String,
+    /// Whether `~/.vibebar/skills.json` records this skill. An unrecorded
+    /// folder in the SSOT can be adopted.
+    pub registered: bool,
+    /// What sits at each managed app's slot for this skill.
+    pub apps: std::collections::BTreeMap<String, AppSlot>,
+}
+
+/// One app's slot for a skill: a link into the SSOT (`projected`), a copy
+/// Vibe Bar made that still matches its recorded hash (`copy`), something
+/// else that is not ours to touch (`foreign`), or nothing (`missing`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSlot {
+    pub state: String,
+    pub adopted: bool,
 }
 
 pub fn scan(root: &crate::paths::DataRoot) -> SkillsInventoryView {
@@ -45,10 +63,10 @@ pub fn scan(root: &crate::paths::DataRoot) -> SkillsInventoryView {
     } else {
         crate::paths::home_directory()
     };
-    scan_home(&home)
+    scan_home(&home, root.shared())
 }
 
-fn scan_home(home: &Path) -> SkillsInventoryView {
+fn scan_home(home: &Path, vibebar_dir: &Path) -> SkillsInventoryView {
     let ssot = home.join(".agents/skills");
     let mut warnings = Vec::new();
     let mut rows = Vec::new();
@@ -103,6 +121,9 @@ fn scan_home(home: &Path) -> SkillsInventoryView {
                         targets: Vec::new(),
                         health: health.into(),
                         source: "local".into(),
+                        id: format!("local:{directory}"),
+                        registered: false,
+                        apps: Default::default(),
                     });
                     if health == "healthy" {
                         row_by_directory.insert(directory, index);
@@ -167,6 +188,7 @@ fn scan_home(home: &Path) -> SkillsInventoryView {
         row.targets.sort();
         row.targets.dedup();
     }
+    merge_registry(home, vibebar_dir, &mut rows, &mut warnings);
     rows.sort_by(|left, right| left.directory.cmp(&right.directory));
     SkillsInventoryView {
         skills: rows,
@@ -228,6 +250,17 @@ fn read_skill_md(path: &Path) -> SkillDocument {
     String::from_utf8(bytes)
         .map(SkillDocument::Text)
         .unwrap_or(SkillDocument::Unreadable)
+}
+
+/// The title and description a SKILL.md carries, else the directory name.
+pub(crate) fn frontmatter_of(skill_md: &Path, fallback: &str) -> (String, Option<String>) {
+    match read_skill_md(skill_md) {
+        SkillDocument::Text(text) => {
+            let (name, description, _) = frontmatter(fallback, &text);
+            (name, description)
+        }
+        _ => (fallback.to_string(), None),
+    }
 }
 
 fn frontmatter(fallback: &str, text: &str) -> (String, Option<String>, bool) {
@@ -302,8 +335,154 @@ fn now() -> f64 {
         .unwrap_or(0.0)
 }
 
+/// What the registry knows, laid over what the disk shows: the id and
+/// source of each recorded skill, and each managed app's slot classified
+/// against the record (a copy is "ours" only while its hash still matches).
+fn merge_registry(
+    home: &Path,
+    vibebar_dir: &Path,
+    rows: &mut [SkillInventoryRow],
+    warnings: &mut Vec<String>,
+) {
+    use super::catalog::AppTarget;
+    use super::registry;
+    use super::sync::{kind, lexical_symlink_target, Kind};
+    let registry = match registry::read(vibebar_dir) {
+        Ok(registry) => registry,
+        Err(error) => {
+            warnings.push(format!("skills registry unreadable: {error}"));
+            registry::Registry::default()
+        }
+    };
+    let ssot = super::catalog::ssot_dir(home);
+    for row in rows.iter_mut() {
+        let record = registry
+            .skills
+            .iter()
+            .find(|skill| skill.directory == row.directory);
+        if let Some(record) = record {
+            row.id = record.id.raw();
+            row.registered = true;
+            row.source = record
+                .id
+                .repository_slug()
+                .unwrap_or_else(|| "local".to_string());
+            if !record.name.trim().is_empty() && row.health == "healthy" {
+                row.name = record.name.clone();
+            }
+            if row.description.is_none() {
+                row.description = record.description.clone();
+            }
+        }
+        let source = super::catalog::lexical_normalize(&ssot.join(&row.directory));
+        for app in AppTarget::MANAGED {
+            let slot = super::catalog::skills_dir(app, home).join(&row.directory);
+            let recorded = record.and_then(|r| r.materialization(app));
+            let (state, adopted) = match kind(&slot) {
+                Kind::Missing => ("missing", false),
+                Kind::Symlink => {
+                    if lexical_symlink_target(&slot).as_deref() == Some(source.as_path()) {
+                        ("projected", recorded.is_some_and(|m| m.adopted))
+                    } else {
+                        ("foreign", false)
+                    }
+                }
+                Kind::Directory => {
+                    let ours = recorded
+                        .and_then(|m| m.content_hash_at_copy.as_deref())
+                        .zip(super::hasher::hash(&slot).ok())
+                        .is_some_and(|(recorded_hash, current)| recorded_hash == current);
+                    if ours {
+                        ("copy", false)
+                    } else {
+                        ("foreign", false)
+                    }
+                }
+                _ => ("foreign", false),
+            };
+            if state == "copy" && !row.targets.iter().any(|t| t == app.raw()) {
+                row.targets.push(app.raw().to_string());
+            }
+            row.apps.insert(
+                app.raw().to_string(),
+                AppSlot {
+                    state: state.to_string(),
+                    adopted,
+                },
+            );
+        }
+        row.targets.sort();
+        row.targets.dedup();
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn the_registry_lays_over_the_scan() {
+        use crate::skills::catalog::AppTarget;
+        use crate::skills::registry::{self, Materialization, Registry, Skill, SkillId};
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let vibebar = home.join(".vibebar");
+        let ssot = crate::skills::catalog::ssot_dir(home);
+        for name in ["docx", "notes"] {
+            std::fs::create_dir_all(ssot.join(name)).unwrap();
+            std::fs::write(
+                ssot.join(name).join("SKILL.md"),
+                format!("---\nname: {name}\n---\n"),
+            )
+            .unwrap();
+        }
+        // docx: recorded from a repository, linked into Codex, copied into Claude (hash recorded), foreign dir in Grok.
+        let codex = crate::skills::catalog::skills_dir(AppTarget::Codex, home);
+        std::fs::create_dir_all(&codex).unwrap();
+        std::os::unix::fs::symlink(ssot.join("docx"), codex.join("docx")).unwrap();
+        let claude = crate::skills::catalog::skills_dir(AppTarget::Claude, home).join("docx");
+        std::fs::create_dir_all(&claude).unwrap();
+        std::fs::write(claude.join("SKILL.md"), "---\nname: docx\n---\n").unwrap();
+        let hash = crate::skills::hasher::hash(&claude).unwrap();
+        let grok = crate::skills::catalog::skills_dir(AppTarget::Grok, home).join("docx");
+        std::fs::create_dir_all(&grok).unwrap();
+        std::fs::write(grok.join("SKILL.md"), "theirs").unwrap();
+        let mut apps = std::collections::BTreeMap::new();
+        apps.insert("codex".to_string(), Materialization::symlink());
+        apps.insert("claude".to_string(), Materialization::copy(hash));
+        let registry_value = Registry {
+            schema_version: 1,
+            skills: vec![Skill {
+                id: SkillId::parse("anthropics/skills:docx").unwrap(),
+                name: "Docx".into(),
+                description: Some("Word".into()),
+                directory: "docx".into(),
+                repo_branch: None,
+                installed_at: 0.0,
+                content_hash: None,
+                updated_at: None,
+                apps,
+            }],
+            discover_repos: None,
+        };
+        registry::write(&vibebar, &registry_value).unwrap();
+        let view = super::scan_home(home, &vibebar);
+        let docx = view.skills.iter().find(|r| r.directory == "docx").unwrap();
+        assert!(docx.registered);
+        assert_eq!(docx.id, "anthropics/skills:docx");
+        assert_eq!(docx.source, "anthropics/skills");
+        assert_eq!(docx.apps["codex"].state, "projected");
+        assert_eq!(docx.apps["claude"].state, "copy");
+        assert_eq!(docx.apps["grok"].state, "foreign");
+        assert_eq!(docx.apps["gemini"].state, "missing");
+        assert!(
+            docx.targets.contains(&"claude".to_string()),
+            "a matching copy counts as a target"
+        );
+        let notes = view.skills.iter().find(|r| r.directory == "notes").unwrap();
+        assert!(!notes.registered);
+        assert_eq!(notes.id, "local:notes");
+    }
+
     use super::*;
 
     fn root_at(directory: &tempfile::TempDir) -> crate::paths::DataRoot {

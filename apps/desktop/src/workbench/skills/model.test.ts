@@ -3,7 +3,8 @@ import type { SkillInventoryRow } from "../../api";
 import { MANAGED_APPS, activationState, appCountHelp, appCounts, countSummary, filterSkills, healthBadge, isOn, sourceBadge } from "./model";
 
 function row(name: string, targets: string[], health = "healthy", description?: string): SkillInventoryRow {
-  return { name, directory: `/Users/example/.agents/skills/${name}`, description, targets, health, source: "local" };
+  const apps = Object.fromEntries(MANAGED_APPS.map((a) => [a.id, { state: targets.includes(a.id) ? "projected" : "missing", adopted: false } as const]));
+  return { name, directory: `/Users/example/.agents/skills/${name}`, description, targets, health, source: "local", id: `local:${name}`, registered: true, apps };
 }
 
 const app = (id: string) => MANAGED_APPS.find((a) => a.id === id)!;

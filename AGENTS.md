@@ -62,9 +62,27 @@ must work fully on a machine that has never had it installed.
      listings because its file is gone; the index row is the native app's
      to drop. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+   - The skill library — `~/.agents/skills/` (the SSOT), the allow-listed
+     app skills directories (`~/.codex/skills`, `~/.claude/skills`,
+     `~/.gemini/skills`, `~/.gemini/config/skills`, `~/.grok/skills`,
+     `~/.cursor/skills`; Hermes and OpenCode roots only so old registries
+     decode), the registry `~/.vibebar/skills.json`, and snapshots under
+     `~/.vibebar/skill_backups/` — through `skills::service::SkillsService`
+     and nothing else, at the person's explicit request (a toggle, Install,
+     Import, Uninstall, Restore): the native `SkillSyncEngine` rules
+     verbatim — a name is one safe path segment, every path mutated sits
+     under those roots, a sync needs a `SKILL.md`, ancestors are created
+     one component at a time, deletion never follows a symlink and removes
+     only links that resolve back into the SSOT or copies whose recorded
+     SHA-256 still matches. The registry is re-read immediately before each
+     whole-file atomic write; `~/.agents/.skill-lock.json` is read for
+     provenance and never written. Harness config patches (native
+     activation) and repository installs stay with the native app for now.
+
    Everything else under the shared root — the session index, the usage
-   ledger, cost history, the skill library — is read here and written by
-   the native app until it too has a writer with rules like the above. Full reasoning in [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
+   ledger, cost history — is read here and written by the native app until
+   it too has a writer with rules like the above. Full reasoning in
+   [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
 2. **Never repair, migrate, prune, or rebuild a shared store.** Including the
    session index. An unreadable or unknown-version store degrades to "not
    available" with an explanation — it is another client's data.
