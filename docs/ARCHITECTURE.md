@@ -271,14 +271,17 @@ file manager and accepts only a path inside `~/.agents/skills`.
 The page is the native `SettingsView`: a searchable 236 pt sidebar of
 grouped rows — Settings, Core Providers, Misc Providers — and titled
 section cards for the selected one, in the native order and with the
-native copy. What each control can do here follows the storage
-contract: the four keys `settings-write-v1.md` lets this client write
-(percent shown, refresh cadence, percent colour basis, update channel)
-are live; everything else the shared file holds — menu bar layout and
-fields, popover density, mini windows, provider visibility, cost data
-retention and privacy mode, misc provider instances — is shown read-only
-with the note that it is set in the native app. `PresentationSettings`
-now carries the menu bar item and the misc provider instances for that.
+native copy. Both clients write the shared file now: every setting the
+page presents is live — percent shown, refresh cadence, update channel,
+popover density, the menu bar item (visibility, title, layout, the field
+list with styles, labels, and order), cost data retention and privacy
+mode, the menu bar health switches, the mini window layout and strip
+density, core provider order and visibility, misc provider visibility
+and names, and plan labels. Nested objects are read raw
+(`shared_settings_raw`), edited, and written whole, which is the
+contract's top-level granularity; the merge under the lock puts back only
+the keys this process changed. `PresentationSettings` carries the menu
+bar item and the misc provider instances for the sidebar.
 
 Controls that are this client's own: launch at login through
 `tauri-plugin-autostart`, the update check and install, rescanning cost

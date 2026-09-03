@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { AppInfo, CostView, EffectiveModelPricingRow, MenuBarHealthReport, PendingUpdate, PresentationSettings, QuotaView } from "../../api";
 import { api } from "../../api";
 import { ToolBrandIcon } from "../../popover/brand";
-import { companyFor, subProviderFor } from "../../naming";
-import { Search, XCircle, Refresh } from "../icons";
+import { bucketLabelFor, companyFor, subProviderFor } from "../../naming";
+import { Antenna, ChartBar, Cookie, Dollar, Hand, MenuBarIcon, Monitor, Nodes, Refresh, Search, Split, Stethoscope, Windows, XCircle } from "../icons";
 import {
   COLOR_BASIS,
   COLOR_BASIS_DETAIL,
@@ -19,7 +19,9 @@ import {
   filterSections,
   formatInterval,
   formatPerMillion,
-  providerList,
+  MINI_LAYOUTS,
+  RETENTION_OPTIONS,
+  STRIP_DENSITIES,
   replacedSummary,
   routeStatus,
   routeStatusTitle,
@@ -27,8 +29,24 @@ import {
 } from "./model";
 import "./settings.css";
 
-const SYMBOLS: Record<string, string> = {
-  system: "🖥", costData: "📊", pricing: "💲", mcp: "⛓", remote: "📡", privacy: "✋", menuBar: "▭", menuBarHealth: "🩺", miniWindow: "▣", layout: "◫", browserCookies: "🍪",
+const FIELD_STYLES: ReadonlyArray<{ id: string; title: string }> = [
+  { id: "labelAndPercent", title: "Label" },
+  { id: "logoAndPercent", title: "Logo" },
+  { id: "logoLabelAndPercent", title: "Logo and label" },
+];
+
+const SYMBOLS: Record<string, ReactNode> = {
+  system: <Monitor size={15} />,
+  costData: <ChartBar size={14} />,
+  pricing: <Dollar size={14} />,
+  mcp: <Nodes size={14} />,
+  remote: <Antenna size={14} />,
+  privacy: <Hand size={14} />,
+  menuBar: <MenuBarIcon size={14} />,
+  menuBarHealth: <Stethoscope size={14} />,
+  miniWindow: <Windows size={14} />,
+  layout: <Split size={14} />,
+  browserCookies: <Cookie size={14} />,
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -142,6 +160,36 @@ export function SettingsPage({
   const [autostartNote, setAutostartNote] = useState<string | null>(null);
   const [pricing, setPricing] = useState<EffectiveModelPricingRow[] | null>(pricingFixture ?? null);
   const [health, setHealth] = useState<MenuBarHealthReport | null>(null);
+  const [raw, setRaw] = useState<Record<string, unknown> | null>(null);
+  const reloadRaw = () => api.sharedSettingsRaw().then(setRaw).catch(() => undefined);
+  useEffect(() => {
+    void reloadRaw();
+  }, [settings]);
+  /** Save top-level keys, then re-read the file: the merge may have put a
+   *  sibling client's value back, and the page shows what is on disk. */
+  const save = async (changes: Record<string, unknown>) => {
+    await onSave(changes);
+    await reloadRaw();
+  };
+  const menuBarItems = (Array.isArray(raw?.menuBarItems) ? (raw!.menuBarItems as Record<string, unknown>[]) : []) as Record<string, unknown>[];
+  const item0: Record<string, unknown> = menuBarItems[0] ?? { kind: "primary", isVisible: true, showTitle: false, layout: "singleLine", selectedFieldIds: [], customLabels: {}, fieldStyles: {} };
+  const saveItem = (patch: Record<string, unknown>) => {
+    const next = menuBarItems.length > 0 ? menuBarItems.map((item, index) => (index === 0 ? { ...item, ...patch } : item)) : [{ ...item0, ...patch }];
+    return save({ menuBarItems: next });
+  };
+  const selectedFieldIds = (Array.isArray(item0.selectedFieldIds) ? (item0.selectedFieldIds as string[]) : []) as string[];
+  const customLabels = ((item0.customLabels ?? {}) as Record<string, string>);
+  const fieldStyles = ((item0.fieldStyles ?? {}) as Record<string, string>);
+  const costData = ((raw?.costData ?? {}) as Record<string, unknown>);
+  const miniWindow = ((raw?.miniWindow ?? {}) as Record<string, unknown>);
+  const miniWindows = (Array.isArray(miniWindow.windows) ? (miniWindow.windows as Record<string, unknown>[]) : []) as Record<string, unknown>[];
+  const coreOrder = (Array.isArray(raw?.coreProviderOrder) ? (raw!.coreProviderOrder as string[]) : settings?.coreProviderOrder ?? ["codex", "claude", "gemini", "grok"]) as string[];
+  const visibleCore = (Array.isArray(raw?.visibleCoreProviders) ? (raw!.visibleCoreProviders as string[]) : null) as string[] | null;
+  const visibleMisc = (Array.isArray(raw?.visibleMiscProviders) ? (raw!.visibleMiscProviders as string[]) : null) as string[] | null;
+  const knownFields = (view?.accounts ?? []).flatMap((account) =>
+    account.buckets.map((bucket) => ({ id: `${account.tool}.${bucket.id}`, tool: account.tool, title: bucketLabelFor(account.tool, bucket.id, bucket.title, bucket.shortLabel, bucket.groupTitle, " · ") })),
+  );
+  const fieldTitle = (id: string) => knownFields.find((f) => f.id === id)?.title ?? id.slice(id.indexOf(".") + 1).replace(/_/g, " ");
   const [healthNote, setHealthNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const entries = useMemo(() => buildSections(settings), [settings]);
@@ -190,7 +238,6 @@ export function SettingsPage({
     { id: "core", title: "Core Providers" },
     { id: "misc", title: "Misc Providers" },
   ];
-  const menuBar = settings?.menuBar ?? { isVisible: true, showTitle: false, layout: "singleLine" };
   const current = entries.find((e) => e.id === section);
   const providerSection = CORE_PROVIDERS.find((p) => p.id === section);
 
@@ -267,13 +314,17 @@ export function SettingsPage({
             <Section title="Cost Data">
               <div className="st-line">
                 <span className="st-label">Keep history</span>
-                <Seg options={[{ id: "native", title: "Set in the native app" }]} value="native" readonly />
+                <select className="st-select" value={String(Number(costData.retentionDays ?? 0))} onChange={(e) => void save({ costData: { ...costData, retentionDays: Number(e.target.value) } })}>
+                  {RETENTION_OPTIONS.map((option) => (
+                    <option key={option.days} value={String(option.days)}>{option.title}</option>
+                  ))}
+                </select>
               </div>
               <p className="st-note">Applies to cost history and subscription fill history.</p>
               <div className="st-line">
-                <Check label="Privacy mode" checked={cost?.privacySuppressed ?? false} title={READ_ONLY_NOTE} />
+                <Check label="Privacy mode" checked={Boolean(costData.privacyModeEnabled)} onChange={(next) => void save({ costData: { ...costData, privacyModeEnabled: next } })} />
               </div>
-              <p className="st-note">Privacy mode keeps cost data off disk and clears local cost history, snapshots, and scan cache. {READ_ONLY_NOTE}</p>
+              <p className="st-note">Privacy mode keeps cost data off disk and clears local cost history, snapshots, and scan cache.</p>
               <div className="st-line">
                 <button type="button" className="st-btn" disabled={busy === "rescan" || fixture} onClick={() => void run("rescan", onRescanCost)}>
                   <Refresh size={12} /> {busy === "rescan" ? "Rescanning…" : "Rescan cost logs"}
@@ -360,33 +411,87 @@ export function SettingsPage({
             </div>
           </Section>
         );
-      case "menuBar":
+      case "menuBar": {
+        const move = (id: string, delta: -1 | 1) => {
+          const index = selectedFieldIds.indexOf(id);
+          const target = index + delta;
+          if (index < 0 || target < 0 || target >= selectedFieldIds.length) return;
+          const next = [...selectedFieldIds];
+          [next[index], next[target]] = [next[target], next[index]];
+          void saveItem({ selectedFieldIds: next });
+        };
+        const groups = groupFields(selectedFieldIds);
+        const unselected = knownFields.filter((f) => !selectedFieldIds.includes(f.id));
         return (
           <Section title="Overview">
-            <div className="st-line"><Check label="Show in menu bar" checked={menuBar.isVisible} title={READ_ONLY_NOTE} /></div>
-            <div className="st-line"><Check label="Show title text" checked={menuBar.showTitle} title={READ_ONLY_NOTE} /></div>
-            <div className="st-line"><span className="st-label">Layout</span><Seg options={LAYOUTS} value={menuBar.layout} readonly /></div>
-            <div className="st-line"><span className="st-label">Display density</span><Seg options={DENSITIES} value={settings.popoverDensity ?? "regular"} readonly /></div>
-            <p className="st-note">{DENSITIES.find((d) => d.id === (settings.popoverDensity ?? "regular"))?.detail}</p>
-            <div className="st-line"><span className="st-label">Percent color</span><Seg options={COLOR_BASIS} value={settings.menuBarColorBasis === "actual" ? "actual" : "forecast"} onChange={(id) => void onSave({ menuBarColorBasis: id })} /></div>
+            <div className="st-line"><Check label="Show in menu bar" checked={item0.isVisible !== false} onChange={(next) => void saveItem({ isVisible: next })} /></div>
+            <div className="st-line"><Check label="Show title text" checked={Boolean(item0.showTitle)} onChange={(next) => void saveItem({ showTitle: next })} /></div>
+            <div className="st-line"><span className="st-label">Layout</span><Seg options={LAYOUTS} value={String(item0.layout ?? "singleLine")} onChange={(id) => void saveItem({ layout: id })} /></div>
+            <div className="st-line"><span className="st-label">Display density</span><Seg options={DENSITIES} value={String(raw?.popoverDensity ?? settings.popoverDensity ?? "regular")} onChange={(id) => void save({ popoverDensity: id })} /></div>
+            <p className="st-note">{DENSITIES.find((d) => d.id === String(raw?.popoverDensity ?? settings.popoverDensity ?? "regular"))?.detail}</p>
+            <div className="st-line"><span className="st-label">Percent color</span><Seg options={COLOR_BASIS} value={settings.menuBarColorBasis === "actual" ? "actual" : "forecast"} onChange={(id) => void save({ menuBarColorBasis: id })} /></div>
             <p className="st-note">{COLOR_BASIS_DETAIL}</p>
             <div className="st-note" style={{ marginTop: 4 }}>Fields</div>
-            <p className="st-note">Shown, in this order — first renders leftmost. Rename any field for the menu bar only; empty inherits the default. {READ_ONLY_NOTE}</p>
+            <p className="st-note">Shown, in this order — first renders leftmost. Rename any field for the menu bar only; empty inherits the default.</p>
             <div className="st-fields">
-              {(settings.selectedFieldIds ?? []).length === 0 ? <p className="st-note">Desktop uses its default fields until the native app saves a selection.</p> : null}
-              {groupFields(settings.selectedFieldIds ?? []).map((group) => (
+              {selectedFieldIds.length === 0 ? <p className="st-note">No fields yet — tick a bucket below to add it.</p> : null}
+              {groups.map((group) => (
+                <div key={group.company}>
+                  <div className="st-company"><ToolBrandIcon tool={group.tool} size={12} /> {group.company}</div>
+                  {group.subs.map((sub) => (
+                    <div key={sub.title}>
+                      <div className="st-sub">{sub.title}</div>
+                      {sub.fields.map((field) => {
+                        const index = selectedFieldIds.indexOf(field.id);
+                        return (
+                          <div className="st-field" key={field.id}>
+                            <i />
+                            <span className="st-field-title">{fieldTitle(field.id)}</span>
+                            <select className="st-select st-field-style" value={fieldStyles[field.id] ?? "logoAndPercent"} onChange={(e) => void saveItem({ fieldStyles: { ...fieldStyles, [field.id]: e.target.value } })} aria-label={`Style for ${fieldTitle(field.id)}`}>
+                              {FIELD_STYLES.map((style) => (
+                                <option key={style.id} value={style.id}>{style.title}</option>
+                              ))}
+                            </select>
+                            <input
+                              className="st-field-label"
+                              placeholder="Default label"
+                              defaultValue={customLabels[field.id] ?? ""}
+                              key={`${field.id}:${customLabels[field.id] ?? ""}`}
+                              aria-label={`Menu bar label for ${fieldTitle(field.id)}`}
+                              onBlur={(e) => {
+                                const value = e.target.value.trim();
+                                if ((customLabels[field.id] ?? "") === value) return;
+                                const next = { ...customLabels };
+                                if (value) next[field.id] = value;
+                                else delete next[field.id];
+                                void saveItem({ customLabels: next });
+                              }}
+                            />
+                            <span className="st-field-nav">
+                              <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Move up" disabled={index <= 0} onClick={() => move(field.id, -1)}>⌃</button>
+                              <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Move down" disabled={index >= selectedFieldIds.length - 1} onClick={() => move(field.id, 1)}>⌄</button>
+                              <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Remove from the menu bar" onClick={() => void saveItem({ selectedFieldIds: selectedFieldIds.filter((id) => id !== field.id) })}>✕</button>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <p className="st-note">Not in the menu bar — tick a bucket to add it. Discovered buckets appear here from the current quota reads.</p>
+            <div className="st-fields">
+              {unselected.length === 0 ? <p className="st-note">Every known bucket is already in the menu bar.</p> : null}
+              {groupFields(unselected.map((f) => f.id)).map((group) => (
                 <div key={group.company}>
                   <div className="st-company"><ToolBrandIcon tool={group.tool} size={12} /> {group.company}</div>
                   {group.subs.map((sub) => (
                     <div key={sub.title}>
                       <div className="st-sub">{sub.title}</div>
                       {sub.fields.map((field) => (
-                        <div className="st-field" key={field.id}>
-                          <i />
-                          <span className="st-field-title">{field.bucket}</span>
-                          <span className="st-field-style">Logo</span>
-                          <span className="st-field-label">{settings.customLabels?.[field.id] ?? ""}</span>
-                          <span className="st-field-nav">⌃ ⌄ ✕</span>
+                        <div className="st-line" key={field.id} style={{ paddingLeft: 16, minHeight: 24 }}>
+                          <Check label={fieldTitle(field.id)} checked={false} onChange={() => void saveItem({ selectedFieldIds: [...selectedFieldIds, field.id] })} />
                         </div>
                       ))}
                     </div>
@@ -396,6 +501,7 @@ export function SettingsPage({
             </div>
           </Section>
         );
+      }
       case "menuBarHealth": {
         const stateCopy: Record<MenuBarHealthReport["state"], string> = {
           checking: "Checking menu bar status…",
@@ -408,13 +514,13 @@ export function SettingsPage({
         return (
           <Section title="Menu Bar Health">
             <div className="st-line">
-              <Check label="Alert when macOS blocks the status item" checked={report?.alertsEnabled ?? true} title={READ_ONLY_NOTE} />
+              <Check label="Alert when macOS blocks the status item" checked={!Boolean(raw?.menuBarBlockAlertSuppressed)} onChange={(next) => void save({ menuBarBlockAlertSuppressed: !next })} />
             </div>
-            <p className="st-note">Alerts were disabled with “Don't check again” in the native app when this is off. Health checks remain visible here.</p>
+            <p className="st-note">Off means alerts were dismissed with “Don't check again”; health checks remain visible here.</p>
             <div className="st-line">
-              <Check label="Automatically repair confirmed allow-list blocks" checked={report?.autoRepairEnabled ?? false} title={READ_ONLY_NOTE} />
+              <Check label="Automatically repair confirmed allow-list blocks" checked={Boolean(raw?.menuBarAutoRepairEnabled)} onChange={(next) => void save({ menuBarAutoRepairEnabled: next })} />
             </div>
-            <p className="st-note">Off by default. When enabled, three consecutive blocked probes run the narrow repair, restart Control Center, and re-register only this app's status item. Full Disk Access is required. {READ_ONLY_NOTE}</p>
+            <p className="st-note">Off by default. When enabled, three consecutive blocked probes run the narrow repair, restart Control Center, and re-register only this app's status item. Full Disk Access is required.</p>
             <div className="st-status">
               <i style={{ background: dot }} />
               <span>{report ? stateCopy[report.state] : fixture ? stateCopy.unavailable : "Checking menu bar status…"}</span>
@@ -468,25 +574,56 @@ export function SettingsPage({
       case "miniWindow":
         return (
           <Section title="Mini Windows">
-            <div className="st-line"><span className="st-label">Layout</span><span className="st-text">{settings.miniDisplayMode}</span></div>
-            <div className="st-line"><span className="st-label">Strip density</span><Seg options={[{ id: "roomy", title: "Roomy" }, { id: "twoLine", title: "Two line" }, { id: "narrow", title: "Narrow" }]} value={settings.miniStripDensity} readonly /></div>
+            <div className="st-line"><span className="st-label">Layout</span><Seg options={MINI_LAYOUTS} value={String(miniWindow.displayMode ?? settings.miniDisplayMode)} onChange={(id) => void save({ miniWindow: { ...miniWindow, displayMode: id } })} /></div>
+            <div className="st-line"><span className="st-label">Strip density</span><Seg options={STRIP_DENSITIES} value={String(miniWindows[0]?.stripDensity ?? settings.miniStripDensity)} onChange={(id) => void save({ miniWindow: { ...miniWindow, windows: miniWindows.length > 0 ? miniWindows.map((w, i) => (i === 0 ? { ...w, stripDensity: id } : w)) : [{ stripDensity: id }] } })} /></div>
             <div className="st-line">
               <button type="button" className="st-btn" onClick={() => void api.toggleMini().catch(() => undefined)} disabled={fixture}>Open / Close</button>
             </div>
-            <p className="st-note">Layouts, fields, and geometry are edited in the native app; this client shows the shared window.</p>
+            <p className="st-note">Layout and density are shared with the native app; window geometry and per-window fields still live there.</p>
           </Section>
         );
-      case "layout":
+      case "layout": {
+        const moveCore = (tool: string, delta: -1 | 1) => {
+          const index = coreOrder.indexOf(tool);
+          const target = index + delta;
+          if (index < 0 || target < 0 || target >= coreOrder.length) return;
+          const next = [...coreOrder];
+          [next[index], next[target]] = [next[target], next[index]];
+          void save({ coreProviderOrder: next });
+        };
+        const coreVisible = (tool: string) => visibleCore === null || visibleCore.includes(tool);
+        const miscVisible = (id: string) => visibleMisc === null || visibleMisc.includes(id);
         return (
           <Section title="Layout">
-            <p className="st-text">The popover layout editor lives in the native app. This client renders the shared Overview order.</p>
-            <dl className="st-kv">
-              <dt>Core order</dt><dd>{providerList(settings.coreProviderOrder)}</dd>
-              <dt>Visible core</dt><dd>{settings.visibleCoreProviders ? providerList(settings.visibleCoreProviders) : "All"}</dd>
-              <dt>Visible misc</dt><dd>{settings.visibleMiscProviders ? providerList(settings.visibleMiscProviders) : "All"}</dd>
-            </dl>
+            <p className="st-text">The popover shows the core providers in this order; untick one to hide its card and tab everywhere.</p>
+            <div className="st-fields">
+              {coreOrder.map((tool, index) => (
+                <div className="st-field" key={tool}>
+                  <ToolBrandIcon tool={tool} size={13} />
+                  <span className="st-field-title">{companyFor(tool)} · {subProviderFor(tool)}</span>
+                  <Check label="Visible" checked={coreVisible(tool)} onChange={(next) => void save({ visibleCoreProviders: coreOrder.filter((t) => (t === tool ? next : coreVisible(t))) })} />
+                  <span className="st-field-nav">
+                    <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Move up" disabled={index === 0} onClick={() => moveCore(tool, -1)}>⌃</button>
+                    <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Move down" disabled={index === coreOrder.length - 1} onClick={() => moveCore(tool, 1)}>⌄</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="st-note" style={{ marginTop: 4 }}>Misc providers</div>
+            <div className="st-fields">
+              {settings.miscProviderInstances.length === 0 ? <p className="st-note">No misc provider instances configured.</p> : null}
+              {settings.miscProviderInstances.map((instance) => (
+                <div className="st-field" key={instance.id}>
+                  {instance.tool ? <ToolBrandIcon tool={instance.tool} size={13} /> : <i />}
+                  <span className="st-field-title">{instance.name || instance.tool}</span>
+                  <Check label="Visible" checked={miscVisible(instance.id)} onChange={(next) => void save({ visibleMiscProviders: settings.miscProviderInstances.map((i) => i.id).filter((id) => (id === instance.id ? next : miscVisible(id))) })} />
+                </div>
+              ))}
+            </div>
+            <p className="st-note">The page layout editor — modules per popover page, presets — remains in the native app.</p>
           </Section>
         );
+      }
       case "browserCookies":
         return (
           <Section title="Browser Cookies">
@@ -505,7 +642,25 @@ export function SettingsPage({
                 <button type="button" className="st-btn" disabled title="WebView login is the native app's.">Open WebView login</button>
                 <button type="button" className="st-btn" disabled title="This client keeps no cookies.">Delete cookies</button>
               </div>
-              {plan ? <p className="st-note">Plan label: {plan}</p> : null}
+              <div className="st-line">
+                <span className="st-label">Plan label</span>
+                <input
+                  className="st-field-label"
+                  style={{ minWidth: 160 }}
+                  placeholder={plan ? "" : "Shown on the card"}
+                  defaultValue={plan ?? ""}
+                  key={`${providerSection.tool}:${plan ?? ""}`}
+                  aria-label={`Plan label for ${providerSection.title}`}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    if ((plan ?? "") === value) return;
+                    const labels = { ...(((raw?.providerPlanLabels ?? settings.providerPlanLabels) as Record<string, string>) ?? {}) };
+                    if (value) labels[providerSection.tool] = value;
+                    else delete labels[providerSection.tool];
+                    void save({ providerPlanLabels: labels });
+                  }}
+                />
+              </div>
               {accounts.length > 0 ? (
                 <dl className="st-kv">
                   {accounts.map((account) => (
@@ -543,9 +698,27 @@ export function SettingsPage({
             <Section title={instance?.name || instance?.tool || "Provider"}>
               <dl className="st-kv">
                 <dt>Provider</dt><dd>{instance?.tool}</dd>
-                <dt>Shown</dt><dd>{instance?.isVisible ? "Yes" : "Hidden"}</dd>
                 <dt>Instance</dt><dd className="st-mono">{instance?.id}</dd>
               </dl>
+              {instance ? (
+                <div className="st-line">
+                  <Check label="Show this provider" checked={visibleMisc === null || visibleMisc.includes(instance.id)} onChange={(next) => void save({ visibleMiscProviders: settings.miscProviderInstances.map((i) => i.id).filter((id) => (id === instance.id ? next : visibleMisc === null || visibleMisc.includes(id))) })} />
+                  <input
+                    className="st-field-label"
+                    style={{ minWidth: 160 }}
+                    placeholder="Display name"
+                    defaultValue={instance.name}
+                    key={`${instance.id}:${instance.name}`}
+                    aria-label="Display name"
+                    onBlur={(e) => {
+                      const value = e.target.value.trim();
+                      if (value === instance.name || !value) return;
+                      const list = (Array.isArray(raw?.miscProviderInstances) ? (raw!.miscProviderInstances as Record<string, unknown>[]) : []) as Record<string, unknown>[];
+                      void save({ miscProviderInstances: list.map((i) => (i.id === instance.id ? { ...i, name: value } : i)) });
+                    }}
+                  />
+                </div>
+              ) : null}
               <p className="st-note">Credentials and per-instance options are managed in the native app; this client reads the cached quota it publishes.</p>
             </Section>
           );

@@ -126,6 +126,7 @@ export function App() {
         onDismissReplaced={() => setReplacedSettings(null)}
         onRescanCost={() => api.refreshCost().then(setCost)}
         onCheckConnections={() => api.refreshQuota().then(setView)}
+        initialSection={(new URLSearchParams(window.location.search).get("section") ?? "system") as never}
       />
     ),
   } as const;

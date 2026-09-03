@@ -48,7 +48,8 @@
 .st-field { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px 0 16px; border-radius: 7px; background: var(--wb-field); font-size: 12px; }
 .st-field i { width: 6px; height: 6px; border-radius: 3px; background: var(--wb-accent); flex: none; }
 .st-field .st-field-title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-.st-field .st-field-style, .st-field .st-field-label { height: 20px; padding: 0 8px; border-radius: 5px; font-size: 11px; background: var(--wb-card); box-shadow: inset 0 0 0 0.5px var(--wb-hairline); color: var(--wb-secondary); display: inline-flex; align-items: center; min-width: 60px; }
+.st-field .st-field-style, .st-field .st-field-label, .st-line .st-field-label { height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font: inherit; background: var(--wb-card); border: 0.5px solid var(--wb-hairline); color: var(--wb-text); display: inline-flex; align-items: center; min-width: 60px; }
+.st-field .st-field-style { padding-right: 22px; }
 .st-field .st-field-label { min-width: 110px; }
 .st-field .st-field-nav { display: inline-flex; gap: 2px; color: var(--wb-tertiary); font-size: 11px; }
 .st-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }

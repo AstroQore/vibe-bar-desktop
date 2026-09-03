@@ -528,6 +528,9 @@ export const api = {
   /** Save shared settings. Returns them as they read afterwards, which is not
    *  necessarily what was asked for: the file is shared with the native app,
    *  and a value it changed in between wins over a stale idea of it here. */
+  /** The writable keys as they sit in the shared file, raw — for editing a
+   *  nested object (menu bar item, cost data, mini window) whole. */
+  sharedSettingsRaw: () => invoke<Record<string, unknown>>("shared_settings_raw"),
   saveSharedSettings: (changes: Record<string, unknown>) =>
     invoke<PresentationSettings>("save_shared_settings", { changes }),
   /** Tell the shell how large the mini window's content is, so it can fit the
