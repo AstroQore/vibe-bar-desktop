@@ -124,6 +124,11 @@ pub struct SessionListing {
     pub indexed_total: Option<i64>,
     /// Set when an index exists but this build will not read it.
     pub index_note: Option<String>,
+    /// Where the next page starts in the index — not `offset + rows.len()`
+    /// once vanished rows were dropped. Absent when the index is exhausted
+    /// or the listing was scanned or searched.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<usize>,
 }
 
 pub struct SessionsService {
@@ -234,21 +239,45 @@ impl SessionsService {
         match self.open_index() {
             IndexState::Ready(reader) => {
                 let until = unix_now().saturating_add(FUTURE_TIMESTAMP_TOLERANCE_SECONDS);
-                let mut rows: Vec<_> = reader
-                    .list(&SessionListFilter {
-                        providers: providers.map(<[SessionProvider]>::to_vec),
-                        harnesses: harnesses.map(<[String]>::to_vec),
-                        since,
-                        until: Some(until),
-                        limit,
-                        offset,
-                    })
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(indexed_row)
-                    .collect();
-                self.drop_vanished(&mut rows);
-        self.authorize_rows(&mut rows);
+                // A page is `limit` sessions that still exist. The index keeps
+                // its row for a deleted session until its owner rebuilds, so
+                // the page is filled from further index rows rather than
+                // shipped short — a short page would read as the end of the
+                // list. `next_offset` is the index offset the next page starts
+                // at, which is not `offset + rows.len()` once rows were
+                // dropped.
+                let mut rows: Vec<SessionRow> = Vec::with_capacity(limit);
+                let mut cursor = offset;
+                let mut exhausted = false;
+                for _ in 0..8 {
+                    let wanted = limit - rows.len();
+                    let chunk: Vec<SessionRow> = reader
+                        .list(&SessionListFilter {
+                            providers: providers.map(<[SessionProvider]>::to_vec),
+                            harnesses: harnesses.map(<[String]>::to_vec),
+                            since,
+                            until: Some(until),
+                            limit: wanted,
+                            offset: cursor,
+                        })
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(indexed_row)
+                        .collect();
+                    let fetched = chunk.len();
+                    cursor += fetched;
+                    let mut live = chunk;
+                    self.drop_vanished(&mut live);
+                    rows.extend(live);
+                    if fetched < wanted {
+                        exhausted = true;
+                        break;
+                    }
+                    if rows.len() >= limit {
+                        break;
+                    }
+                }
+                self.authorize_rows(&mut rows);
                 let (indexed_total, index_note) = indexed_summary(&reader);
                 SessionListing {
                     harness_counts: Vec::new(),
@@ -256,6 +285,7 @@ impl SessionsService {
                     rows,
                     indexed_total,
                     index_note,
+                    next_offset: (!exhausted).then_some(cursor),
                 }
             }
             IndexState::Unusable(note) => {
@@ -325,6 +355,7 @@ impl SessionsService {
                     rows,
                     indexed_total,
                     index_note,
+                    next_offset: None,
                 }
             }
             state => {
@@ -362,6 +393,7 @@ impl SessionsService {
                     rows,
                     indexed_total: None,
                     index_note: Some(scanned_limit_note(note)),
+                    next_offset: None,
                 }
             }
         }
@@ -533,6 +565,7 @@ impl SessionsService {
             rows,
             indexed_total: None,
             index_note: Some(scanned_limit_note(note)),
+            next_offset: None,
         }
     }
 
@@ -1176,6 +1209,50 @@ mod tests {
         assert!(service
             .transcript(&listing.rows[0].session_ref, 0, 1)
             .is_ok());
+    }
+
+    #[test]
+    fn a_page_is_filled_past_rows_whose_file_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let root = DataRoot::at(home.join(".vibebar"));
+        std::fs::create_dir_all(root.shared()).unwrap();
+        // Three sessions on disk under this home; the index knows all three.
+        let sessions = home.join(".codex/sessions/2026/09/03");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let mut inserts = String::new();
+        for (i, id) in ["a", "b", "c"].iter().enumerate() {
+            let path = sessions.join(format!("rollout-{id}.jsonl"));
+            std::fs::write(&path, "{}\n").unwrap();
+            inserts.push_str(&format!(
+                "INSERT INTO sessions(id, provider, session_id, harness, last_active_at, source_path) VALUES ({}, 'codex', 'session-{id}', 'codex', {}, '{}');",
+                i + 1,
+                1_700_000_000 - i as i64,
+                path.display()
+            ));
+        }
+        let conn = rusqlite::Connection::open(root.session_index_file()).unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = 5;\
+             CREATE TABLE sessions(\
+               id INTEGER PRIMARY KEY, provider TEXT NOT NULL, session_id TEXT NOT NULL,\
+               provider_variant TEXT, harness TEXT, model TEXT, title TEXT, summary TEXT,\
+               project_dir TEXT, created_at INTEGER, last_active_at INTEGER, source_path TEXT NOT NULL,\
+               size_bytes INTEGER, message_count INTEGER\
+             );{inserts}"
+        ))
+        .unwrap();
+        drop(conn);
+        // The newest session's file is gone — deleted here or elsewhere.
+        std::fs::remove_file(sessions.join("rollout-a.jsonl")).unwrap();
+        let service = SessionsService::with_home(root, home);
+        let page = service.list_filtered(None, None, None, 0, 2);
+        let ids: Vec<&str> = page.rows.iter().map(|row| row.session_id.as_str()).collect();
+        assert_eq!(ids, vec!["session-b", "session-c"], "the page is still two live sessions");
+        assert_eq!(page.next_offset, Some(3), "three index rows were consumed for two live ones; the index may hold more");
+        let page = service.list_filtered(None, None, None, 0, 1);
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.next_offset, Some(2), "the next page starts after the vanished row and the one shown");
     }
 
     #[test]

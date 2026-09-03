@@ -56,6 +56,9 @@ export function SessionsPage({
   // a few seconds — removes the checked sessions' log files for good.
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /** The references the first click armed; the second click deletes only
+   *  exactly these, and any change to the checked set disarms. */
+  const armedRefs = useRef<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [listWidth, setListWidth] = useState(380);
   const generation = useRef(0);
@@ -128,17 +131,28 @@ export function SessionsPage({
     const timer = window.setTimeout(() => setDeleteArmed(false), 6000);
     return () => window.clearTimeout(timer);
   }, [deleteArmed]);
+  useEffect(() => {
+    // Ticking a row, changing a filter, a reload: whatever moved the checked
+    // set, the armed click no longer describes it.
+    const current = [...checked].sort().join("\n");
+    if (deleteArmed && armedRefs.current.slice().sort().join("\n") !== current) setDeleteArmed(false);
+  }, [checked, deleteArmed]);
 
   const deleteChecked = async () => {
     if (checked.size === 0 || deleting) return;
     if (!deleteArmed) {
+      armedRefs.current = [...checked];
       setDeleteArmed(true);
+      return;
+    }
+    const refs = armedRefs.current.slice();
+    if (refs.slice().sort().join("\n") !== [...checked].sort().join("\n")) {
+      setDeleteArmed(false);
       return;
     }
     setDeleteArmed(false);
     setDeleting(true);
     try {
-      const refs = [...checked];
       const reports = await api.sessionDelete(refs);
       const gone = new Set(reports.filter((report) => report.deleted).map((report) => report.sessionRef));
       const failed = reports.filter((report) => !report.deleted);
@@ -246,8 +260,8 @@ export function SessionsPage({
               })
             }
             empty={empty}
-            canLoadMore={!fixture && !filters.search && listing != null && listing.rows.length === PAGE}
-            onLoadMore={() => void load(rows.length)}
+            canLoadMore={!fixture && !filters.search && listing != null && (listing.nextOffset != null || (listing.source !== "indexed" && listing.rows.length === PAGE))}
+            onLoadMore={() => void load(listing?.nextOffset ?? rows.length)}
             loading={loading}
           />
         </div>

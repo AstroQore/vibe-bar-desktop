@@ -194,7 +194,8 @@ export interface SessionListing {
   source: SessionSource;
   rows: SessionRow[];
   indexedTotal?: number;
-  indexNote?: string;
+  indexNote?: string;  /** Where the next page starts in the index; absent when exhausted, scanned, or searched. */
+  nextOffset?: number;
 }
 
 export interface TranscriptMessage {
