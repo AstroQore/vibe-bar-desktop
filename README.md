@@ -364,6 +364,8 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | **Menu bar / tray** |
 | Rich-text and two-row title | ● | — | Windows and Linux trays have no title at all, only an icon; the macOS tray shows one line |
 | Field editor with style scopes | ● | ○ | Fields and labels are read from the shared settings and edited on the Menu bar page without the style scopes |
+| Merged group windows | ● | ○ | Native can fold a group's 5-hour and weekly windows into one menu-bar entry — the group named once, the percentages sharing it, each keeping its own colour. The grouping rules live in `VibeBarCore`, so this is a contract to mirror rather than a look to imitate |
+| Menu-bar composer | ● | ○ | Native is moving to a freely arranged menu bar: pick a template, then place logos, free text and any available quota as elements, each with its own or a quota-derived colour, with the current fixed layouts kept as the default mode |
 | Control Center allow-list watchdog | ● | ◐ | Desktop runs the same repair script; the watchdog that notices the icon is gone is native-only |
 | **Main window** |
 | Provider detail pages | ● 4 | ◐ | Each company has its page with quota, forecast explanation, reset history and status; native's also carry that provider's cost cards and history charts |
@@ -373,6 +375,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Multiple independent windows | ● | ○ | One mini window, seven layouts |
 | Translucent surface | ● Liquid Glass | ◐ | On macOS the main window, popover and mini window carry real `NSVisualEffect` materials — sidebar and popover, deliberately the platform's own rather than a copy of Liquid Glass. Windows and Linux draw them opaque for now |
 | **Workbench** |
+| Reset-history comparison | ● | ○ | Native's cross-quota card: rows grouped company → SubProvider → bucket with two-level labels, a Cycles / Time axis toggle stored in the shared `resetHistoryCompareAxis`, a 4 / 8 / 12 / All picker whose default follows the card's width, and a bar drawing what was left at each reset |
 | Skills: install, import, discover, backups | ● | ◐ | Install from a folder, import, projections, uninstall and backups are here; repository install, discover and the harness activation patches stay native for now |
 | Session hand-off to a terminal | ● | ◐ | Desktop copies the resume command; native opens Terminal with it |
 | **Cost and usage** |
@@ -382,6 +385,7 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Writable | ● | ◐ | The keys Desktop's own Settings presents, through the cross-client write contract — the whitelist in `shared::settings_writer::WRITABLE_KEYS` is the boundary. Provider credentials and the layout editor are not among them |
 | Provider credential panes | ● 25 | ○ | API-key adapters read the process environment; nothing is persisted |
 | **Platform** |
+| Localization | ◐ | ○ | Both clients will read one catalog, [`AstroQore/vibe-bar-i18n`](https://github.com/AstroQore/vibe-bar-i18n) — Swift package for native, npm package here, Simplified Chinese first. Neither client consumes it yet |
 | MCP tools | ● 12 | ◐ 6 | Read-only subset over stdio; the Unix socket is native's |
 | Remote probe sync | ● | ○ | The Machines page explains the model; no relay client yet |
 | App Sandbox | ○ by design | ○ for now | Neither ships sandboxed. Native **cannot**: reading browser cookies, probing AntiGravity and driving Terminal are all blocked inside it. Desktop has no reason yet, and would lose the same cookie reads |

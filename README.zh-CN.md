@@ -308,6 +308,8 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | **菜单栏 / 托盘** |
 | 富文本和两行标题 | ● | —— | Windows 和 Linux 的托盘根本没有标题，只有图标；macOS 托盘显示一行 |
 | 带样式作用域的字段编辑器 | ● | ○ | 字段和标签读自共享设置，在 Menu bar 页编辑，没有样式作用域 |
+| 合并同组窗口 | ● | ○ | 原生版可以把一个组的 5 小时和周窗口折成菜单栏里的一条：组名只出现一次，百分比共用它，各自保留自己的颜色。分组规则在 `VibeBarCore` 里，所以这是一份要对齐的契约，不是照着样子画 |
+| 菜单栏拼装器 | ● | ○ | 原生版正在改成可自由排列的菜单栏：先选模板，再往里放 logo、任意文字和任意可用配额作为元素，每个元素可自定颜色或跟随某个配额的预测/实际色，同时保留现有固定布局作为默认模式 |
 | Control Center 允许列表看门狗 | ● | ◐ | Desktop 运行同一个修复脚本；发现图标消失的看门狗只在原生版 |
 | **主窗口** |
 | provider 详情页 | ● 4 | ◐ | 每家公司一页，有配额、预测解释、重置历史和状态；原生版还带该 provider 的花费卡和历史图 |
@@ -317,6 +319,7 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | 多个独立窗口 | ● | ○ | 一个 mini 窗，七种布局 |
 | 半透明表面 | ● Liquid Glass | ◐ | macOS 上主窗、popover 和 mini 窗都用了真实的 `NSVisualEffect` 材质（sidebar 与 popover），有意用平台自己的东西而不是复刻 Liquid Glass。Windows 和 Linux 目前画成不透明 |
 | **Workbench** |
+| 重置历史对比 | ● | ○ | 原生版的跨配额卡片：按公司 → SubProvider → bucket 分组、两级行标签，Cycles / Time 轴切换存在共享的 `resetHistoryCompareAxis` 里，4 / 8 / 12 / All 选择器的默认值跟随卡片宽度，柱子画的是每次重置时剩下的量 |
 | Skills：安装、导入、发现、备份 | ● | ◐ | 从文件夹安装、导入、投影、卸载和备份都在；仓库安装、发现和 harness 激活补丁暂留原生版 |
 | 会话交接到终端 | ● | ◐ | Desktop 复制 resume 命令；原生版直接打开 Terminal 执行 |
 | **花费与用量** |
@@ -326,6 +329,7 @@ patch 版本可以自由分叉——每个客户端按自己的节奏修自己�
 | 可写 | ● | ◐ | Desktop 自己的设置页展示的那些键，经跨客户端写入契约——白名单 `shared::settings_writer::WRITABLE_KEYS` 就是边界。provider 凭据和布局编辑器不在其中 |
 | provider 凭据面板 | ● 25 | ○ | API-key 适配器读进程环境变量；不持久化任何东西 |
 | **平台** |
+| 多语言 | ◐ | ○ | 两端将共读一份文案目录 [`AstroQore/vibe-bar-i18n`](https://github.com/AstroQore/vibe-bar-i18n)——原生版走 Swift 包，这里走 npm 包，首个语言是简体中文。目前两端都还没接入 |
 | MCP 工具 | ● 12 | ◐ 6 | stdio 上的只读子集；Unix socket 属于原生版 |
 | 远程探针同步 | ● | ○ | Machines 页解释了模型；还没有 relay 客户端 |
 | App Sandbox | ○ 有意为之 | ○ 暂时 | 两端都不带沙箱发布。原生版**不能**：读浏览器 cookie、探测 AntiGravity 和驱动 Terminal 在沙箱里都被拦。Desktop 目前没有理由，而且会失去同样的 cookie 读取 |
