@@ -12,7 +12,9 @@
 .us-chip-group { display: flex; align-items: center; gap: 4px; }
 /* Harness filters are the pill with the provider's hue; a company pill
    groups its harnesses and reads "partial" when only some are on. */
-.us-pill-company { --wb-pill-on: var(--wb-text); }
+/* Selected text stays the text colour on a provider-tinted pill: the accent
+   would sit at under 3:1 on the dark tints. */
+.us-pill-company, .us-pill-harness { --wb-pill-on: var(--wb-text); }
 .us-pill-company.partial { opacity: 0.8; }
 .wb-pill.on .brand-icon { opacity: 1; }
 .us-clear { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 11px; font-weight: 600; color: var(--wb-secondary); }

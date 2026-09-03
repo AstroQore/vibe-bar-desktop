@@ -113,7 +113,7 @@ export function FiltersBar({
                 <button
                   type="button"
                   key={harness}
-                  className={`wb-pill${isOn(harness) ? " on" : ""}`}
+                  className={`wb-pill us-pill-harness${isOn(harness) ? " on" : ""}`}
                   style={{ "--wb-pill-tint": color } as React.CSSProperties}
                   onClick={() => onChange({ ...state, harnesses: toggleHarness(selected, all, harness), models: null })}
                 >

@@ -85,13 +85,13 @@ function MessageCard({ message, index, query, hit, onCopy }: { message: Transcri
           {message.timestamp ? <span className="ss-card-time">{messageTime(message.timestamp)}</span> : null}
         </div>
         {isResult ? (
-          <ToolResult text={text} query={query} hit={hit} />
+          <ToolResult text={message.text} query={query} hit={hit} />
         ) : (
           parts.map((part, i) =>
             part.kind === "tool" ? <ToolCall key={i} part={part} query={query} /> : <div key={i} className="ss-card-text"><Highlighted text={part.text} query={query} /></div>,
           )
         )}
-        {collapses(message.text) ? (
+        {collapses(message.text) && !isResult ? (
           <button type="button" className="ss-card-more" onClick={() => setExpanded((value) => !value)}>
             {expanded ? "Show less" : `Show more (${message.text.length.toLocaleString("en-US")} chars)`}
           </button>
