@@ -88,9 +88,6 @@ pub fn save_shared_settings(
     // The menu bar renders from these, and nothing else would redraw it until
     // the next quota refresh — which, if the cadence is what just changed, is
     // exactly the wait this save was meant to shorten.
-    if applied.written.iter().any(|key| key == "displayMode" || key == "menuBarColorBasis") {
-        crate::tray::update(&app, &state.engine().cached_view());
-    }
     if applied.written.iter().any(|key| key == "refreshIntervalSeconds") {
         state.cadence_changed().notify_one();
     }

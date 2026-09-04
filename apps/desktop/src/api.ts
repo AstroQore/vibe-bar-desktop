@@ -207,9 +207,6 @@ export interface SkillsInventoryView {
 export interface PresentationSettings {
   displayMode: string;
   refreshIntervalSeconds: number;
-  menuBarColorBasis: string;
-  selectedFieldIds: string[];
-  customLabels: Record<string, string>;
   visibleCoreProviders?: string[];
   coreProviderOrder: string[];
   visibleMiscProviders?: string[];

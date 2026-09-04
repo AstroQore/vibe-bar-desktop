@@ -66,7 +66,7 @@ const view = {
   hasSharedData: true,
 } as unknown as QuotaView;
 
-const settings = { displayMode: "remaining", customLabels: {} } as unknown as PresentationSettings;
+const settings = { displayMode: "remaining" } as unknown as PresentationSettings;
 const companies = arrange(view, settings, [
   "codex.five_hour",
   "codex.weekly",

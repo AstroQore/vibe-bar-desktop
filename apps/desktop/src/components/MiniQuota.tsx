@@ -56,16 +56,19 @@ export function MiniQuota() {
     };
   }, []);
 
-  const fields = settings?.selectedFieldIds.length
-    ? settings.selectedFieldIds
-    : [
-        ...new Set([
-          ...DEFAULT_FIELDS,
-          ...(view?.accounts.flatMap((account) =>
-            account.buckets[0] ? [`${account.tool}.${account.buckets[0].id}`] : [],
-          ) ?? []),
-        ]),
-      ];
+  // The mini window used to borrow the native menu bar's field selection.
+  // No platform this client targets has a customizable menu bar, and a
+  // window here taking its contents from an item that only exists on the
+  // other one made this window change when nothing on this machine did.
+  // Its own defaults, widened by whatever the accounts actually report.
+  const fields = [
+    ...new Set([
+      ...DEFAULT_FIELDS,
+      ...(view?.accounts.flatMap((account) =>
+        account.buckets[0] ? [`${account.tool}.${account.buckets[0].id}`] : [],
+      ) ?? []),
+    ]),
+  ];
   const companies = view ? arrange(view, settings, fields.slice(0, MAX_CELLS)) : [];
 
   return (
@@ -1085,8 +1088,10 @@ export function arrange(
       bucket,
       // Just the window. The group heading above already says Spark or Fable,
       // and repeating it under every dial costs the width the forecast line
-      // needs. A custom label still wins, because the user chose it.
-      label: settings?.customLabels[field] || bucket.title,
+      // needs. The override that used to win here was the native *menu bar*'s
+      // per-field label — a name chosen for a strip this client has no
+      // equivalent of, applied to a window it has nothing to do with.
+      label: bucket.title,
       value: showsUsed ? bucket.usedPercent : remaining,
       showsUsed,
     };

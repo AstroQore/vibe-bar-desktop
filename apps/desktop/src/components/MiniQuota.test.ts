@@ -128,13 +128,16 @@ describe("arranging dials along the quota axis", () => {
     expect(companies[0].subProviders[0].groups[0].cells[0].label).toBe("Weekly");
   });
 
-  it("lets a chosen label win over the derived one", () => {
+  it("names a cell from its bucket, not from the other client's menu bar", () => {
+    // The override that used to win here was the native menu bar's per-field
+    // label: a name chosen for a strip no platform this client runs on has,
+    // reaching into a window that has nothing to do with it.
     const companies = arrange(
       view(account("claude", [bucket("weekly", "Weekly", "Weekly")])),
-      { ...settings, customLabels: { "claude.weekly": "Work" } } as PresentationSettings,
+      settings,
       ["claude.weekly"],
     );
-    expect(companies[0].subProviders[0].groups[0].cells[0].label).toBe("Work");
+    expect(companies[0].subProviders[0].groups[0].cells[0].label).toBe("Weekly");
   });
 
   it("keeps the order the fields were chosen in", () => {

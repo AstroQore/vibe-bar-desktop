@@ -23,7 +23,6 @@ export function Settings({
 }) {
   if (!settings) return <p className="empty">Loading shared presentation settings…</p>;
 
-  const fieldLabel = (fieldId: string) => settings.customLabels[fieldId] || fieldId;
   return (
     <section className="settings-pane">
       {saveError ? (
@@ -82,16 +81,6 @@ export function Settings({
             ))}
           </select>
         </div>
-        <div className="setting-row">
-          <span>Menu-bar colour basis</span>
-          <select
-            value={settings.menuBarColorBasis || "actual"}
-            onChange={(event) => onSave({ menuBarColorBasis: event.target.value })}
-          >
-            <option value="actual">Actual</option>
-            <option value="forecast">Forecast</option>
-          </select>
-        </div>
       </SettingsGroup>
 
       <SettingsGroup title="Updates">
@@ -124,21 +113,6 @@ export function Settings({
           name="Visible misc providers"
           value={settings.visibleMiscProviders ? providerList(settings.visibleMiscProviders) : "All"}
         />
-      </SettingsGroup>
-
-      <SettingsGroup title="Menu-bar fields">
-        {settings.selectedFieldIds.length ? (
-          <ul className="settings-list">
-            {settings.selectedFieldIds.map((fieldId) => (
-              <li key={fieldId}>
-                <span>{fieldLabel(fieldId)}</span>
-                {settings.customLabels[fieldId] ? <code>{fieldId}</code> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="status-line">Desktop uses its default fields until the native app saves a selection.</p>
-        )}
       </SettingsGroup>
 
       <SettingsGroup title="Plan labels">

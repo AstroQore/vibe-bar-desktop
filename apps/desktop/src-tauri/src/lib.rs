@@ -97,7 +97,7 @@ pub fn run() {
             mini_window::install(app.handle(), state.data_root().clone())?;
             // Tray failure deliberately does not abort setup: without a tray,
             // hiding the only window would leave the user no way back in.
-            let tray_installed = tray::install(app.handle(), &state).is_ok();
+            let tray_installed = tray::install(app.handle()).is_ok();
             // The popover exists only where a tray exists to anchor it.
             if tray_installed {
                 let _ = popover::install(app.handle());
@@ -223,7 +223,6 @@ fn spawn_refresh_loop(app: tauri::AppHandle) {
             let interval = {
                 let state = app.state::<AppState>();
                 let view = state.engine().refresh().await;
-                tray::update(&app, &view);
                 let _ = app.emit(QUOTA_EVENT, &view);
                 state.engine().refresh_interval()
             };

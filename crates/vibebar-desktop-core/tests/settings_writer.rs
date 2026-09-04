@@ -62,6 +62,38 @@ fn a_key_this_build_cannot_decode_survives_a_save() {
     assert_eq!(saved["displayMode"], json!("remaining"), "an untouched setting was rewritten");
 }
 
+/// The menu bar is the native app's alone, and a save here must leave every
+/// byte of it where it was.
+///
+/// This client stopped modelling those keys on purpose — no platform it runs
+/// on has a customizable menu bar — and "not modelled" is exactly the state
+/// in which a careless writer deletes something. What the user arranged in
+/// the other app can be a long list of blocks, and it is not recoverable.
+#[test]
+fn the_native_menu_bar_configuration_survives_a_save() {
+    let menu_bar = json!([{
+        "kind": "compact",
+        "layout": "twoRows",
+        "showTitle": false,
+        "selectedFieldIds": ["codex.weekly", "claude.weekly"],
+        "customLabels": { "codex.weekly": "ChatGPT" },
+        "composition": { "isEnabled": true, "template": "twoColumn", "tokens": [] }
+    }]);
+    let fixture = Fixture::new(json!({
+        "displayMode": "remaining",
+        "menuBarColorBasis": "forecast",
+        "menuBarItems": menu_bar,
+    }));
+    let mut writer = fixture.writer();
+
+    writer.apply(&object(json!({ "displayMode": "used" }))).expect("the save succeeded");
+
+    let saved = fixture.on_disk();
+    assert_eq!(saved["displayMode"], json!("used"));
+    assert_eq!(saved["menuBarItems"], menu_bar, "the native menu bar was altered by a save");
+    assert_eq!(saved["menuBarColorBasis"], json!("forecast"));
+}
+
 /// A save here reads the file first, so an edit the native app made a moment
 /// ago is still there afterwards.
 #[test]

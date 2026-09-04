@@ -71,8 +71,8 @@ export const FIXTURE_VIEW: QuotaView = {
 };
 
 export const FIXTURE_SETTINGS = {
-  displayMode: "remaining", customLabels: {}, refreshIntervalSeconds: 300, popoverDensity: "regular",
-  coreProviderOrder: ["codex", "claude", "gemini", "grok"], providerPlanLabels: {}, menuBarColorBasis: "forecast",
+  displayMode: "remaining", refreshIntervalSeconds: 300, popoverDensity: "regular",
+  coreProviderOrder: ["codex", "claude", "gemini", "grok"], providerPlanLabels: {},
   miniDisplayMode: "regular", miniStripDensity: "roomy", updateChannel: "dev",
 } as unknown as PresentationSettings;
 
