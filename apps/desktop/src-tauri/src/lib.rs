@@ -5,7 +5,6 @@
 //! testable on all three platforms without a GUI.
 
 mod commands;
-mod menu_bar_health;
 mod mini_window;
 mod native_app;
 mod popover;
@@ -81,9 +80,6 @@ pub fn run() {
             commands::open_url,
             commands::frontend_log,
             commands::frontend_ready,
-            commands::menu_bar_health,
-            commands::menu_bar_check_now,
-            commands::menu_bar_repair,
             commands::refresh_quota,
             commands::hide_mini,
             commands::toggle_mini,
@@ -170,8 +166,6 @@ pub fn run() {
             spawn_load_watchdog(app.handle().clone());
             spawn_update_check_loop(app.handle().clone());
             spawn_settings_watch(app.handle().clone());
-            app.manage(menu_bar_health::Watchdog::default());
-            menu_bar_health::spawn(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -260,15 +254,13 @@ fn spawn_settings_watch(app: tauri::AppHandle) {
 }
 
 /// Background refresh: one immediate pass, then on the cadence the shared
-/// settings define. Each pass updates the tray and pushes the new view to any
-/// open window.
+/// settings define. Each pass pushes the new view to any open window.
 fn spawn_refresh_loop(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             let interval = {
                 let state = app.state::<AppState>();
                 let view = state.engine().refresh().await;
-                tray::update(&app, &view);
                 let _ = app.emit(QUOTA_EVENT, &view);
                 state.engine().refresh_interval()
             };

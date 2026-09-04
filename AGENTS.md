@@ -43,13 +43,6 @@ must work fully on a machine that has never had it installed.
      renamed; only a read that succeeded, never from demo mode. The last
      atomic write for an account wins, which is what the native app's own
      multiple routes already do.
-   - The Control Center menu-bar allow-list, a macOS system preference and
-     not a Vibe Bar store, rewritten by the menu bar health repair only on
-     the user's click or the shared `menuBarAutoRepairEnabled`, through the
-     bundled `fix_menu_bar_allowlist.py` (backup, only stale references to
-     this bundle id, atomic write, Control Center restart). See
-     [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
    - Whole-session deletion — a session's own log files under `~/.codex/`
      or `~/.claude/`, never the shared index — through the kit's fenced
      deleter (`agent_session_core::deletion`, the Rust counterpart of the
@@ -83,6 +76,15 @@ must work fully on a machine that has never had it installed.
    ledger, cost history — is read here and written by the native app until
    it too has a writer with rules like the above. Full reasoning in
    [docs/SHARED-STORAGE.md](docs/SHARED-STORAGE.md).
+
+   The menu bar is not on that list in either direction. A customisable
+   menu bar exists only on macOS, so `menuBarItems`, `menuBarColorBasis`,
+   `menuBarBlockAlertSuppressed` and `menuBarAutoRepairEnabled` describe
+   the native app's item and nothing here: they are absent from
+   `WRITABLE_KEYS`, no surface reads them, and the tray is an icon with a
+   menu. `menuBarItems` is an arranged strip this build could not rebuild
+   if it dropped it, so the merge's preservation of it is tested rather
+   than assumed — see `a_save_leaves_the_native_menu_bar_configuration_byte_for_byte`.
 2. **Never repair, migrate, prune, or rebuild a shared store.** Including the
    session index. An unreadable or unknown-version store degrades to "not
    available" with an explanation — it is another client's data.

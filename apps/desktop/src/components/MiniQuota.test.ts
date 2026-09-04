@@ -4,6 +4,7 @@ import type { AccountQuota, PresentationSettings, QuotaForecast, QuotaView } fro
 import {
   arrange,
   fannedOffsets,
+  fieldsFrom,
   flatten,
   forecastLine,
   railEvents,
@@ -44,8 +45,66 @@ function view(...accounts: AccountQuota[]): QuotaView {
   return { accounts, generatedAt: NOW, hasSharedData: true } as unknown as QuotaView;
 }
 
-const settings = { displayMode: "remaining", customLabels: {} } as unknown as
+const settings = { displayMode: "remaining" } as unknown as
   PresentationSettings;
+
+describe("choosing which dials to draw", () => {
+  it("keeps every bucket a provider reports, not just its first", () => {
+    // Copilot reports premium and chat; Alibaba reports three windows. Taking
+    // buckets[0] per account drops all but one of them without saying so.
+    expect(
+      fieldsFrom(
+        view(
+          account("copilot", [
+            bucket("premium", "Premium", "Premium"),
+            bucket("chat", "Chat", "Chat"),
+          ]),
+          account("alibaba", [
+            bucket("five_hour", "5 Hours", "5h"),
+            bucket("weekly", "Weekly", "Weekly"),
+            bucket("monthly", "Monthly", "Monthly"),
+          ]),
+        ),
+        null,
+      ),
+      // The two misc providers sort by tool, as they do everywhere else; what
+      // matters here is that all five windows survive.
+    ).toEqual([
+      "alibaba.five_hour",
+      "alibaba.weekly",
+      "alibaba.monthly",
+      "copilot.premium",
+      "copilot.chat",
+    ]);
+  });
+
+  it("names each field once and has nothing to draw without a view", () => {
+    expect(
+      fieldsFrom(
+        view(
+          account("claude", [bucket("weekly", "Weekly", "Weekly")]),
+          account("claude", [bucket("weekly", "Weekly", "Weekly")]),
+        ),
+        null,
+      ),
+    ).toEqual(["claude.weekly"]);
+    expect(fieldsFrom(null, null)).toEqual([]);
+  });
+
+  it("follows the provider order and visibility Settings › Layout writes", () => {
+    const accounts = view(
+      account("codex", [bucket("weekly", "Weekly", "Weekly")]),
+      account("claude", [bucket("weekly", "Weekly", "Weekly")]),
+      account("grok", [bucket("weekly", "Weekly", "Weekly")]),
+    );
+    expect(
+      fieldsFrom(accounts, {
+        coreProviderOrder: ["claude", "codex", "grok"],
+        visibleCoreProviders: ["claude", "codex"],
+      } as unknown as PresentationSettings),
+    ).toEqual(["claude.weekly", "codex.weekly"]);
+  });
+});
 
 describe("arranging dials along the quota axis", () => {
   it("puts a provider's windows under one company and SubProvider", () => {
@@ -126,15 +185,6 @@ describe("arranging dials along the quota axis", () => {
       ["claude.weekly_fable"],
     );
     expect(companies[0].subProviders[0].groups[0].cells[0].label).toBe("Weekly");
-  });
-
-  it("lets a chosen label win over the derived one", () => {
-    const companies = arrange(
-      view(account("claude", [bucket("weekly", "Weekly", "Weekly")])),
-      { ...settings, customLabels: { "claude.weekly": "Work" } } as PresentationSettings,
-      ["claude.weekly"],
-    );
-    expect(companies[0].subProviders[0].groups[0].cells[0].label).toBe("Work");
   });
 
   it("keeps the order the fields were chosen in", () => {

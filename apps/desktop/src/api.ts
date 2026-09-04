@@ -277,9 +277,6 @@ export interface SkillsInventoryView {
 export interface PresentationSettings {
   displayMode: string;
   refreshIntervalSeconds: number;
-  menuBarColorBasis: string;
-  selectedFieldIds: string[];
-  customLabels: Record<string, string>;
   visibleCoreProviders?: string[];
   coreProviderOrder: string[];
   visibleMiscProviders?: string[];
@@ -293,8 +290,6 @@ export interface PresentationSettings {
   /** "main" | "dev" — which release channel this machine follows. Shared with
    *  the native client, so choosing Dev in either window applies to both. */
   updateChannel: string;
-  /** The menu bar item as the shared settings describe it. */
-  menuBar: { isVisible: boolean; showTitle: boolean; layout: string };
   /** Misc provider instances the user configured; credentials never ride along. */
   miscProviderInstances: { id: string; tool: string; name: string; isVisible: boolean }[];
   /** "compact" | "regular" | "spacious" — the popover's density, native's
@@ -496,18 +491,6 @@ export interface EffectiveModelPricingRow {
   cacheWriteAboveThresholdPerMillion?: number | null;
   fastMultiplier?: number | null;
 }
-/** The menu bar health watchdog's last report — the native
- *  `MenuBarHealthReport`, for the part that does not need AppKit. */
-export interface MenuBarHealthReport {
-  state: "checking" | "healthy" | "blocked" | "unavailable";
-  message: string;
-  checkedAt: number;
-  needsFullDiskAccess: boolean;
-  alertsEnabled: boolean;
-  autoRepairEnabled: boolean;
-  repairCommand?: string | null;
-}
-export const MENU_BAR_HEALTH_EVENT = "vibebar://menu-bar-health";
 export const UPDATE_EVENT = "vibebar://update-available";
 export const QUOTA_EVENT = "vibebar://quota-updated";
 export const MINI_SHOWN_EVENT = "vibebar://mini-shown";
@@ -544,11 +527,6 @@ export const api = {
   /** Reveal a skill directory in the file manager; only paths inside the
    *  shared skill library are accepted. */
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
-  menuBarHealth: () => invoke<MenuBarHealthReport>("menu_bar_health"),
-  menuBarCheckNow: () => invoke<MenuBarHealthReport>("menu_bar_check_now"),
-  menuBarRepair: () => invoke<MenuBarHealthReport>("menu_bar_repair"),
-  onMenuBarHealth: (handler: (report: MenuBarHealthReport) => void) =>
-    listen<MenuBarHealthReport>(MENU_BAR_HEALTH_EVENT, (event) => handler(event.payload)).then((unlisten) => unlisten),
   autostartEnabled: () => invoke<boolean>("autostart_enabled"),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   pricingEffective: () => invoke<EffectiveModelPricingRow[]>("pricing_effective"),
@@ -586,7 +564,7 @@ export const api = {
    *  necessarily what was asked for: the file is shared with the native app,
    *  and a value it changed in between wins over a stale idea of it here. */
   /** The writable keys as they sit in the shared file, raw — for editing a
-   *  nested object (menu bar item, cost data, mini window) whole. */
+   *  nested object (cost data, mini window) whole. */
   sharedSettingsRaw: () => invoke<Record<string, unknown>>("shared_settings_raw"),
   /** The assistant finished or was skipped; the shared flag both clients honour. */
   completeOnboarding: () => invoke<void>("complete_onboarding"),

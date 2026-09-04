@@ -108,16 +108,6 @@ pub fn save_shared_settings(
     if let Some(replaced) = applied.folded.replaced {
         let _ = app.emit(crate::SETTINGS_EVENT, Some(replaced.replaced_keys));
     }
-    // The menu bar renders from these, and nothing else would redraw it until
-    // the next quota refresh — which, if the cadence is what just changed, is
-    // exactly the wait this save was meant to shorten.
-    if applied
-        .written
-        .iter()
-        .any(|key| key == "displayMode" || key == "menuBarColorBasis" || key == "menuBarItems")
-    {
-        crate::tray::update(&app, &state.engine().cached_view());
-    }
     if applied
         .written
         .iter()
@@ -536,30 +526,6 @@ pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     app.opener()
         .open_url(&url, None::<&str>)
         .map_err(|error| error.to_string())
-}
-
-/// The last menu bar health report.
-#[tauri::command]
-pub fn menu_bar_health(app: AppHandle) -> crate::menu_bar_health::HealthReport {
-    app.state::<crate::menu_bar_health::Watchdog>().report()
-}
-
-/// Audit the Control Center allow-list now.
-#[tauri::command]
-pub async fn menu_bar_check_now(app: AppHandle) -> crate::menu_bar_health::HealthReport {
-    tauri::async_runtime::spawn_blocking(move || crate::menu_bar_health::audit(&app))
-        .await
-        .unwrap_or_default()
-}
-
-/// Run the narrow allow-list repair and re-register the tray.
-#[tauri::command]
-pub async fn menu_bar_repair(
-    app: AppHandle,
-) -> Result<crate::menu_bar_health::HealthReport, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::menu_bar_health::repair(&app))
-        .await
-        .map_err(|error| error.to_string())?
 }
 
 /// The page mounted. A show that was waiting happens now; a load watchdog

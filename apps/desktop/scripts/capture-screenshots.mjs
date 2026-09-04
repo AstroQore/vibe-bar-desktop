@@ -29,8 +29,6 @@ const WORKBENCH = [
   ["workbench-resets", "/?page=resets"],
   ["workbench-skills", "/?page=skillsManager"],
   ["settings-system", "/?page=settings&section=system"],
-  ["settings-menubar", "/?page=settings&section=menuBar"],
-  ["settings-menuBarHealth", "/?page=settings&section=menuBarHealth"],
   ["settings-costData", "/?page=settings&section=costData"],
   ["onboarding-welcome", "/?page=settings&assistant=1"],
 ];

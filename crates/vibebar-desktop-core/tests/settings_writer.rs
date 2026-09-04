@@ -323,3 +323,94 @@ fn the_whitelist_is_only_what_desktop_presents() {
         );
     }
 }
+
+/// The thing that must not go wrong.
+///
+/// Desktop models none of the menu bar any more, and `menuBarItems` is a whole
+/// arranged strip — templates, blocks, colours, per-block rules, saved groups —
+/// that only the native Settings window can rebuild. "Not modelled" is exactly
+/// the state in which a careless writer drops a key, so this is proved rather
+/// than assumed: a save of something Desktop does own must leave all four
+/// menu-bar keys byte for byte where they were.
+///
+/// The input is not invented. It is `settings-native-written.json`, the file
+/// the native app actually wrote, with the nested `customLabels`, `fieldStyles`
+/// and `selectedFieldIds` inside `menuBarItems` that a whole-file rewrite from
+/// a decoded struct would flatten or lose.
+#[test]
+fn a_save_leaves_the_native_menu_bar_configuration_byte_for_byte() {
+    const NATIVE_WRITTEN: &[u8] = include_bytes!("fixtures/settings-native-written.json");
+    const MENU_BAR_KEYS: [&str; 4] = [
+        "menuBarItems",
+        "menuBarColorBasis",
+        "menuBarBlockAlertSuppressed",
+        "menuBarAutoRepairEnabled",
+    ];
+
+    /// The bytes of one top-level key, as they sit in the file.
+    ///
+    /// The native format is two-space indent and sorted keys, so a top-level
+    /// entry runs from its own `  "key" : ` line to the next line that starts
+    /// a top-level key. Comparing that slice, rather than a re-serialised
+    /// value, is what makes this a byte claim.
+    fn block(bytes: &[u8], key: &str) -> Vec<u8> {
+        let text = std::str::from_utf8(bytes).expect("utf-8");
+        let start = text
+            .find(&format!("\n  \"{key}\" : "))
+            .unwrap_or_else(|| panic!("{key} is not a top-level key of the fixture"));
+        let rest = &text[start + 1..];
+        let end = rest
+            .match_indices("\n  \"")
+            .next()
+            .map(|(index, _)| index)
+            .unwrap_or(rest.len());
+        rest.as_bytes()[..end].to_vec()
+    }
+
+    let directory = tempfile::tempdir().expect("temp dir");
+    let path = directory.path().join("settings.json");
+    std::fs::write(&path, NATIVE_WRITTEN).expect("seed the native file");
+
+    let mut writer = SettingsWriter::new(path.clone());
+    let applied = writer
+        .apply(&object(json!({ "displayMode": "used" })))
+        .expect("the save succeeded");
+    assert!(
+        applied.written.contains("displayMode"),
+        "the save wrote nothing, so it proves nothing"
+    );
+
+    let after = std::fs::read(&path).expect("read back");
+    assert_ne!(after, NATIVE_WRITTEN, "the file did not change at all");
+
+    for key in MENU_BAR_KEYS {
+        assert_eq!(
+            block(&after, key),
+            block(NATIVE_WRITTEN, key),
+            "{key} did not survive a save byte for byte"
+        );
+    }
+    // And nothing else moved either: the only difference is the one setting
+    // this client owns.
+    let before_object = settings_document::from_slice(NATIVE_WRITTEN).expect("object");
+    let mut expected = before_object.clone();
+    expected.insert("displayMode".into(), json!("used"));
+    assert_eq!(settings_document::read(&path).expect("object"), expected);
+}
+
+/// The whitelist is the only thing standing between a bug in this client and
+/// the native app's menu bar, and `apply` only refuses a key that is not on
+/// it. So the guard is the list: no menu-bar setting may reappear here
+/// without someone deleting this test on purpose.
+#[test]
+fn no_menu_bar_setting_is_writable() {
+    use vibebar_desktop_core::shared::settings_writer::WRITABLE_KEYS;
+    let claimed: Vec<&&str> = WRITABLE_KEYS
+        .iter()
+        .filter(|key| key.starts_with("menuBar"))
+        .collect();
+    assert!(
+        claimed.is_empty(),
+        "Desktop must not write the native app's menu bar: {claimed:?}"
+    );
+}

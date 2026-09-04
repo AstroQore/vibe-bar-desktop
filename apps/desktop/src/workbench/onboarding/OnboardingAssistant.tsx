@@ -11,7 +11,7 @@ export const STEPS = [
   { id: "browserCookies", title: "Browser cookies", subtitle: "Web quotas come from the session your browser already has." },
   { id: "apiKeyProviders", title: "Other plans", subtitle: "Plans tracked with an API key or a console cookie." },
   { id: "pricing", title: "Model pricing", subtitle: "Where the token prices behind the cost numbers come from." },
-  { id: "launchAtLogin", title: "Launch at login", subtitle: "Keep the readout in your menu bar from the moment you sign in." },
+  { id: "launchAtLogin", title: "Launch at login", subtitle: "Have the quota read by the time you first look." },
   { id: "done", title: "All set", subtitle: "Everything here lives in Settings too." },
 ] as const;
 export type StepId = (typeof STEPS)[number]["id"];
@@ -150,7 +150,7 @@ export function OnboardingAssistant({
           <>
             <Card>
               <p className="ob-text">
-                Vibe Bar sits in your menu bar and shows, at a glance, how much of each AI subscription you have left, what your coding agents are spending, and which sessions and skills live on this Mac. It reads the credentials the Codex, Claude Code, Gemini and Grok CLIs already keep here, adds web quotas from your browser's cookies when you ask it to, and never sends any of it anywhere but the provider it came from.
+                Vibe Bar Desktop sits in your tray and shows, at a glance, how much of each AI subscription you have left, what your coding agents are spending, and which sessions and skills live on this Mac. It reads the credentials the Codex, Claude Code, Gemini and Grok CLIs already keep here, adds web quotas from your browser's cookies when you ask it to, and never sends any of it anywhere but the provider it came from.
               </p>
               <div className="ob-rule" />
               <Feature title="Subscription quotas" detail="Codex, Claude Code, Gemini, Grok and a shelf of API-key plans, each with its reset countdown." />
@@ -164,7 +164,7 @@ export function OnboardingAssistant({
       case "subscriptions":
         return (
           <>
-            <p className="ob-text">Turn on the subscriptions you use. A provider that is off stays out of the Overview and the menu bar; turning one off later keeps its credentials and history.</p>
+            <p className="ob-text">Turn on the subscriptions you use. A provider that is off stays out of the Overview and the mini window; turning one off later keeps its credentials and history.</p>
             <div className="ob-grid">
               {CORE.map((core) => (
                 <div key={core.tool} className="wb-card ob-provider">
@@ -251,13 +251,13 @@ export function OnboardingAssistant({
               </div>
               {autostartError ? <p className="ob-note ob-error">{autostartError}</p> : null}
             </Card>
-            <p className="ob-note">Vibe Bar is a menu-bar app with no Dock icon. Starting it at login keeps the quota readout in your menu bar from the moment you sign in; macOS may ask you to approve the login item in System Settings the first time.</p>
+            <p className="ob-note">Vibe Bar Desktop lives in the tray. Starting it at login means the quota is already read by the time you look; macOS may ask you to approve the login item in System Settings the first time.</p>
           </>
         );
       case "done":
         return (
           <>
-            <p className="ob-text">That is everything the menu bar needs. Finish opens the Workbench with whatever quota is already readable; the rest fills in on the first refresh.</p>
+            <p className="ob-text">That is everything Vibe Bar needs. Finish opens the Workbench with whatever quota is already readable; the rest fills in on the first refresh.</p>
             <Card>
               <Summary title="Subscriptions" value={CORE.filter((c) => visibleCore.has(c.tool)).map((c) => c.vendor).join(", ") || "None"} />
               <Summary title="Browser cookies" value="Imported by the native app" />

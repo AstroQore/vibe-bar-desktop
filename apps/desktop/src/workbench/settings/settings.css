@@ -33,13 +33,10 @@
 .st-route i { width: 7px; height: 7px; border-radius: 4px; flex: none; }
 .st-route span:last-child { margin-left: auto; color: var(--wb-tertiary); font-size: 11px; }
 .st-fields { display: flex; flex-direction: column; gap: 4px; }
-.st-company { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--wb-secondary); padding-top: 6px; }
-.st-sub { font-size: 9.5px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--wb-tertiary); padding-left: 16px; }
 .st-field { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px 0 16px; border-radius: 7px; background: var(--wb-field); font-size: 12px; }
 .st-field i { width: 6px; height: 6px; border-radius: 3px; background: var(--wb-accent); flex: none; }
 .st-field .st-field-title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-.st-field .st-field-style, .st-field .st-field-label, .st-line .st-field-label { height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font: inherit; background: var(--wb-card); border: 0.5px solid var(--wb-hairline); color: var(--wb-text); display: inline-flex; align-items: center; min-width: 60px; }
-.st-field .st-field-style { padding-right: 22px; }
+.st-field .st-field-label, .st-line .st-field-label { height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font: inherit; background: var(--wb-card); border: 0.5px solid var(--wb-hairline); color: var(--wb-text); display: inline-flex; align-items: center; min-width: 60px; }
 .st-field .st-field-label { min-width: 110px; }
 .st-field .st-field-nav { display: inline-flex; gap: 2px; color: var(--wb-tertiary); font-size: 11px; }
 .st-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
@@ -52,5 +49,3 @@
 .st-kv dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .st-links { display: flex; gap: 12px; font-size: 11.5px; }
 .st-links button { color: var(--wb-accent); font-weight: 600; }
-.st-status { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; }
-.st-status i { width: 8px; height: 8px; border-radius: 4px; flex: none; }

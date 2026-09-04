@@ -14,7 +14,7 @@ describe("sidebar", () => {
   it("lists the native pages, core providers with visibility, and misc instances", () => {
     const entries = sections(settings);
     expect(entries.filter((e) => e.group === "settings").map((e) => e.title)).toEqual([
-      "System", "Cost Data", "Model Pricing", "MCP Server", "Remote Probes", "Privacy", "Menu Bar", "Menu Bar Health", "Mini Window", "Layout",
+      "System", "Cost Data", "Model Pricing", "MCP Server", "Remote Probes", "Privacy", "Mini Window", "Layout",
     ]);
     const core = entries.filter((e) => e.group === "core");
     expect(core.map((e) => `${e.title}:${e.enabled}`)).toEqual(["OpenAI:true", "Anthropic:true", "Google AI:false", "SpaceXAI:false"]);
@@ -24,8 +24,12 @@ describe("sidebar", () => {
   });
 
   it("filters by title", () => {
-    expect(filterSections(sections(null), "menu").map((e) => e.title)).toEqual(["Menu Bar", "Menu Bar Health"]);
+    expect(filterSections(sections(null), "min").map((e) => e.title)).toEqual(["Mini Window"]);
     expect(filterSections(sections(null), "")).toHaveLength(sections(null).length);
+  });
+
+  it("offers no menu-bar page: that surface is the native app's", () => {
+    expect(filterSections(sections(null), "menu")).toEqual([]);
   });
 });
 

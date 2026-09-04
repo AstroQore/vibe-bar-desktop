@@ -105,7 +105,8 @@ remote machines have pages of their own.
 
 ## Mini window
 
-A small always-available window with the fields you chose, in any of the
+A small always-available window with every quota window this client read, in
+the provider order and visibility you set on Settings › Layout, in any of the
 seven layouts the native app has: regular, compact, ledger, tile, focus, rail,
 and strip in its roomy, two-line and narrow forms. The window fits what it
 draws and follows the shared `miniWindow` settings, so a layout chosen on one
@@ -240,12 +241,9 @@ settings so the native app will not ask again.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/settings-system-light.png" alt="Settings › System: refresh cadence, update channel, launch at login, what this client writes"><br><sub><strong>System</strong> — refresh, updates, launch at login, and what this client writes where</sub></td>
-    <td width="50%"><img src="docs/screenshots/settings-menubar-light.png" alt="Settings › Menu bar: the fields the tray shows and their labels"><br><sub><strong>Menu bar</strong> — the fields the tray shows, in your words</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/settings-costData-light.png" alt="Settings › Cost data: the privacy switch and the scan scope"><br><sub><strong>Cost data</strong> — the privacy switch that stops every scan</sub></td>
-    <td width="50%"><img src="docs/screenshots/onboarding-welcome-light.png" alt="The first-run assistant over the Workbench"><br><sub><strong>First run</strong> — seven short steps, shared completion flag</sub></td>
+    <td width="33%"><img src="docs/screenshots/settings-system-light.png" alt="Settings › System: refresh cadence, update channel, launch at login, what this client writes"><br><sub><strong>System</strong> — refresh, updates, launch at login, and what this client writes where</sub></td>
+    <td width="33%"><img src="docs/screenshots/settings-costData-light.png" alt="Settings › Cost data: the privacy switch and the scan scope"><br><sub><strong>Cost data</strong> — the privacy switch that stops every scan</sub></td>
+    <td width="33%"><img src="docs/screenshots/onboarding-welcome-light.png" alt="The first-run assistant over the Workbench"><br><sub><strong>First run</strong> — seven short steps, shared completion flag</sub></td>
   </tr>
 </table>
 
@@ -255,7 +253,7 @@ settings so the native app will not ask again.
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/settings-system.png" alt="System settings, dark"></td>
-    <td width="50%"><img src="docs/screenshots/settings-menuBarHealth.png" alt="Menu Bar Health settings, dark"></td>
+    <td width="50%"><img src="docs/screenshots/settings-costData.png" alt="Cost data settings, dark"></td>
   </tr>
 </table>
 
@@ -272,7 +270,7 @@ provider and harness filters, and listing supports RFC 3339 `since`, `offset`
 and a bounded `limit`. The Unix socket in your home directory belongs to the
 native app.
 
-## What Desktop reads, and the five things it writes
+## What Desktop reads, and the four things it writes
 
 Desktop **depends on no part of the native app**: not its process, not its
 MCP socket, not its binaries. Everything it shows is read from files already
@@ -289,19 +287,19 @@ on the machine — the CLIs' own credentials and session logs, and the shared
 
 Vibe Bar data belongs to the person, not to one client, and a second client
 writing into a store the first one owns is how data gets lost. So Desktop
-writes exactly five things into the shared root, each through one documented
+writes exactly four things into the shared root, each through one documented
 writer with the native app's rules:
 
 1. **`settings.json`** — under an advisory lock, a merge that puts back only
    the keys this client changed and keeps every key it does not know
-   ([the contract](docs/contracts/settings-write-v1.md)).
+   ([the contract](docs/contracts/settings-write-v1.md)). The menu bar's
+   settings are not among the keys it may change: that surface is macOS-only
+   and belongs to the native app, so Desktop neither reads nor writes it.
 2. **The quota cache** — its own fresh observations, in the file layout the
    native app reads.
-3. **The Control Center allow-list repair** — the same script the native app
-   runs when macOS 26 hides a menu-bar icon.
-4. **Whole-session deletion** — through the session kit's deleter, only at
+3. **Whole-session deletion** — through the session kit's deleter, only at
    your request, only below the roots it recognises, never through a symlink.
-5. **The skill library** — `~/.agents/skills`, the managed app directories,
+4. **The skill library** — `~/.agents/skills`, the managed app directories,
    the registry and its backups, through the skills service and nothing else.
 
 Everything else — the session index, the usage ledger, cost history — is read
@@ -362,11 +360,8 @@ Legend: ● full · ◐ partial · ○ not yet · — exempt
 | Observation and forecast history | ● | ◐ | Desktop records observations and draws the reset-history strip; the quota history chart with its brush is not ported |
 | Service status sources | ● 5 | ● 4 | OpenAI, Anthropic, Google, Cursor; xAI's page is scraped and not ported |
 | **Menu bar / tray** |
-| Rich-text and two-row title | ● | — | Windows and Linux trays have no title at all, only an icon; the macOS tray shows one line |
-| Field editor with style scopes | ● | ○ | Fields and labels are read from the shared settings and edited on the Menu bar page without the style scopes |
-| Merged group windows | ● | ○ | Native can fold a group's 5-hour and weekly windows into one menu-bar entry — the group named once, the percentages sharing it, each keeping its own colour. The grouping rules live in `VibeBarCore`, so this is a contract to mirror rather than a look to imitate |
-| Menu-bar composer | ● | ○ | Native is moving to a freely arranged menu bar: pick a template, then place logos, free text and any available quota as elements, each with its own or a quota-derived colour, with the current fixed layouts kept as the default mode |
-| Control Center allow-list watchdog | ● | ◐ | Desktop runs the same repair script; the watchdog that notices the icon is gone is native-only |
+| The menu bar item, and everything on it | ● | — | Windows and Linux have no customisable menu bar and their trays have no title, only an icon. So the whole surface — the title, the field editor with its style scopes, merged group windows, the arranged composer — is the native app's, and Desktop's tray is an icon with a menu. Desktop does not read or write a single menu-bar setting, which is what keeps the two clients from disagreeing about a strip only one of them has |
+| Control Center allow-list watchdog | ● | — | The allow-list is a macOS 26 list of menu bar apps, and the native app is the one in the menu bar |
 | **Main window** |
 | Provider detail pages | ● 4 | ◐ | Each company has its page with quota, forecast explanation, reset history and status; native's also carry that provider's cost cards and history charts |
 | Arrangeable module waterfall | ● 11 | ◐ | The Overview draws the modules in the shared order; arranging them is native-only |

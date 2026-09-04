@@ -99,22 +99,6 @@ export function Hand({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
-export function MenuBarIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg {...stroke(size)} aria-hidden="true">
-      <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
-      <path d="M1.5 5.5h13M4 4h.01M6 4h.01" />
-    </svg>
-  );
-}
-export function Stethoscope({ size = 14 }: { size?: number }) {
-  return (
-    <svg {...stroke(size)} aria-hidden="true">
-      <path d="M4 2v4.5a3 3 0 0 0 6 0V2M7 9.5v1.5a3 3 0 0 0 6 0v-1" />
-      <circle cx="13" cy="8.5" r="1.3" />
-    </svg>
-  );
-}
 export function Windows({ size = 14 }: { size?: number }) {
   return (
     <svg {...stroke(size)} aria-hidden="true">
