@@ -26,7 +26,7 @@ this note says where the work stands and which lanes are open.
 | Quota: live adapters | Thirteen. Codex, Claude and Grok from their CLI credential files; Cursor from the session Cursor.app keeps in its own state store; AntiGravity from the language server running on this machine; Alibaba, Copilot, Z.ai, MiniMax, Kilo, Kiro, OpenRouter and Warp from an explicit environment credential or the provider's own CLI. Credentials are read, never rewritten |
 | Quota: the rest | Shared-cache read only, labelled as shared data. The browser-cookie providers wait on a cookie reader |
 | Forecast | Per-bucket run-out and surplus from recorded observations, with a verdict that says when there is not enough evidence yet |
-| Presentation | Shared display mode, provider visibility and order, plan labels, menu-bar fields, native app icons |
+| Presentation | Shared display mode, provider visibility and order, plan labels, native app icons |
 | Settings | The keys Desktop's own Settings presents — the whitelist is `shared::settings_writer::WRITABLE_KEYS`, and it is the safety boundary, so read it rather than a count written down here — are written back to the shared `settings.json` through the documented contract; a change the native app later makes is noticed and shown |
 | Tray and lifecycle | Single instance, close-to-tray, explicit Quit, ready-gated first show with a watchdog, later tray startup, resume handling, launch at login |
 | Updates | A daily check against the channel's feed, offered from the tray and installed on request |
@@ -188,8 +188,12 @@ larger product/architecture decision.
 - The remaining provider and credential matrix on macOS, Windows, and Linux.
 - All-harness usage scanning, the per-request ledger, multi-source pricing,
   cost history, fill/forecast timelines, and subscription-cycle inference.
-- Multiple Mini windows, the layout editor, the arrangeable Overview, the
-  menu-bar field editor's style scopes, and the provider credential panes.
+- Multiple Mini windows, the layout editor, the arrangeable Overview, and
+  the provider credential panes.
+- Nothing of the menu bar. It is a macOS surface with no Windows or Linux
+  equivalent, so the item, its field editor and the Control Center allow-list
+  repair are the native app's alone, and this client reads none of their
+  settings.
 - Skills: repository installs, Discover, and the harness activation patches.
 - Native's broader 12-tool MCP surface and socket ownership — most of those
   tools need a scan, a refresh, or a store Desktop does not keep, so each one

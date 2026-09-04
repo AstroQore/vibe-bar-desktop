@@ -117,11 +117,6 @@ pub struct SharedSettings {
     pub display_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_interval_seconds: Option<f64>,
-    /// "forecast" | "actual".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub menu_bar_color_basis: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub menu_bar_items: Option<Vec<MenuBarItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible_core_providers: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -150,14 +145,6 @@ pub struct SharedSettings {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MenuBarPresentation {
-    pub is_visible: bool,
-    pub show_title: bool,
-    pub layout: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct MiscProviderPresentation {
     pub id: String,
     pub tool: String,
@@ -168,17 +155,11 @@ pub struct MiscProviderPresentation {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationSettings {
-    /// The menu bar item as the shared settings describe it — read here,
-    /// edited in the native app.
-    pub menu_bar: MenuBarPresentation,
     /// Misc provider instances the user configured, for the settings
     /// sidebar. Credentials never travel with them.
     pub misc_provider_instances: Vec<MiscProviderPresentation>,
     pub display_mode: String,
     pub refresh_interval_seconds: u64,
-    pub menu_bar_color_basis: String,
-    pub selected_field_ids: Vec<String>,
-    pub custom_labels: BTreeMap<String, String>,
     pub visible_core_providers: Option<Vec<String>>,
     pub core_provider_order: Vec<String>,
     pub visible_misc_providers: Option<Vec<String>>,
@@ -194,25 +175,6 @@ pub struct PresentationSettings {
     /// Read from the shared file; a value this build does not know reads as
     /// regular, which is what native does with its own unknown case.
     pub popover_density: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct MenuBarItem {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layout: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub is_visible: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub show_title: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selected_field_ids: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_labels: Option<BTreeMap<String, String>>,
-    #[serde(flatten)]
-    pub unknown: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,45 +269,7 @@ impl SharedSettings {
         self.display_mode.as_deref() != Some("used")
     }
 
-    /// The ordered menu-bar field ids the user configured, with their custom
-    /// labels. Empty when the shared settings are absent — the caller then
-    /// picks its own default set.
-    /// Whether the menu bar item names its fields.
-    ///
-    /// Native draws a per-field logo when this is off; a Tauri tray takes one
-    /// plain string and one icon, so the honest equivalent here is to drop the
-    /// text and keep the numbers. Getting this wrong is not cosmetic — the
-    /// labelled form of a six-field selection is four times as wide as the
-    /// native item, wide enough that macOS hides it behind the app menus.
-    /// The first menu bar item's "Show in menu bar" switch; absent means shown.
-    pub fn menu_bar_item_visible(&self) -> bool {
-        self.menu_bar_items
-            .as_ref()
-            .and_then(|items| items.first())
-            .and_then(|item| item.is_visible)
-            .unwrap_or(true)
-    }
-
-    pub fn menu_bar_shows_title(&self) -> bool {
-        self.menu_bar_items
-            .as_ref()
-            .and_then(|items| items.first())
-            .and_then(|item| item.show_title)
-            .unwrap_or(true)
-    }
-
-    pub fn menu_bar_fields(&self) -> (Vec<String>, BTreeMap<String, String>) {
-        let Some(item) = self.menu_bar_items.as_ref().and_then(|items| items.first()) else {
-            return (Vec::new(), BTreeMap::new());
-        };
-        (
-            item.selected_field_ids.clone().unwrap_or_default(),
-            item.custom_labels.clone().unwrap_or_default(),
-        )
-    }
-
     pub fn presentation(&self) -> PresentationSettings {
-        let (selected_field_ids, custom_labels) = self.menu_bar_fields();
         let refresh = self.refresh_interval_seconds.unwrap_or(600.0);
         let refresh_interval_seconds = if refresh.is_finite() {
             refresh.max(60.0).round() as u64
@@ -375,13 +299,6 @@ impl SharedSettings {
                 "remaining".into()
             },
             refresh_interval_seconds,
-            menu_bar_color_basis: if self.menu_bar_color_basis.as_deref() == Some("actual") {
-                "actual".into()
-            } else {
-                "forecast".into()
-            },
-            selected_field_ids,
-            custom_labels,
             visible_core_providers: self.visible_core_providers.clone(),
             core_provider_order: self.core_provider_order.clone().unwrap_or_else(|| {
                 ["codex", "claude", "gemini", "grok"]
@@ -395,16 +312,6 @@ impl SharedSettings {
             mini_strip_density: self.mini_strip_density().to_string(),
             update_channel: self.update_channel().as_settings_value().to_string(),
             popover_density: self.popover_density().to_string(),
-            menu_bar: {
-                let item = self.menu_bar_items.as_ref().and_then(|items| items.first());
-                MenuBarPresentation {
-                    is_visible: item.and_then(|item| item.is_visible).unwrap_or(true),
-                    show_title: self.menu_bar_shows_title(),
-                    layout: item
-                        .and_then(|item| item.layout.clone())
-                        .unwrap_or_else(|| "singleLine".to_string()),
-                }
-            },
             misc_provider_instances: self
                 .misc_provider_instances
                 .clone()
@@ -474,7 +381,6 @@ mod tests {
         let settings = SharedSettings::load(&root);
         assert_eq!(settings.refresh_interval().as_secs(), 600);
         assert!(settings.shows_remaining());
-        assert!(settings.menu_bar_fields().0.is_empty());
     }
 
     #[test]
@@ -487,15 +393,6 @@ mod tests {
             serde_json::json!({
                 "displayMode": "used",
                 "refreshIntervalSeconds": 300,
-                "menuBarColorBasis": "forecast",
-                "menuBarItems": [{
-                    "kind": "compact",
-                    "layout": "twoRows",
-                    "isVisible": true,
-                    "showTitle": false,
-                    "selectedFieldIds": ["codex.weekly", "claude.weekly"],
-                    "customLabels": {"codex.weekly": "ChatGPT"}
-                }],
                 "visibleCoreProviders": ["codex", "claude"],
                 "skillsSyncMethod": "auto",
                 "someFutureKey": {"nested": true}
@@ -507,9 +404,6 @@ mod tests {
         let settings = SharedSettings::load(&root);
         assert!(!settings.shows_remaining());
         assert_eq!(settings.refresh_interval().as_secs(), 300);
-        let (fields, labels) = settings.menu_bar_fields();
-        assert_eq!(fields, vec!["codex.weekly", "claude.weekly"]);
-        assert_eq!(labels.get("codex.weekly").unwrap(), "ChatGPT");
         // Unmodelled keys survive.
         assert!(settings.unknown.contains_key("someFutureKey"));
         assert!(settings.unknown.contains_key("skillsSyncMethod"));
@@ -669,12 +563,6 @@ mod tests {
         let settings = SharedSettings {
             display_mode: Some("used".into()),
             refresh_interval_seconds: Some(5.2),
-            menu_bar_color_basis: Some("actual".into()),
-            menu_bar_items: Some(vec![MenuBarItem {
-                selected_field_ids: Some(vec!["codex.weekly".into()]),
-                custom_labels: Some(BTreeMap::from([("codex.weekly".into(), "ChatGPT".into())])),
-                ..Default::default()
-            }]),
             visible_core_providers: Some(vec!["codex".into()]),
             misc_provider_instances: Some(vec![
                 MiscProviderInstance {
@@ -699,8 +587,6 @@ mod tests {
         let view = settings.presentation();
         assert_eq!(view.display_mode, "used");
         assert_eq!(view.refresh_interval_seconds, 60);
-        assert_eq!(view.menu_bar_color_basis, "actual");
-        assert_eq!(view.selected_field_ids, vec!["codex.weekly"]);
         assert_eq!(view.visible_misc_providers, Some(vec!["kilo".into()]));
         assert_eq!(
             view.core_provider_order,
@@ -709,14 +595,54 @@ mod tests {
         assert_eq!(view.provider_plan_labels["kilo"], "Pro");
     }
 
+    /// The menu bar belongs to the native app, and this build models none of
+    /// it. "Not modelled" is exactly the state in which a careless reader
+    /// drops a key, and `menuBarItems` is not recoverable: it is a whole
+    /// arranged strip of templates, blocks, colours and per-block rules that
+    /// only the native Settings window can rebuild. So the catch-all has to
+    /// hold it, nested objects and all.
     #[test]
-    fn menu_bar_item_visibility_follows_the_first_item() {
-        let shown: SharedSettings = serde_json::from_str(r#"{"menuBarItems":[{"kind":"primary","isVisible":true}]}"#).unwrap();
-        assert!(shown.menu_bar_item_visible());
-        let hidden: SharedSettings = serde_json::from_str(r#"{"menuBarItems":[{"kind":"primary","isVisible":false}]}"#).unwrap();
-        assert!(!hidden.menu_bar_item_visible());
-        let absent: SharedSettings = serde_json::from_str("{}").unwrap();
-        assert!(absent.menu_bar_item_visible(), "no item means the default: shown");
+    fn the_menu_bar_keys_this_build_does_not_model_land_in_the_catch_all() {
+        let document = serde_json::json!({
+            "displayMode": "remaining",
+            "menuBarAutoRepairEnabled": true,
+            "menuBarBlockAlertSuppressed": true,
+            "menuBarColorBasis": "actual",
+            "menuBarItems": [{
+                "kind": "compact",
+                "layout": "twoRows",
+                "isVisible": true,
+                "showTitle": false,
+                "selectedFieldIds": ["codex.weekly", "claude.weekly"],
+                "customLabels": {"codex.weekly": "ChatGPT"},
+                "composition": {
+                    "template": "arranged",
+                    "blocks": [{"kind": "logo", "tool": "codex", "color": {"basis": "quota"}}],
+                    "savedGroups": {"work": ["codex.weekly"]}
+                }
+            }]
+        });
+        let settings: SharedSettings =
+            serde_json::from_value(document.clone()).expect("settings parse");
+
+        for key in [
+            "menuBarItems",
+            "menuBarColorBasis",
+            "menuBarBlockAlertSuppressed",
+            "menuBarAutoRepairEnabled",
+        ] {
+            assert_eq!(
+                settings.unknown.get(key),
+                document.get(key),
+                "{key} was not preserved in the unknown map"
+            );
+        }
+        // Not merely present: the nested arrangement is intact, down to the
+        // objects inside the block list.
+        assert_eq!(
+            settings.unknown["menuBarItems"][0]["composition"]["blocks"][0]["color"]["basis"],
+            serde_json::json!("quota")
+        );
     }
 
 }

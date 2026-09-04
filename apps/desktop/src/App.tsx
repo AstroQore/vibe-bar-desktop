@@ -31,7 +31,6 @@ export function App() {
   const [cost, setCost] = useState<CostView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [menuBarBlocked, setMenuBarBlocked] = useState(false);
   /** Settings chosen here that the native app has since changed. Null the rest
    *  of the time, including for the far commoner case of it changing something
    *  nobody here touched — that is taken on silently, since nothing was lost. */
@@ -105,13 +104,6 @@ export function App() {
       });
   }, []);
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    api.onMenuBarHealth((report) => setMenuBarBlocked(report.state === "blocked")).then((stop) => {
-      unlisten = stop;
-    }).catch(() => undefined);
-    return () => unlisten?.();
-  }, []);
   const refresh = useCallback(() => {
     setRefreshing(true);
     setRefreshToken((token) => token + 1);
@@ -156,7 +148,7 @@ export function App() {
       page={tab}
       onSelect={setTab}
       pages={pages}
-      status={menuBarBlocked ? `${status} · menu bar blocked — see Settings › Menu Bar Health` : status}
+      status={status}
       onRefresh={tab === "settings" ? null : refresh}
       refreshing={refreshing}
       version={info?.version}

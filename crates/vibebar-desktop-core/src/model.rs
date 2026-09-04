@@ -10,8 +10,9 @@
 //!   That lives in `agent-session-core`.
 //!
 //! Raw values here are storage keys shared with the native app: they appear
-//! in `settings.json`, in `quotas/*.json`, and in menu-bar field ids. They
-//! must match the Swift `ToolType.rawValue` byte for byte.
+//! in `settings.json`, in `quotas/*.json`, and in the `<tool>.<bucket>` field
+//! ids both clients use. They must match the Swift `ToolType.rawValue` byte
+//! for byte.
 
 use serde::{Deserialize, Serialize};
 

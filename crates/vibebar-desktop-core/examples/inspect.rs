@@ -25,17 +25,16 @@ fn main() {
     println!("demo mode: {}", root.is_demo());
 
     let settings = SharedSettings::load(&root);
-    let (fields, labels) = settings.menu_bar_fields();
     println!(
-        "\nshared settings: refresh {}s, shows {}, {} menu-bar fields, {} custom labels",
+        "\nshared settings: refresh {}s, shows {}, mini {} ({})",
         settings.refresh_interval().as_secs(),
         if settings.shows_remaining() {
             "remaining"
         } else {
             "used"
         },
-        fields.len(),
-        labels.len()
+        settings.mini_display_mode(),
+        settings.mini_strip_density()
     );
 
     let engine = QuotaEngine::new(root.clone());

@@ -46,10 +46,7 @@
     "macOS": {
       "minimumSystemVersion": "11.0"
     },
-    "createUpdaterArtifacts": true,
-    "resources": [
-      "resources/fix_menu_bar_allowlist.py"
-    ]
+    "createUpdaterArtifacts": true
   },
   "plugins": {
     "updater": {

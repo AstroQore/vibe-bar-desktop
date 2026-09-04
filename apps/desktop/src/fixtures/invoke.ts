@@ -24,9 +24,6 @@ export function inTauri(): boolean {
 
 const settings: Record<string, unknown> = {
   ...(FIXTURE_SETTINGS as unknown as Record<string, unknown>),
-  selectedFieldIds: ["codex.weekly", "claude.weekly", "grok.weekly", "cursor.models"],
-  customLabels: { "codex.weekly": "ChatGPT", "claude.weekly": "Claude", "grok.weekly": "Grok", "cursor.models": "Cursor" },
-  menuBar: { isVisible: true, showTitle: false, layout: "twoRows" },
   miscProviderInstances: [
     { id: "copilot-1", tool: "copilot", name: "Copilot", isVisible: true },
     { id: "opencodego-1", tool: "openCodeGo", name: "OpenCode Go", isVisible: true },
@@ -35,21 +32,9 @@ const settings: Record<string, unknown> = {
 
 let raw: Record<string, unknown> = {
   displayMode: settings.displayMode,
-  menuBarColorBasis: settings.menuBarColorBasis,
   refreshIntervalSeconds: settings.refreshIntervalSeconds,
   updateChannel: settings.updateChannel,
   popoverDensity: settings.popoverDensity ?? "regular",
-  menuBarItems: [
-    {
-      kind: "primary",
-      isVisible: true,
-      showTitle: false,
-      layout: "twoRows",
-      selectedFieldIds: settings.selectedFieldIds,
-      customLabels: settings.customLabels,
-      fieldStyles: { "codex.weekly": "logoAndPercent", "claude.weekly": "logoAndPercent" },
-    },
-  ],
   visibleCoreProviders: settings.visibleCoreProviders ?? ["codex", "claude", "gemini", "grok"],
   coreProviderOrder: settings.coreProviderOrder ?? ["codex", "claude", "gemini", "grok"],
   visibleMiscProviders: ["copilot-1"],
@@ -57,18 +42,6 @@ let raw: Record<string, unknown> = {
   providerPlanLabels: {},
   costData: { privacyModeEnabled: false, retentionDays: 90 },
   miniWindow: { displayMode: "regular", windows: [{ stripDensity: "twoLine" }] },
-  menuBarBlockAlertSuppressed: false,
-  menuBarAutoRepairEnabled: false,
-};
-
-const health = {
-  state: "healthy",
-  message: "Control Center allow-list is clean",
-  checkedAt: FIXTURE_NOW,
-  needsFullDiskAccess: false,
-  alertsEnabled: true,
-  autoRepairEnabled: false,
-  repairCommand: 'python3 "/Applications/Vibe Bar Desktop.app/Contents/Resources/resources/fix_menu_bar_allowlist.py" --bundle-id com.astroqore.VibeBarDesktop --apply',
 };
 
 let autostart = false;
@@ -125,10 +98,6 @@ export async function fixtureInvoke<T>(command: string, args?: Record<string, un
       return answer(FIXTURE_SKILLS);
     case "pricing_effective":
       return answer(FIXTURE_PRICING);
-    case "menu_bar_health":
-    case "menu_bar_check_now":
-    case "menu_bar_repair":
-      return answer(health);
     case "autostart_enabled":
       return answer(autostart);
     case "set_autostart":

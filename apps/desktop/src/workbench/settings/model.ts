@@ -15,8 +15,6 @@ export type SectionId =
   | "mcp"
   | "remote"
   | "privacy"
-  | "menuBar"
-  | "menuBarHealth"
   | "miniWindow"
   | "layout"
   | "openAI"
@@ -36,7 +34,10 @@ export interface SectionEntry {
   enabled?: boolean;
 }
 
-/** `SettingsSidebarView.basicPages`, in the native order. */
+/** `SettingsSidebarView.basicPages`, in the native order, minus the two
+ *  menu-bar pages: the menu bar is a macOS surface with no equivalent on
+ *  Windows or Linux, and every setting on those pages belongs to the native
+ *  app alone. This client neither reads nor writes them. */
 export const BASIC_PAGES: ReadonlyArray<{ id: SectionId; title: string }> = [
   { id: "system", title: "System" },
   { id: "costData", title: "Cost Data" },
@@ -44,8 +45,6 @@ export const BASIC_PAGES: ReadonlyArray<{ id: SectionId; title: string }> = [
   { id: "mcp", title: "MCP Server" },
   { id: "remote", title: "Remote Probes" },
   { id: "privacy", title: "Privacy" },
-  { id: "menuBar", title: "Menu Bar" },
-  { id: "menuBarHealth", title: "Menu Bar Health" },
   { id: "miniWindow", title: "Mini Window" },
   { id: "layout", title: "Layout" },
 ];
@@ -78,25 +77,11 @@ export function filterSections(entries: SectionEntry[], search: string): Section
   return entries.filter((entry) => entry.title.toLowerCase().includes(needle));
 }
 
-export const LAYOUTS: ReadonlyArray<{ id: string; title: string }> = [
-  { id: "iconOnly", title: "Icon Only" },
-  { id: "singleLine", title: "Single line" },
-  { id: "twoRows", title: "Two rows" },
-  { id: "compact", title: "Compact" },
-];
-
 export const DENSITIES: ReadonlyArray<{ id: string; title: string; detail: string }> = [
   { id: "compact", title: "Compact", detail: "Tightest spacing, narrowest popover." },
   { id: "regular", title: "Regular", detail: "Balanced spacing — default." },
   { id: "spacious", title: "Spacious", detail: "Roomy spacing for big displays." },
 ];
-
-export const COLOR_BASIS: ReadonlyArray<{ id: string; title: string }> = [
-  { id: "forecast", title: "Forecast" },
-  { id: "actual", title: "Actual" },
-];
-export const COLOR_BASIS_DETAIL =
-  "Green projected to last · blue chunk will likely go unused · orange may run short · red projected to run out. Falls back to the percentage while a quota has too little history to forecast.";
 
 export const REFRESH_OPTIONS = [60, 120, 300, 600, 900, 1800, 3600] as const;
 

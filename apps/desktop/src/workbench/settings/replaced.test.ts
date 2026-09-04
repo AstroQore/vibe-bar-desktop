@@ -14,8 +14,8 @@ describe("the notice under a replaced setting", () => {
   });
 
   it("names a small handful in full", () => {
-    expect(replacedSummary(["displayMode", "menuBarColorBasis"])).toBe(
-      "Display mode, Menu bar color basis now hold the other copy's value.",
+    expect(replacedSummary(["displayMode", "popoverDensity"])).toBe(
+      "Display mode, Popover density now hold the other copy's value.",
     );
   });
 

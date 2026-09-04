@@ -4,13 +4,45 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PresentationSettings, QuotaBucket, QuotaForecast, QuotaView } from "../api";
 import { api, formatRemaining, quotaBarColor } from "../api";
 import { companyFor, groupLabelFor, subProviderFor } from "../naming";
+import { orderedVisibleAccounts } from "./Overview";
 import { useDarkMode } from "../theme";
 import { FORECAST_VERDICT, providerAccent } from "../tokens";
 import { RingGauge } from "./RingGauge";
 
-const DEFAULT_FIELDS = ["codex.weekly", "claude.weekly", "claude.five_hour"];
 /** Beyond this the window is wider than the screen it sits on the edge of. */
 const MAX_CELLS = 12;
+
+/**
+ * Which dials this window draws, and in what order.
+ *
+ * The list used to come from the native app's menu bar selection. That is a
+ * macOS surface Windows and Linux do not have, so the window needs a source of
+ * its own — and it already has one: `orderedVisibleAccounts`, the shared rule
+ * the popover, the tabs and the resets page all order and filter by, which
+ * reads the provider order and visibility from Settings › Layout. Those are
+ * settings this client presents and writes, so the arrangement is still the
+ * user's; it is just no longer borrowed from a window they may not have.
+ *
+ * Every bucket of every account, not the first of each: Copilot reports
+ * premium and chat, Alibaba reports a 5-hour, a weekly and a monthly window,
+ * and taking `buckets[0]` would silently drop all but one of them. The engine
+ * has already consolidated each provider to one card of newest-believable
+ * windows, so this is a flatten and not a merge.
+ */
+export function fieldsFrom(
+  view: QuotaView | null,
+  settings: PresentationSettings | null,
+): string[] {
+  if (!view) return [];
+  const fields: string[] = [];
+  for (const account of orderedVisibleAccounts(view.accounts, settings)) {
+    for (const bucket of account.buckets) {
+      const field = `${account.tool}.${bucket.id}`;
+      if (!fields.includes(field)) fields.push(field);
+    }
+  }
+  return fields;
+}
 
 /** One dial: a bucket, and what is said about it. */
 interface Cell {
@@ -67,16 +99,7 @@ export function MiniQuota() {
     };
   }, []);
 
-  const fields = settings?.selectedFieldIds.length
-    ? settings.selectedFieldIds
-    : [
-        ...new Set([
-          ...DEFAULT_FIELDS,
-          ...(view?.accounts.flatMap((account) =>
-            account.buckets[0] ? [`${account.tool}.${account.buckets[0].id}`] : [],
-          ) ?? []),
-        ]),
-      ];
+  const fields = fieldsFrom(view, settings);
   const companies = view ? arrange(view, settings, fields.slice(0, MAX_CELLS)) : [];
 
   return (
@@ -1096,8 +1119,8 @@ export function arrange(
       bucket,
       // Just the window. The group heading above already says Spark or Fable,
       // and repeating it under every dial costs the width the forecast line
-      // needs. A custom label still wins, because the user chose it.
-      label: settings?.customLabels[field] || bucket.title,
+      // needs.
+      label: bucket.title,
       value: showsUsed ? bucket.usedPercent : remaining,
       showsUsed,
     };

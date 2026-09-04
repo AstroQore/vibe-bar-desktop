@@ -40,13 +40,12 @@ cannot redirect the final write.
 
 ## What Desktop writes today
 
-Five things, each with its own written rule (AGENTS.md rule 1): the
+Four things, each with its own written rule (AGENTS.md rule 1): the
 shared `settings.json` through the locked, merge-only writer; the quota
 cache, one account per file in the native schema, atomically, after a
-successful read; the Control Center allow-list repair, which is a system
-preference rather than a Vibe Bar store; whole-session deletion of a
-Codex or Claude Code session's own log files through the kit's fenced
-deleter, at the person's explicit request — which removes files under
+successful read; whole-session deletion of a Codex or Claude Code
+session's own log files through the kit's fenced deleter, at the
+person's explicit request — which removes files under
 `~/.codex/` and `~/.claude/`, never a row of the shared index; and the
 skill library — the SSOT, the allow-listed app skills directories, the
 registry `skills.json` and the snapshots under `skill_backups/` — through

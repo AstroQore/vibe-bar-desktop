@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AppInfo, CostView, EffectiveModelPricingRow, MenuBarHealthReport, PendingUpdate, PresentationSettings, QuotaView } from "../../api";
+import type { AppInfo, CostView, EffectiveModelPricingRow, PendingUpdate, PresentationSettings, QuotaView } from "../../api";
 import { api } from "../../api";
 import { ToolBrandIcon } from "../../popover/brand";
-import { bucketLabelFor, companyFor, subProviderFor } from "../../naming";
-import { Antenna, ChartBar, Cookie, Dollar, Hand, MenuBarIcon, Monitor, Nodes, Refresh, Search, Split, Stethoscope, Windows, XCircle } from "../icons";
+import { companyFor, subProviderFor } from "../../naming";
+import { Antenna, ChartBar, Cookie, Dollar, Hand, Monitor, Nodes, Refresh, Search, Split, Windows, XCircle } from "../icons";
 import {
-  COLOR_BASIS,
-  COLOR_BASIS_DETAIL,
   CORE_PROVIDERS,
   DENSITIES,
-  LAYOUTS,
   READ_ONLY_NOTE,
   REFRESH_OPTIONS,
   ROUTES,
@@ -29,12 +26,6 @@ import {
 } from "./model";
 import "./settings.css";
 
-const FIELD_STYLES: ReadonlyArray<{ id: string; title: string }> = [
-  { id: "labelAndPercent", title: "Label" },
-  { id: "logoAndPercent", title: "Logo" },
-  { id: "logoLabelAndPercent", title: "Logo and label" },
-];
-
 const SYMBOLS: Record<string, ReactNode> = {
   system: <Monitor size={15} />,
   costData: <ChartBar size={14} />,
@@ -42,8 +33,6 @@ const SYMBOLS: Record<string, ReactNode> = {
   mcp: <Nodes size={14} />,
   remote: <Antenna size={14} />,
   privacy: <Hand size={14} />,
-  menuBar: <MenuBarIcon size={14} />,
-  menuBarHealth: <Stethoscope size={14} />,
   miniWindow: <Windows size={14} />,
   layout: <Split size={14} />,
   browserCookies: <Cookie size={14} />,
@@ -183,7 +172,6 @@ export function SettingsPage({
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [autostartNote, setAutostartNote] = useState<string | null>(null);
   const [pricing, setPricing] = useState<EffectiveModelPricingRow[] | null>(pricingFixture ?? null);
-  const [health, setHealth] = useState<MenuBarHealthReport | null>(null);
   const [raw, setRaw] = useState<Record<string, unknown> | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const reloadRaw = () => api.sharedSettingsRaw().then(setRaw).catch(() => undefined);
@@ -208,16 +196,6 @@ export function SettingsPage({
     queue.current = run.catch(() => undefined);
     return run;
   };
-  const menuBarItems = (Array.isArray(raw?.menuBarItems) ? (raw!.menuBarItems as Record<string, unknown>[]) : []) as Record<string, unknown>[];
-  const item0: Record<string, unknown> = menuBarItems[0] ?? { kind: "primary", isVisible: true, showTitle: false, layout: "singleLine", selectedFieldIds: [], customLabels: {}, fieldStyles: {} };
-  const saveItem = (patch: Record<string, unknown>) => {
-    if (!ready) return Promise.resolve();
-    const next = menuBarItems.length > 0 ? menuBarItems.map((item, index) => (index === 0 ? { ...item, ...patch } : item)) : [{ ...item0, ...patch }];
-    return save({ menuBarItems: next });
-  };
-  const selectedFieldIds = (Array.isArray(item0.selectedFieldIds) ? (item0.selectedFieldIds as string[]) : []) as string[];
-  const customLabels = ((item0.customLabels ?? {}) as Record<string, string>);
-  const fieldStyles = ((item0.fieldStyles ?? {}) as Record<string, string>);
   const costData = ((raw?.costData ?? {}) as Record<string, unknown>);
   const miniWindow = ((raw?.miniWindow ?? {}) as Record<string, unknown>);
   const miniWindows = (Array.isArray(miniWindow.windows) ? (miniWindow.windows as Record<string, unknown>[]) : []) as Record<string, unknown>[];
@@ -233,11 +211,6 @@ export function SettingsPage({
     const visibleIds = instances.filter((i) => i.isVisible !== false).map((i) => String(i.id));
     return save({ miscProviderInstances: instances, visibleMiscProviders: visibleIds });
   };
-  const knownFields = (view?.accounts ?? []).flatMap((account) =>
-    account.buckets.map((bucket) => ({ id: `${account.tool}.${bucket.id}`, tool: account.tool, title: bucketLabelFor(account.tool, bucket.id, bucket.title, bucket.shortLabel, bucket.groupTitle, " · ") })),
-  );
-  const fieldTitle = (id: string) => knownFields.find((f) => f.id === id)?.title ?? id.slice(id.indexOf(".") + 1).replace(/_/g, " ");
-  const [healthNote, setHealthNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const entries = useMemo(() => buildSections(settings), [settings]);
   const visible = filterSections(entries, search);
@@ -249,15 +222,6 @@ export function SettingsPage({
     }
     api.autostartEnabled().then(setAutostart).catch((error: unknown) => setAutostartNote(String(error)));
   }, [fixture]);
-  useEffect(() => {
-    if (section !== "menuBarHealth" || fixture) return;
-    let unlisten: (() => void) | undefined;
-    api.menuBarHealth().then(setHealth).catch(() => undefined);
-    api.onMenuBarHealth(setHealth).then((stop) => {
-      unlisten = stop;
-    }).catch(() => undefined);
-    return () => unlisten?.();
-  }, [section, fixture]);
   useEffect(() => {
     if (section !== "pricing" || pricing || fixture) return;
     api.pricingEffective().then(setPricing).catch(() => setPricing([]));
@@ -288,7 +252,7 @@ export function SettingsPage({
   const current = entries.find((e) => e.id === section);
   const providerSection = CORE_PROVIDERS.find((p) => p.id === section);
 
-  const NESTED: SectionId[] = ["menuBar", "menuBarHealth", "miniWindow", "layout", "costData"];
+  const NESTED: SectionId[] = ["miniWindow", "layout", "costData"];
   const content = () => {
     if (!settings) return <p className="wb-empty">Loading settings…</p>;
     if (!ready && (NESTED.includes(section) || section.startsWith("misc:") || CORE_PROVIDERS.some((c) => c.id === section))) {
@@ -303,7 +267,7 @@ export function SettingsPage({
                 <Check label="Launch at login" checked={autostart ?? false} disabled={autostart === null || fixture} onChange={(next) => void run("autostart", async () => setAutostart(await api.setAutostart(next)))} />
                 {autostartNote ? <span className="st-note">{autostartNote}</span> : null}
               </div>
-              <p className="st-note">Registers this app as a login item; the menu bar icon is back before the first refresh.</p>
+              <p className="st-note">Registers this app as a login item; the tray icon is back before the first refresh.</p>
               <div className="st-line">
                 <button type="button" className="wb-pill" disabled={!onShowAssistant} title="Walk through the first-run choices again" onClick={onShowAssistant}>
                   Show setup assistant
@@ -462,166 +426,6 @@ export function SettingsPage({
             </div>
           </Section>
         );
-      case "menuBar": {
-        const move = (id: string, delta: -1 | 1) => {
-          const index = selectedFieldIds.indexOf(id);
-          const target = index + delta;
-          if (index < 0 || target < 0 || target >= selectedFieldIds.length) return;
-          const next = [...selectedFieldIds];
-          [next[index], next[target]] = [next[target], next[index]];
-          void saveItem({ selectedFieldIds: next });
-        };
-        const groups = groupFields(selectedFieldIds);
-        const unselected = knownFields.filter((f) => !selectedFieldIds.includes(f.id));
-        return (
-          <Section title="Overview">
-            <div className="st-line"><Check label="Show in menu bar" checked={item0.isVisible !== false} onChange={(next) => void saveItem({ isVisible: next })} /></div>
-            <div className="st-line"><Check label="Show title text" checked={Boolean(item0.showTitle)} onChange={(next) => void saveItem({ showTitle: next })} /></div>
-            <div className="st-line"><span className="st-label">Layout</span><Seg options={LAYOUTS} value={String(item0.layout ?? "singleLine")} onChange={(id) => void saveItem({ layout: id })} /></div>
-            <div className="st-line"><span className="st-label">Display density</span><Seg options={DENSITIES} value={String(raw?.popoverDensity ?? settings.popoverDensity ?? "regular")} onChange={(id) => void save({ popoverDensity: id })} /></div>
-            <p className="st-note">{DENSITIES.find((d) => d.id === String(raw?.popoverDensity ?? settings.popoverDensity ?? "regular"))?.detail}</p>
-            <div className="st-line"><span className="st-label">Percent color</span><Seg options={COLOR_BASIS} value={settings.menuBarColorBasis === "actual" ? "actual" : "forecast"} onChange={(id) => void save({ menuBarColorBasis: id })} /></div>
-            <p className="st-note">{COLOR_BASIS_DETAIL}</p>
-            <div className="st-note" style={{ marginTop: 4 }}>Fields</div>
-            <p className="st-note">Shown, in this order — first renders leftmost. Rename any field for the menu bar only; empty inherits the default.</p>
-            <div className="st-fields">
-              {selectedFieldIds.length === 0 ? <p className="st-note">No fields yet — tick a bucket below to add it.</p> : null}
-              {groups.map((group) => (
-                <div key={group.company}>
-                  <div className="st-company"><ToolBrandIcon tool={group.tool} size={12} /> {group.company}</div>
-                  {group.subs.map((sub) => (
-                    <div key={sub.title}>
-                      <div className="st-sub">{sub.title}</div>
-                      {sub.fields.map((field) => {
-                        const index = selectedFieldIds.indexOf(field.id);
-                        return (
-                          <div className="st-field" key={field.id}>
-                            <i />
-                            <span className="st-field-title">{fieldTitle(field.id)}</span>
-                            <select className="wb-select st-field-style" value={fieldStyles[field.id] ?? "logoAndPercent"} onChange={(e) => void saveItem({ fieldStyles: { ...fieldStyles, [field.id]: e.target.value } })} aria-label={`Style for ${fieldTitle(field.id)}`}>
-                              {FIELD_STYLES.map((style) => (
-                                <option key={style.id} value={style.id}>{style.title}</option>
-                              ))}
-                            </select>
-                            <input
-                              className="st-field-label"
-                              placeholder="Default label"
-                              defaultValue={customLabels[field.id] ?? ""}
-                              key={`${field.id}:${customLabels[field.id] ?? ""}`}
-                              aria-label={`Menu bar label for ${fieldTitle(field.id)}`}
-                              onBlur={(e) => {
-                                const value = e.target.value.trim();
-                                if ((customLabels[field.id] ?? "") === value) return;
-                                const next = { ...customLabels };
-                                if (value) next[field.id] = value;
-                                else delete next[field.id];
-                                void saveItem({ customLabels: next });
-                              }}
-                            />
-                            <span className="st-field-nav">
-                              <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Move up" disabled={index <= 0} onClick={() => move(field.id, -1)}>⌃</button>
-                              <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Move down" disabled={index >= selectedFieldIds.length - 1} onClick={() => move(field.id, 1)}>⌄</button>
-                              <button type="button" className="wb-iconbtn" style={{ width: 20, height: 20 }} title="Remove from the menu bar" onClick={() => void saveItem({ selectedFieldIds: selectedFieldIds.filter((id) => id !== field.id) })}>✕</button>
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-            <p className="st-note">Not in the menu bar — tick a bucket to add it. Discovered buckets appear here from the current quota reads.</p>
-            <div className="st-fields">
-              {unselected.length === 0 ? <p className="st-note">Every known bucket is already in the menu bar.</p> : null}
-              {groupFields(unselected.map((f) => f.id)).map((group) => (
-                <div key={group.company}>
-                  <div className="st-company"><ToolBrandIcon tool={group.tool} size={12} /> {group.company}</div>
-                  {group.subs.map((sub) => (
-                    <div key={sub.title}>
-                      <div className="st-sub">{sub.title}</div>
-                      {sub.fields.map((field) => (
-                        <div className="st-line" key={field.id} style={{ paddingLeft: 16, minHeight: 24 }}>
-                          <Check label={fieldTitle(field.id)} checked={false} onChange={() => void saveItem({ selectedFieldIds: [...selectedFieldIds, field.id] })} />
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </Section>
-        );
-      }
-      case "menuBarHealth": {
-        const stateCopy: Record<MenuBarHealthReport["state"], string> = {
-          checking: "Checking menu bar status…",
-          healthy: "Vibe Bar Desktop is visible in the menu bar",
-          blocked: "macOS appears to be blocking Vibe Bar Desktop",
-          unavailable: "Menu bar status is unavailable",
-        };
-        const report = health;
-        const dot = report?.state === "healthy" ? "#34C759" : report?.state === "blocked" ? "#FF3B30" : report?.state === "unavailable" ? "var(--wb-track)" : "#FF9500";
-        return (
-          <Section title="Menu Bar Health">
-            <div className="st-line">
-              <Check label="Alert when macOS blocks the status item" checked={!Boolean(raw?.menuBarBlockAlertSuppressed)} onChange={(next) => void save({ menuBarBlockAlertSuppressed: !next })} />
-            </div>
-            <p className="st-note">Off means alerts were dismissed with “Don't check again”; health checks remain visible here.</p>
-            <div className="st-line">
-              <Check label="Automatically repair confirmed allow-list blocks" checked={Boolean(raw?.menuBarAutoRepairEnabled)} onChange={(next) => void save({ menuBarAutoRepairEnabled: next })} />
-            </div>
-            <p className="st-note">Off by default. When enabled, three consecutive blocked probes run the narrow repair, restart Control Center, and re-register only this app's status item. Full Disk Access is required.</p>
-            <div className="st-status">
-              <i style={{ background: dot }} />
-              <span>{report ? stateCopy[report.state] : fixture ? stateCopy.unavailable : "Checking menu bar status…"}</span>
-            </div>
-            {report ? <p className="st-note">{report.message}{report.checkedAt > 0 ? ` · Checked ${new Date(report.checkedAt * 1000).toLocaleTimeString()}` : ""}</p> : null}
-            {healthNote ? <p className="st-note">{healthNote}</p> : null}
-            <div className="st-line">
-              <button type="button" className="wb-pill" disabled={fixture || busy === "health"} onClick={() => void run("health", async () => setHealth(await api.menuBarCheckNow()))}>
-                <Refresh size={12} /> Check Now
-              </button>
-              <button
-                type="button"
-                className="wb-pill"
-                disabled={fixture || busy === "repair"}
-                title="Removes stale cross-app references to this app from Control Center's allow-list, restarts Control Center, and re-registers the status item."
-                onClick={() =>
-                  void run("repair", async () => {
-                    try {
-                      setHealth(await api.menuBarRepair());
-                      setHealthNote(null);
-                    } catch (error) {
-                      setHealthNote(String(error));
-                    }
-                  })
-                }
-              >
-                Repair &amp; Re-register
-              </button>
-              <button
-                type="button"
-                className="wb-pill"
-                disabled={!report?.repairCommand}
-                onClick={() => {
-                  if (report?.repairCommand) void navigator.clipboard.writeText(report.repairCommand).then(() => setHealthNote("Repair command copied.")).catch(() => setHealthNote("Could not reach the clipboard."));
-                }}
-              >
-                Copy Repair Command
-              </button>
-            </div>
-            <p className="st-note">On macOS 26, a hidden app can retain this app in its Control Center menuItemLocations and apply its own isAllowed=false state to it. Repair removes only that stale cross-app reference; it never changes another app's show/hide setting.</p>
-            {report?.needsFullDiskAccess ? (
-              <div className="st-line">
-                <button type="button" className="wb-pill" onClick={() => void api.openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").catch((error: unknown) => setHealthNote(String(error)))}>
-                  Open Full Disk Access settings
-                </button>
-              </div>
-            ) : null}
-          </Section>
-        );
-      }
       case "miniWindow":
         return (
           <Section title="Mini Windows">
@@ -646,6 +450,8 @@ export function SettingsPage({
         const miscVisible = (id: string) => visibleMisc === null || visibleMisc.includes(id);
         return (
           <Section title="Layout">
+            <div className="st-line"><span className="st-label">Display density</span><Seg options={DENSITIES} value={String(raw?.popoverDensity ?? settings.popoverDensity ?? "regular")} onChange={(id) => void save({ popoverDensity: id })} /></div>
+            <p className="st-note">{DENSITIES.find((d) => d.id === String(raw?.popoverDensity ?? settings.popoverDensity ?? "regular"))?.detail}</p>
             <p className="st-text">The popover shows the core providers in this order; untick one to hide its card and tab everywhere.</p>
             <div className="st-fields">
               {coreOrder.map((tool, index) => (
@@ -816,22 +622,4 @@ export function SettingsPage({
       </div>
     </div>
   );
-}
-
-/** Group selected field ids as `<tool>.<bucket>` under company and SubProvider. */
-function groupFields(ids: string[]): Array<{ company: string; tool: string; subs: Array<{ title: string; fields: Array<{ id: string; bucket: string }> }> }> {
-  const groups = new Map<string, { company: string; tool: string; subs: Map<string, Array<{ id: string; bucket: string }>> }>();
-  for (const id of ids) {
-    const dot = id.indexOf(".");
-    const tool = dot > 0 ? id.slice(0, dot) : id;
-    const bucket = dot > 0 ? id.slice(dot + 1) : "";
-    const company = companyFor(tool);
-    const group = groups.get(company) ?? { company, tool, subs: new Map() };
-    const sub = subProviderFor(tool, bucket);
-    const list = group.subs.get(sub) ?? [];
-    list.push({ id, bucket: bucket.replace(/_/g, " ") });
-    group.subs.set(sub, list);
-    groups.set(company, group);
-  }
-  return [...groups.values()].map((g) => ({ company: g.company, tool: g.tool, subs: [...g.subs.entries()].map(([title, fields]) => ({ title, fields })) }));
 }

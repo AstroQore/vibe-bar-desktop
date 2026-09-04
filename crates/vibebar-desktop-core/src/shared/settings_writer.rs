@@ -30,18 +30,25 @@ use crate::error::CoreError;
 /// listed here without one is a key nothing can legitimately write and
 /// everything can write by mistake. Carried over from the earlier design
 /// record in `docs/contracts/settings-document-v1.md`. Growing it is a
-/// deliberate act: add the control first, then the key.
+/// deliberate act: add the control first, then the key. Shrinking it is one
+/// too — a key taken out here is a setting this client stops claiming, and
+/// the control has to go with it.
 /// Every top-level key Desktop's own Settings presents a control for. Both
 /// clients write the file now; the merge puts back only the keys this
 /// process changed, at top-level granularity (see the contract), so a
-/// nested object such as `menuBarItems` is read, edited, and written whole.
+/// nested object such as `miniWindow` is read, edited, and written whole.
+///
+/// The menu bar is deliberately absent. It is a macOS surface that Windows
+/// and Linux do not have, so every menu-bar setting in this file belongs to
+/// the native app alone; `menuBarItems` in particular is an arranged strip
+/// this build cannot reconstruct. Reading it is fine — the merge keeps it
+/// whatever happens — but naming it here would let a bug in this client
+/// overwrite it.
 pub const WRITABLE_KEYS: &[&str] = &[
     "displayMode",
-    "menuBarColorBasis",
     "refreshIntervalSeconds",
     "updateChannel",
     "popoverDensity",
-    "menuBarItems",
     "visibleCoreProviders",
     "coreProviderOrder",
     "visibleMiscProviders",
@@ -49,8 +56,6 @@ pub const WRITABLE_KEYS: &[&str] = &[
     "providerPlanLabels",
     "costData",
     "miniWindow",
-    "menuBarBlockAlertSuppressed",
-    "menuBarAutoRepairEnabled",
 ];
 
 /// What another writer took over: settings this process changed which now

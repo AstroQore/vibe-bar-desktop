@@ -77,7 +77,7 @@ const view = {
   hasSharedData: true,
 } as unknown as QuotaView;
 
-const settings = { displayMode: "remaining", customLabels: {} } as unknown as PresentationSettings;
+const settings = { displayMode: "remaining" } as unknown as PresentationSettings;
 const companies = arrange(view, settings, [
   "codex.five_hour",
   "codex.weekly",
@@ -165,7 +165,7 @@ function SkillsPreview() {
 }
 function SettingsPreview() {
   const dark = new URLSearchParams(location.search).get("dark") === "1";
-  const settings = { ...(FIXTURE_SETTINGS as never as Record<string, unknown>), menuBar: { isVisible: true, showTitle: false, layout: "twoRows" }, miscProviderInstances: [{ id: "copilot-1", tool: "copilot", name: "Copilot", isVisible: true }, { id: "opencodego-1", tool: "openCodeGo", name: "OpenCode Go", isVisible: true }] } as never;
+  const settings = { ...(FIXTURE_SETTINGS as never as Record<string, unknown>), miscProviderInstances: [{ id: "copilot-1", tool: "copilot", name: "Copilot", isVisible: true }, { id: "opencodego-1", tool: "openCodeGo", name: "OpenCode Go", isVisible: true }] } as never;
   return (
     <div className={`wb${dark ? " dark" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <SettingsPage settings={settings} info={FIXTURE_INFO} cost={FIXTURE_COST} view={FIXTURE_VIEW} dark={dark} onSave={() => undefined} replacedKeys={null} onDismissReplaced={() => undefined} onRescanCost={async () => undefined} onCheckConnections={async () => undefined} fixture pricingFixture={FIXTURE_PRICING} initialSection={(new URLSearchParams(location.search).get("section") ?? "system") as never} />

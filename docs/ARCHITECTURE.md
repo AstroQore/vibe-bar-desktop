@@ -62,7 +62,7 @@ invisible against the fill it sits on: all found there, none by a unit test.
 | One provider's endpoint and wire shape | `providers/<name>.rs` |
 | Merging live and cached into what the UI shows | `refresh.rs` |
 | Presentation preferences | `shared/settings.rs` reads them, `shared/settings_writer.rs` writes them |
-| Writing a shared store | `shared/settings_writer.rs`, `shared/quota_cache.rs`, `skills/service.rs`, the session kit's deleter, and the bundled `resources/fix_menu_bar_allowlist.py` for the Control Center preference — the writers named in [AGENTS.md](../AGENTS.md) rule 1, and nothing else |
+| Writing a shared store | `shared/settings_writer.rs`, `shared/quota_cache.rs`, `skills/service.rs`, and the session kit's deleter — the writers named in [AGENTS.md](../AGENTS.md) rule 1, and nothing else |
 | Public OpenAI-wide/Claude/Google AI/Cursor service status | `status.rs` → in-memory cache → status IPC |
 | Local Codex/Claude usage and priced portion | `cost.rs` → in-memory cache → cost IPC |
 | Indexed vs scanned sessions | `sessions.rs` |
@@ -86,8 +86,8 @@ invisible against the fill it sits on: all found there, none by a unit test.
    carries its newest *believable* reading. This is what turns five cached
    Claude entries — two duplicate, three empty, one from the future — into
    the one card describing the subscription.
-6. The view is pushed to the window as an event and rendered into the tray
-   title.
+6. The view is pushed to the window as an event. The tray is an icon and a
+   menu; it draws no readout, so there is nothing else to redraw.
 
 ## Publishing a refresh
 
@@ -127,15 +127,14 @@ handle rather than reopening a checked pathname.
 ## What is deliberately absent
 
 - **A closed list of authorized write domains.** Shared settings and the
-  quota cache under `~/.vibebar`; the Control Center allow-list, which is a
-  macOS preference; whole-session deletion, which removes logs under a
-  harness's own directory; the skill library under `~/.agents/skills` with the
-  managed app directories; and the OS login-item registration behind launch at
-  login. Installing an accepted update replaces the application itself, which
-  is a seventh and needs saying out loud. The first five go through one
-  documented writer each, carrying the native app's rules; the last two do
-  not and cannot — they hand off to the platform, `tauri-plugin-autostart`
-  and the updater, at a person's explicit yes. Everything else those roots
+  quota cache under `~/.vibebar`; whole-session deletion, which removes logs
+  under a harness's own directory; the skill library under `~/.agents/skills`
+  with the managed app directories; and the OS login-item registration behind
+  launch at login. Installing an accepted update replaces the application
+  itself, which is a sixth and needs saying out loud. The first four go
+  through one documented writer each, carrying the native app's rules; the
+  last two do not and cannot — they hand off to the platform,
+  `tauri-plugin-autostart` and the updater, at a person's explicit yes. Everything else those roots
   hold is read here. See
   [SHARED-STORAGE.md](SHARED-STORAGE.md) and [AGENTS.md](../AGENTS.md) rule 1.
 - **No dependency on the native app.** Its presence is detected only to offer
@@ -159,7 +158,7 @@ handle rather than reopening a checked pathname.
 
 ## The popover
 
-Native's primary surface is the menu-bar popover: a transient `NSPopover`
+Native's primary surface is the popover under its menu bar item: a transient `NSPopover`
 with a tabbed shell — Overview, one page per core company, Misc, Machines —
 whose Overview is a two-column waterfall of cards. Desktop draws the same
 shell in a second window, `popover`, that the tray's left click toggles.
@@ -344,23 +343,34 @@ grouped rows — Settings, Core Providers, Misc Providers — and titled
 section cards for the selected one, in the native order and with the
 native copy. Both clients write the shared file now: every setting the
 page presents is live — percent shown, refresh cadence, update channel,
-popover density, the menu bar item (visibility, title, layout, the field
-list with styles, labels, and order), cost data retention and privacy
-mode, the menu bar health switches, the mini window layout and strip
-density, core provider order and visibility, misc provider visibility
-and names, and plan labels. Nested objects are read raw
-(`shared_settings_raw`), edited, and written whole, which is the
+popover density, cost data retention and privacy mode, the mini window
+layout and strip density, core provider order and visibility, misc
+provider visibility and names, and plan labels. Nested objects are read
+raw (`shared_settings_raw`), edited, and written whole, which is the
 contract's top-level granularity; the merge under the lock puts back only
-the keys this process changed. `PresentationSettings` carries the menu
-bar item and the misc provider instances for the sidebar.
+the keys this process changed. `PresentationSettings` carries the misc
+provider instances for the sidebar.
+
+There is no Menu Bar page, and `menuBarItems`, `menuBarColorBasis`,
+`menuBarBlockAlertSuppressed` and `menuBarAutoRepairEnabled` are not in
+`WRITABLE_KEYS`. A customisable menu bar is a macOS surface Windows and
+Linux do not have, so those settings describe the native app's item and
+nothing here; `menuBarItems` in particular is an arranged strip —
+templates, blocks, colours, per-block rules, saved groups — that this
+build could not rebuild if it ever dropped it. The merge keeps all four,
+because it keeps everything it was not asked to change, and two tests say
+so rather than leaving it to be assumed:
+`the_menu_bar_keys_this_build_does_not_model_land_in_the_catch_all` and
+`a_save_leaves_the_native_menu_bar_configuration_byte_for_byte`.
 
 Controls that are this client's own: launch at login through
 `tauri-plugin-autostart`, the update check and install, rescanning cost
 logs, the effective price table (`pricing_effective`), and connection
 health per core provider, which reports what a quota read can show —
 CLI, OAuth, and credential-file routes — and says cookie routes are not
-used here. Remote probes, the MCP socket, the menu bar health monitor,
-WebView login, and cookie import remain the native app's; each section
+used here. Remote probes, the MCP socket, the menu bar and its Control
+Center allow-list, WebView login, and cookie import remain the native
+app's; each section
 says so rather than presenting a control that would do nothing.
 
 ## The setup assistant
@@ -405,26 +415,3 @@ Settings button's is — one id, one install — and announced on
 `vibebar://update-available`; the Settings page shows it and the tray menu
 gains "Update to X…". Nothing downloads until the person asks, and demo
 mode never checks.
-
-## The menu bar health watchdog
-
-macOS 26 keeps a Control Center allow-list of menu bar apps. A hidden app
-can retain this app's bundle id in its own `menuItemLocations`, and
-Control Center then applies that app's `isAllowed=false` to us: the tray
-icon vanishes with no error anywhere. The native app learned this the
-hard way and ships `fix_menu_bar_allowlist.py`, which audits and, on
-request, removes only those stale cross-app references. This client
-bundles the same script with its own bundle id (`resources/`) and
-`src-tauri/src/menu_bar_health.rs` runs it every five minutes: an audit
-becomes a `HealthReport` (healthy / blocked / unavailable, with the
-Full Disk Access hint when the plist cannot be read), three consecutive
-blocked audits run the repair when the shared `menuBarAutoRepairEnabled`
-is on, and the report goes to the window as `vibebar://menu-bar-health`.
-The native AppKit probe — status item window height and occlusion — has
-no Tauri equivalent, so the verdict here is the allow-list's alone.
-
-Repair re-registers the tray (`tray::reregister`) so a fresh status item
-lands in the cleaned list. Settings › Menu Bar Health shows the report,
-Check Now, Repair & Re-register, Copy Repair Command, and the Full Disk
-Access pane link; the two switches are the shared settings' and are read
-here. The page header notes a blocked menu bar on every page.
