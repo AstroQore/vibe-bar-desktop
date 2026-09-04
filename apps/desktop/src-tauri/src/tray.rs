@@ -97,6 +97,20 @@ pub fn install(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Replace the attached menu after an update check, so its "Update to …"
+/// item can appear or go away. Only where a menu is attached: on macOS it is
+/// built at the moment it is popped and is never stale.
+#[cfg(not(target_os = "macos"))]
+pub fn refresh_menu(app: &AppHandle) {
+    let update = app.state::<AppState>().pending_update_summary();
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_menu(app, update)) {
+        let _ = tray.set_menu(Some(menu));
+        // Re-attaching restores the platform's own click handling, so the
+        // builder's choice has to be made again.
+        let _ = tray.set_show_menu_on_left_click(false);
+    }
+}
+
 /// Show the tray menu where the pointer is. It is built on demand, so it
 /// never needs refreshing and can never be caught mid-swap.
 #[cfg(target_os = "macos")]
