@@ -387,10 +387,14 @@ fn spawn_update_check_loop(app: tauri::AppHandle) {
     });
 }
 
-/// After any check — scheduled or from Settings — the tray menu shows or
-/// drops its "Update to X…" item and every open page hears the result,
-/// `null` included, so a page offering a withdrawn update stops offering it.
+/// After any check — scheduled or from Settings — every open page hears the
+/// result, `null` included, so a page offering a withdrawn update stops
+/// offering it. A tray menu that is attached rather than popped on demand is
+/// replaced here for the same reason.
 pub(crate) fn announce_update(app: &tauri::AppHandle, found: Option<&commands::PendingUpdate>) {
+    // Where the menu is attached it has to be replaced to gain or lose the
+    // update item; on macOS it is built when it is popped.
+    #[cfg(not(target_os = "macos"))]
     tray::refresh_menu(app);
     let _ = app.emit(UPDATE_EVENT, found);
 }
@@ -402,8 +406,7 @@ pub(crate) fn announce_update(app: &tauri::AppHandle, found: Option<&commands::P
 pub(crate) async fn install_pending_update(app: &tauri::AppHandle, id: u64) {
     let state = app.state::<AppState>();
     let Some(update) = state.take_update(id) else {
-        eprintln!("[update] the menu's find was overtaken by a newer check; rebuilding the menu");
-        tray::refresh_menu(app);
+        eprintln!("[update] the menu's find was overtaken by a newer check; the next right click builds a fresh menu");
         return;
     };
     match update.download_and_install(|_, _| {}, || {}).await {

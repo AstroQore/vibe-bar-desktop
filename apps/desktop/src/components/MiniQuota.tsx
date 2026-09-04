@@ -105,7 +105,7 @@ export function MiniQuota() {
   return (
     <main className="mini-quota" data-tauri-drag-region onMouseDown={beginDrag}>
       <div className="mini-title" data-tauri-drag-region="deep">
-        <span>Vibe Bar</span>
+        <span>Vibe Bar Desktop</span>
         <button
           className="mini-close"
           aria-label="Hide Mini"

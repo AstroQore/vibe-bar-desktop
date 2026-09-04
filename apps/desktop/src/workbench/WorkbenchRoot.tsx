@@ -68,7 +68,7 @@ export function WorkbenchRoot({ page, onSelect, pages, status, onRefresh, refres
         <div className="wb-sidebar-bottom">
           <div className="wb-sidebar-rule" />
           <SidebarRow id="settings" selected={page === "settings"} onSelect={() => onSelect("settings")} />
-          <div className="wb-version">Vibe Bar · {version ?? "—"}</div>
+          <div className="wb-version">Vibe Bar Desktop · {version ?? "—"}</div>
         </div>
       </aside>
       <div className="wb-vrule" />

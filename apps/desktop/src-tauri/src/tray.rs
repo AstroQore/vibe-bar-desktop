@@ -18,17 +18,29 @@ use crate::state::AppState;
 const TRAY_ID: &str = "vibebar-desktop-tray";
 
 pub fn install(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
-    let menu = build_menu(app, state.pending_update_summary())?;
-
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .menu(&menu)
-        .tooltip("Vibe Bar Desktop")
-        // Left-click opens the window; the menu stays on right-click, so the
-        // tray behaves the way the native item does.
-        .show_menu_on_left_click(false);
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID).tooltip("Vibe Bar Desktop");
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
+    // On macOS the menu is deliberately not attached. An attached menu is
+    // popped by the system on *any* click, before the app is told about the
+    // event, and `show_menu_on_left_click(false)` does not prevent it — which
+    // is how the left button ended up opening the menu instead of the
+    // popover. With nothing attached both buttons arrive as events and the
+    // menu is popped by hand on the right one.
+    //
+    // Everywhere else the menu stays attached, and has to: Linux's
+    // AppIndicator reports no clicks at all, so a tray whose menu was only
+    // popped from a click handler would have no menu — and on a launch with
+    // no window open, no way back into the app.
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder
+            .menu(&build_menu(app, state.pending_update_summary())?)
+            .show_menu_on_left_click(false);
+    }
+    #[cfg(target_os = "macos")]
+    let _ = state;
     builder
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
@@ -59,20 +71,63 @@ pub fn install(app: &AppHandle, state: &AppState) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            // A left click toggles the popover under the icon, as native's
-            // status item does. The menu stays on the right button.
-            if let TrayIconEvent::Click {
+            let TrayIconEvent::Click {
                 rect,
-                button: tauri::tray::MouseButton::Left,
+                button,
                 button_state: tauri::tray::MouseButtonState::Up,
                 ..
             } = event
-            {
-                crate::popover::toggle_at(tray.app_handle(), rect);
+            else {
+                return;
+            };
+            let app = tray.app_handle();
+            match button {
+                // A left click toggles the popover under the icon, as
+                // native's status item does.
+                tauri::tray::MouseButton::Left => crate::popover::toggle_at(app, rect),
+                // The right button gets the menu, built fresh so it always
+                // carries whatever the last update check found. Where the menu
+                // is attached, the system already showed it.
+                #[cfg(target_os = "macos")]
+                tauri::tray::MouseButton::Right => popup_menu(app),
+                _ => {}
             }
         })
         .build(app)?;
     Ok(())
+}
+
+/// Replace the attached menu after an update check, so its "Update to …"
+/// item can appear or go away. Only where a menu is attached: on macOS it is
+/// built at the moment it is popped and is never stale.
+#[cfg(not(target_os = "macos"))]
+pub fn refresh_menu(app: &AppHandle) {
+    let update = app.state::<AppState>().pending_update_summary();
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_menu(app, update)) {
+        let _ = tray.set_menu(Some(menu));
+        // Re-attaching restores the platform's own click handling, so the
+        // builder's choice has to be made again.
+        let _ = tray.set_show_menu_on_left_click(false);
+    }
+}
+
+/// Show the tray menu where the pointer is. It is built on demand, so it
+/// never needs refreshing and can never be caught mid-swap.
+#[cfg(target_os = "macos")]
+fn popup_menu(app: &AppHandle) {
+    use tauri::menu::ContextMenu;
+    use tauri::Manager;
+    let Ok(menu) = build_menu(app, app.state::<AppState>().pending_update_summary()) else {
+        return;
+    };
+    // Any window will do as the owner: macOS pops the menu at the cursor.
+    let owner = app
+        .get_webview_window(crate::popover::LABEL)
+        .or_else(|| app.get_webview_window("main"))
+        .map(|window| window.as_ref().window());
+    if let Some(owner) = owner {
+        let _ = menu.popup(owner);
+    }
 }
 
 /// The tray menu. With an update found, an item to install it sits at the
@@ -107,13 +162,6 @@ fn build_menu<R: Runtime>(
     }
 }
 
-/// Rebuild the menu after a check: the update item appears or goes away.
-pub fn refresh_menu(app: &AppHandle) {
-    let update = app.state::<AppState>().pending_update_summary();
-    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_menu(app, update)) {
-        let _ = tray.set_menu(Some(menu));
-    }
-}
 
 /// Show the main window because the user asked for it. Before the page has
 /// mounted this is a blank vibrancy sheet, which is the honest answer to a
